@@ -1,8 +1,16 @@
 [package]
 name = "backup"
 version = "0.1.0"
+authors = ["Louis <836250617@qq.com>"]
+description = "Back up your favorite online resources just like you would with git."
+license = "MIT"
 edition = "2021"
+repository = "https://github.com/kingwingfly/backup"
+documentation = ""
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+clap = { version = "4.4", features = ["derive"]}
+tracing = { version = "0.1" }
+tracing-subscriber = { version = "0.3" }
