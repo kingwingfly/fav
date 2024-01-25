@@ -8,6 +8,7 @@ mod error;
 pub(crate) mod fetch;
 pub(crate) mod init;
 pub(crate) mod login;
+pub(crate) mod status;
 
 fn client() -> &'static Client {
     use reqwest::header::{HeaderMap, COOKIE};
