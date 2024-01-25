@@ -20,7 +20,8 @@ message VideoMeta {
     string title = 2;
     UserMeta upper = 3;
     int32 type = 4;
-    optional string clarity = 5;
+    optional int64 list_id = 5;
+    optional string clarity = 6;
 }
 
 message UserMeta {

@@ -84,7 +84,12 @@ async fn fetch_fav_videos(list_id: i64) -> Result<Vec<VideoMeta>> {
                 .as_array()
                 .unwrap()
                 .iter()
-                .map(|v| parse_from_str_with_options(&v.to_string(), &PARSE_OPTIONS).unwrap()),
+                .map(|v| {
+                    let mut ret: VideoMeta =
+                        parse_from_str_with_options(&v.to_string(), &PARSE_OPTIONS).unwrap();
+                    ret.list_id = Some(list_id);
+                    ret
+                }),
         );
     }
     Ok(ret)
