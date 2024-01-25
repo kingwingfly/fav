@@ -11,6 +11,28 @@ documentation = ""
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+# CLI
 clap = { version = "4.4", features = ["derive"]}
+# Error
+snafu = { version = "0.8" }
+# Serde
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1" }
+# ProtoBuf
+protobuf = { version = "3", features = ["with-bytes"] }
+# Tools
+qrcode = { version = "0.13", default-features = false }
+# Net
+reqwest = { version = "0.11.23", features = ["json", "cookies"] }
+# Runtime
+tokio = { version = "1", features = ["full"] }
+# Log
 tracing = { version = "0.1" }
 tracing-subscriber = { version = "0.3" }
+
+[build-dependencies]
+protobuf-codegen = { version = "3" }
+
+[features]
+default = ["bili"]
+bili = []

@@ -1,35 +1,20 @@
-use clap::{Parser, Subcommand};
-use tracing::info;
+use backup::Cli;
+use tracing::Level;
+use tracing_subscriber::{filter, prelude::*};
 
-#[derive(Parser)]
-#[command(author, version, about)]
-struct Cli {
-    #[clap(subcommand)]
-    subcmd: Commands,
-}
-
-#[derive(Subcommand)]
-enum Commands {
-    Init { path: Option<std::path::PathBuf> },
-    Fetch {},
-}
-
-fn main() {
-    tracing_subscriber::fmt()
-        .without_time()
-        .with_target(false)
-        .with_max_level(tracing::Level::DEBUG)
+#[tokio::main]
+async fn main() {
+    let filter = filter::Targets::new()
+        // Enable the `INFO` level for anything in `my_crate`
+        .with_target("backup", Level::DEBUG);
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::fmt::layer()
+                .without_time()
+                .with_target(false),
+        )
+        .with(filter)
         .init();
 
-    let args = Cli::parse();
-    match args.subcmd {
-        Commands::Init { path } => {
-            let path = path
-                .unwrap_or(std::path::PathBuf::from("."))
-                .join(".backup");
-            info!("init {}", path.display());
-            std::fs::create_dir_all(&path).unwrap();
-        }
-        Commands::Fetch {} => todo!(),
-    }
+    Cli::run().await;
 }
