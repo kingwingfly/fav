@@ -3,6 +3,11 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use tracing::info;
 
+use crate::{
+    api::{fetch::fetch, init::init},
+    config::config,
+};
+
 /// The main CLI entry point.
 #[derive(Parser)]
 #[command(author, version, about)]
@@ -31,8 +36,9 @@ enum LoginMethod {
     QrCode,
 }
 
-#[derive(ValueEnum, Clone)]
-enum Kind {
+#[derive(ValueEnum, Clone, Debug)]
+#[cfg_attr(test, derive(PartialEq))]
+pub enum Kind {
     #[cfg(feature = "bili")]
     Bili,
 }
@@ -42,18 +48,7 @@ impl Cli {
     pub async fn run() {
         let args = Self::parse();
         match args.subcmd {
-            Commands::Init { path, kind } => {
-                let path = path
-                    .unwrap_or(std::path::PathBuf::from("."))
-                    .join(".backup");
-                std::fs::remove_dir_all(&path).ok();
-                std::fs::create_dir_all(&path).unwrap();
-                info!("init {}", path.display());
-                match kind {
-                    #[cfg(feature = "bili")]
-                    Kind::Bili => {}
-                }
-            }
+            Commands::Init { path, kind } => init(path, kind).await.unwrap(),
             Commands::Login { method } => match method {
                 LoginMethod::Password => {
                     info!("login with password");
@@ -64,7 +59,7 @@ impl Cli {
                     crate::api::login::qr_login().await.unwrap();
                 }
             },
-            Commands::Fetch {} => todo!(),
+            Commands::Fetch {} => fetch().await.unwrap(),
         }
     }
 }

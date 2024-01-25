@@ -1,9 +1,0 @@
-syntax = "proto3";
-package config;
-
-message Cookie {
-    string DedeUserID = 1;
-    string DedeUserID__ckMd5 = 2;
-    string SESSDATA = 3;
-    string bili_jct = 4;
-}

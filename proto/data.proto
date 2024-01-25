@@ -1,0 +1,27 @@
+syntax = "proto3";
+package data;
+
+message Cookie {
+    string DedeUserID = 1;
+    string DedeUserID__ckMd5 = 2;
+    string SESSDATA = 3;
+    string bili_jct = 4;
+}
+
+message ListMeta {
+    string id = 1;
+    string title = 2;
+    int32 count = 3;
+    string clarity = 4;
+}
+
+message VideoMeta {
+    string id = 1;
+    string title = 2;
+    UserMeta upper = 3;
+}
+
+message UserMeta {
+    string id = 1;
+    string name = 2;
+}

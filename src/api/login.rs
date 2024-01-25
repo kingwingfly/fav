@@ -1,11 +1,13 @@
-use crate::{api::error::Result, proto::config::Cookie};
+use super::error::Result;
+use crate::proto::data::Cookie;
 use protobuf::Message;
 use qrcode::{render::unicode, QrCode};
-use tracing::{info, instrument, warn};
+use tracing::{instrument, warn};
 
 const QR_API: &str = "https://passport.bilibili.com/x/passport-login/web/qrcode/generate";
 const QR_RET_API: &str = "https://passport.bilibili.com/x/passport-login/web/qrcode/poll";
 const COOKIE_PATH: &str = "./.backup/cookie";
+const POLL_INTERVAL: u64 = 3;
 
 /// Login with QR code.
 #[instrument(name = "QR Login", ret)]
@@ -13,7 +15,6 @@ pub(crate) async fn qr_login() -> Result<()> {
     let QrInfo { url, qrcode_key } = qr_info().await?;
     show_qr_code(url).await?;
     qr_ret(qrcode_key).await?;
-    info!("login success");
     Ok(())
 }
 
@@ -44,7 +45,6 @@ where
 }
 
 impl Cookie {
-    #[instrument(name = "Persist Cookie", skip_all, fields(cookie=%self), ret)]
     fn persist(&self) -> Result<()> {
         let mut file = std::fs::File::create(COOKIE_PATH).unwrap();
         self.write_to_writer(&mut file)
@@ -72,21 +72,20 @@ async fn show_qr_code(url: String) -> Result<()> {
 }
 
 async fn qr_ret(qrcode_key: String) -> Result<()> {
-    let url = reqwest::Url::parse_with_params(QR_RET_API, &[("qrcode_key", qrcode_key)]).unwrap();
+    let url = reqwest::Url::parse_with_params(QR_RET_API, [("qrcode_key", qrcode_key)]).unwrap();
     loop {
         let resp = reqwest::get(url.clone()).await?;
         let cookie: Cookie = resp.cookies().into();
         let json: serde_json::Value = resp.json().await?;
-        tracing::debug!("{:#?}", json.pointer("/data/message").unwrap());
         match json.pointer("/data/code").unwrap().as_i64().unwrap() {
             0 => {
                 cookie.persist()?;
                 break;
             }
             86038 => warn!("QR code expired"),
-            _ => {}
+            _ => tracing::debug!("{:#?}", json.pointer("/data/message").unwrap()),
         }
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        tokio::time::sleep(std::time::Duration::from_secs(POLL_INTERVAL)).await;
     }
     Ok(())
 }
