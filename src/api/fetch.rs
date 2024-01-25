@@ -26,6 +26,25 @@ pub(crate) async fn fetch() -> Result<()> {
 #[cfg(feature = "bili")]
 async fn fetch_bili() -> Result<()> {
     let mut meta = meta().clone();
+    meta.lists.extend(fetch_lists().await?);
+    meta.unsav_but_fav.extend(
+        fetch_fav_videos(
+            meta.lists
+                .iter()
+                .filter(|list| list.is_tracking)
+                .map(|list| list.id),
+        )
+        .await?,
+    );
+    tidy(&mut meta);
+    info!("not saved favirite: {}", meta.unsav_but_fav.len());
+    meta.persist();
+    Ok(())
+}
+
+#[cfg(feature = "bili")]
+async fn fetch_bili_prune() -> Result<()> {
+    let mut meta = meta().clone();
     meta.lists = fetch_lists().await?;
     meta.unsav_but_fav = fetch_fav_videos(
         meta.lists
@@ -40,11 +59,7 @@ async fn fetch_bili() -> Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "bili")]
-async fn fetch_bili_prune() -> Result<()> {
-    unimplemented!()
-}
-
+/// This will keep `is_tracking`
 async fn fetch_lists() -> Result<Vec<ListMeta>> {
     let url = reqwest::Url::parse_with_params(LISTS_API, [("up_mid", &config().cookie.DedeUserID)])
         .unwrap();
