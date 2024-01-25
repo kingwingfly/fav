@@ -3,6 +3,7 @@ use protobuf::Message;
 use std::sync::OnceLock;
 
 const META_PATH: &str = ".backup/meta";
+const ERR_HINT: &str = "run `backup init` first";
 
 impl Meta {
     pub fn read() -> Self {
@@ -10,6 +11,11 @@ impl Meta {
             Ok(mut file) => Meta::parse_from_reader(&mut file).unwrap(),
             Err(_) => Meta::default(),
         }
+    }
+
+    pub(crate) fn persist(&self) {
+        let mut file = std::fs::File::create(META_PATH).expect(ERR_HINT);
+        self.write_to_writer(&mut file).expect(ERR_HINT);
     }
 }
 

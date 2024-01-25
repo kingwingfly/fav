@@ -1,14 +1,20 @@
 use super::client;
 use super::error::Result;
 use crate::meta::meta;
-use crate::proto::data::{ListMeta, VideoMeta};
+use crate::proto::data::{ListMeta, Meta, VideoMeta};
 use crate::{cli::Kind, config::config};
 use protobuf_json_mapping::{parse_from_str_with_options, ParseOptions};
+use tracing::info;
 
 const LISTS_API: &str = "https://api.bilibili.com/x/v3/fav/folder/created/list-all";
 const FAV_API: &str = "https://api.bilibili.com/x/v3/fav/resource/list";
+static PARSE_OPTIONS: ParseOptions = ParseOptions {
+    ignore_unknown_fields: true,
+    _future_options: (),
+};
 
 pub(crate) async fn fetch() -> Result<()> {
+    info!("fetching...");
     match config().kind {
         #[cfg(feature = "bili")]
         Kind::Bili => fetch_bili().await?,
@@ -22,8 +28,15 @@ async fn fetch_bili() -> Result<()> {
     let mut meta = meta().clone();
     meta.list = fetch_lists().await?;
     meta.unsav_but_fav = fetch_fav_videos(meta.list[0].id).await?;
-    println!("{:#?}", meta);
+    tidy(&mut meta);
+    info!("new not saved favirite: {}", meta.unsav_but_fav.len());
+    meta.persist();
     Ok(())
+}
+
+#[cfg(feature = "bili")]
+async fn fetch_bili_prune() -> Result<()> {
+    unimplemented!()
 }
 
 async fn fetch_lists() -> Result<Vec<ListMeta>> {
@@ -38,16 +51,7 @@ async fn fetch_lists() -> Result<Vec<ListMeta>> {
         .as_array()
         .unwrap()
         .iter()
-        .map(|v| {
-            parse_from_str_with_options(
-                &v.to_string(),
-                &ParseOptions {
-                    ignore_unknown_fields: true,
-                    ..Default::default()
-                },
-            )
-            .unwrap()
-        })
+        .map(|v| parse_from_str_with_options(&v.to_string(), &PARSE_OPTIONS).unwrap())
         .collect())
 }
 
@@ -80,19 +84,22 @@ async fn fetch_fav_videos(list_id: i64) -> Result<Vec<VideoMeta>> {
                 .as_array()
                 .unwrap()
                 .iter()
-                .map(|v| {
-                    parse_from_str_with_options(
-                        &v.to_string(),
-                        &ParseOptions {
-                            ignore_unknown_fields: true,
-                            ..Default::default()
-                        },
-                    )
-                    .unwrap()
-                }),
+                .map(|v| parse_from_str_with_options(&v.to_string(), &PARSE_OPTIONS).unwrap()),
         );
     }
     Ok(ret)
+}
+
+fn tidy(meta: &mut Meta) {
+    info!("tidyng...");
+    meta.unsav_but_fav.retain(|v| {
+        !meta
+            .unsav_anymore
+            .iter()
+            .chain(meta.sav_and_fav.iter())
+            .chain(meta.sav_but_unfav.iter())
+            .any(|other| other.bvid == v.bvid)
+    });
 }
 
 #[cfg(test)]

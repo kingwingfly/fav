@@ -12,7 +12,6 @@ pub(crate) async fn init(path: Option<PathBuf>, kind: Kind) -> Result<()> {
     if path.join("cookie").exists() {
         info!("Try logging out");
         loggout().await?;
-
         info!("remove old {}", path.display());
     }
     std::fs::remove_dir_all(&path).ok();

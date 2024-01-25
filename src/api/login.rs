@@ -1,12 +1,10 @@
 use super::{client, error::Result};
 use crate::proto::data::Cookie;
-use protobuf::Message;
 use qrcode::{render::unicode, QrCode};
 use tracing::{instrument, warn};
 
 const QR_API: &str = "https://passport.bilibili.com/x/passport-login/web/qrcode/generate";
 const QR_RET_API: &str = "https://passport.bilibili.com/x/passport-login/web/qrcode/poll";
-const COOKIE_PATH: &str = "./.backup/cookie";
 const POLL_INTERVAL: u64 = 3;
 
 /// Login with QR code.
@@ -44,15 +42,6 @@ where
     }
 }
 
-impl Cookie {
-    fn persist(&self) -> Result<()> {
-        let mut file = std::fs::File::create(COOKIE_PATH).unwrap();
-        self.write_to_writer(&mut file)
-            .expect("run `backup init` first");
-        Ok(())
-    }
-}
-
 async fn qr_info() -> Result<QrInfo> {
     let resp = reqwest::get(QR_API).await?;
     let mut json: serde_json::Value = resp.json().await?;
@@ -79,7 +68,7 @@ async fn qr_ret(qrcode_key: String) -> Result<()> {
         let json: serde_json::Value = resp.json().await?;
         match json.pointer("/data/code").unwrap().as_i64().unwrap() {
             0 => {
-                cookie.persist()?;
+                cookie.persist();
                 break;
             }
             86038 => warn!("QR code expired"),
@@ -88,28 +77,4 @@ async fn qr_ret(qrcode_key: String) -> Result<()> {
         tokio::time::sleep(std::time::Duration::from_secs(POLL_INTERVAL)).await;
     }
     Ok(())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn show_cookie() {
-        let mut file = std::fs::File::open(COOKIE_PATH).unwrap();
-        let cookie_read = Cookie::parse_from_reader(&mut file).unwrap();
-        println!("{:#?}", cookie_read);
-    }
-
-    #[tokio::test]
-    async fn cookie_persist() {
-        let cookie = Cookie {
-            DedeUserID: "hello world".to_string(),
-            ..Default::default()
-        };
-        cookie.persist().unwrap();
-        let mut file = std::fs::File::open(COOKIE_PATH).unwrap();
-        let cookie_read = Cookie::parse_from_reader(&mut file).unwrap();
-        assert_eq!(cookie, cookie_read);
-    }
 }
