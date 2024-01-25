@@ -9,6 +9,7 @@ pub(crate) mod fetch;
 pub(crate) mod init;
 pub(crate) mod login;
 pub(crate) mod status;
+pub(crate) mod track;
 
 fn client() -> &'static Client {
     use reqwest::header::{HeaderMap, COOKIE};

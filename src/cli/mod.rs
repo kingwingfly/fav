@@ -3,7 +3,7 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use tracing::info;
 
-use crate::api::{fetch::fetch, init::init, status::status};
+use crate::api::{fetch::fetch, init::init, status::status, track::track};
 
 /// The main CLI entry point.
 #[derive(Parser)]
@@ -26,6 +26,9 @@ enum Commands {
     },
     Fetch {},
     Status {},
+    Track {
+        id: i64,
+    },
 }
 
 #[derive(ValueEnum, Clone)]
@@ -59,6 +62,7 @@ impl Cli {
             },
             Commands::Fetch {} => fetch().await.unwrap(),
             Commands::Status {} => status().unwrap(),
+            Commands::Track { id } => track(id).unwrap(),
         }
     }
 }
