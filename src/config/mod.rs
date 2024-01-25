@@ -3,6 +3,8 @@ use protobuf::Message;
 use std::sync::OnceLock;
 
 const INIT_HINT: &str = "run `backup init` first";
+const KIND_PATH: &str = ".backup/kind";
+const COOKIE_PATH: &str = ".backup/cookie";
 
 #[derive(Debug)]
 #[cfg_attr(test, derive(PartialEq))]
@@ -13,7 +15,7 @@ pub(crate) struct Config {
 
 impl Config {
     pub fn new() -> Self {
-        let kind = match std::fs::read_to_string(".backup/kind")
+        let kind = match std::fs::read_to_string(KIND_PATH)
             .expect(INIT_HINT)
             .as_str()
         {
@@ -21,7 +23,7 @@ impl Config {
             "bili" => Kind::Bili,
             _ => panic!("unknown kind"),
         };
-        let mut file = std::fs::File::open(".backup/cookie").expect(INIT_HINT);
+        let mut file = std::fs::File::open(COOKIE_PATH).expect(INIT_HINT);
         let cookie = Cookie::parse_from_reader(&mut file).unwrap();
         Self { kind, cookie }
     }

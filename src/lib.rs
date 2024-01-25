@@ -5,6 +5,7 @@
 mod api;
 mod cli;
 mod config;
+mod meta;
 mod proto;
 
 pub use cli::Cli;

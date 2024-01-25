@@ -55,9 +55,9 @@ impl Cookie {
 
 async fn qr_info() -> Result<QrInfo> {
     let resp = reqwest::get(QR_API).await?;
-    let json: serde_json::Value = resp.json().await?;
+    let mut json: serde_json::Value = resp.json().await?;
     tracing::debug!("{:#?}", json);
-    Ok(serde_json::from_value(json.pointer("/data").unwrap().clone()).unwrap())
+    Ok(serde_json::from_value(json.pointer_mut("/data").unwrap().take()).unwrap())
 }
 
 async fn show_qr_code(url: String) -> Result<()> {

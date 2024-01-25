@@ -20,6 +20,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
 # ProtoBuf
 protobuf = { version = "3", features = ["with-bytes"] }
+protobuf-json-mapping = { version = "3" }
 # Tools
 qrcode = { version = "0.13", default-features = false }
 # Net
