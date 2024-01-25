@@ -16,21 +16,21 @@ message ListMeta {
 }
 
 message VideoMeta {
-    int64 id = 1;
+    string bvid = 1;
     string title = 2;
     UserMeta upper = 3;
-    string clarity = 4;
+    optional string clarity = 4;
 }
 
 message UserMeta {
-    int64 id = 1;
+    int64 mid = 1;
     string name = 2;
 }
 
 message Meta {
     repeated VideoMeta sav_and_fav = 1;
-    repeated VideoMeta sav_but_nonfav = 2;
-    repeated VideoMeta not_sav_but_fav = 3;
-    repeated VideoMeta not_sav_anymore = 4;
+    repeated VideoMeta sav_but_unfav = 2;
+    repeated VideoMeta unsav_but_fav = 3;
+    repeated VideoMeta unsav_anymore = 4;
     repeated ListMeta list = 5;
 }

@@ -1,6 +1,7 @@
+use super::client;
 use super::error::Result;
 use crate::meta::meta;
-use crate::proto::data::ListMeta;
+use crate::proto::data::{ListMeta, VideoMeta};
 use crate::{cli::Kind, config::config};
 use protobuf_json_mapping::{parse_from_str_with_options, ParseOptions};
 
@@ -19,21 +20,16 @@ pub(crate) async fn fetch() -> Result<()> {
 #[cfg(feature = "bili")]
 async fn fetch_bili() -> Result<()> {
     let mut meta = meta().clone();
-    meta.list = extract_list().await?;
+    meta.list = fetch_lists().await?;
+    meta.unsav_but_fav = fetch_fav_videos(meta.list[0].id).await?;
     println!("{:#?}", meta);
     Ok(())
 }
 
-async fn extract_list() -> Result<Vec<ListMeta>> {
-    use reqwest::header::COOKIE;
-
+async fn fetch_lists() -> Result<Vec<ListMeta>> {
     let url = reqwest::Url::parse_with_params(LISTS_API, [("up_mid", &config().cookie.DedeUserID)])
         .unwrap();
-    let resp = reqwest::Client::new()
-        .get(url)
-        .header(COOKIE, format!("SESSDATA={}", config().cookie.SESSDATA))
-        .send()
-        .await?;
+    let resp = client().get(url).send().await?;
     let mut json: serde_json::Value = resp.json().await?;
     Ok(json
         .pointer_mut("/data/list")
@@ -53,6 +49,50 @@ async fn extract_list() -> Result<Vec<ListMeta>> {
             .unwrap()
         })
         .collect())
+}
+
+async fn fetch_fav_videos(list_id: i64) -> Result<Vec<VideoMeta>> {
+    let mut ret = vec![];
+    let mut has_more = true;
+    let mut page = 1;
+    while has_more {
+        let url = reqwest::Url::parse_with_params(
+            FAV_API,
+            [
+                ("media_id", list_id.to_string()),
+                ("pn", page.to_string()),
+                ("ps", "20".to_string()),
+            ],
+        )
+        .unwrap();
+        let resp = client().get(url).send().await?;
+        let mut json: serde_json::Value = resp.json().await?;
+        has_more = json
+            .pointer_mut("/data/has_more")
+            .unwrap()
+            .as_bool()
+            .unwrap();
+        page += 1;
+        ret.extend(
+            json.pointer_mut("/data/medias")
+                .unwrap()
+                .take()
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|v| {
+                    parse_from_str_with_options(
+                        &v.to_string(),
+                        &ParseOptions {
+                            ignore_unknown_fields: true,
+                            ..Default::default()
+                        },
+                    )
+                    .unwrap()
+                }),
+        );
+    }
+    Ok(ret)
 }
 
 #[cfg(test)]

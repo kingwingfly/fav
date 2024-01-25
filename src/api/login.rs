@@ -1,4 +1,4 @@
-use super::error::Result;
+use super::{client, error::Result};
 use crate::proto::data::Cookie;
 use protobuf::Message;
 use qrcode::{render::unicode, QrCode};
@@ -74,7 +74,7 @@ async fn show_qr_code(url: String) -> Result<()> {
 async fn qr_ret(qrcode_key: String) -> Result<()> {
     let url = reqwest::Url::parse_with_params(QR_RET_API, [("qrcode_key", qrcode_key)]).unwrap();
     loop {
-        let resp = reqwest::get(url.clone()).await?;
+        let resp = client().get(url.clone()).send().await?;
         let cookie: Cookie = resp.cookies().into();
         let json: serde_json::Value = resp.json().await?;
         match json.pointer("/data/code").unwrap().as_i64().unwrap() {

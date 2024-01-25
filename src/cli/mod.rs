@@ -3,10 +3,7 @@
 use clap::{Parser, Subcommand, ValueEnum};
 use tracing::info;
 
-use crate::{
-    api::{fetch::fetch, init::init},
-    config::config,
-};
+use crate::api::{fetch::fetch, init::init};
 
 /// The main CLI entry point.
 #[derive(Parser)]
