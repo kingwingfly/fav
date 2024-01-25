@@ -29,7 +29,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn config_test() {
+    fn meta_test() {
         assert_eq!(meta(), meta());
+    }
+
+    #[test]
+    fn show_meta() {
+        dbg!(meta());
     }
 }

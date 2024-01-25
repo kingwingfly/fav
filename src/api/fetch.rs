@@ -26,10 +26,16 @@ pub(crate) async fn fetch() -> Result<()> {
 #[cfg(feature = "bili")]
 async fn fetch_bili() -> Result<()> {
     let mut meta = meta().clone();
-    meta.list = fetch_lists().await?;
-    meta.unsav_but_fav = fetch_fav_videos(meta.list[0].id).await?;
+    meta.lists = fetch_lists().await?;
+    meta.unsav_but_fav = fetch_fav_videos(
+        meta.lists
+            .iter()
+            .filter(|list| list.is_tracking)
+            .map(|list| list.id),
+    )
+    .await?;
     tidy(&mut meta);
-    info!("new not saved favirite: {}", meta.unsav_but_fav.len());
+    info!("not saved favirite: {}", meta.unsav_but_fav.len());
     meta.persist();
     Ok(())
 }
@@ -51,46 +57,58 @@ async fn fetch_lists() -> Result<Vec<ListMeta>> {
         .as_array()
         .unwrap()
         .iter()
-        .map(|v| parse_from_str_with_options(&v.to_string(), &PARSE_OPTIONS).unwrap())
+        .map(|v| {
+            let mut ret: ListMeta =
+                parse_from_str_with_options(&v.to_string(), &PARSE_OPTIONS).unwrap();
+            ret.is_tracking = meta()
+                .lists
+                .iter()
+                .find(|list| list.id == ret.id)
+                .map(|list| list.is_tracking)
+                .unwrap_or(false);
+            ret
+        })
         .collect())
 }
 
-async fn fetch_fav_videos(list_id: i64) -> Result<Vec<VideoMeta>> {
+async fn fetch_fav_videos(list_ids: impl IntoIterator<Item = i64>) -> Result<Vec<VideoMeta>> {
     let mut ret = vec![];
-    let mut has_more = true;
-    let mut page = 1;
-    while has_more {
-        let url = reqwest::Url::parse_with_params(
-            FAV_API,
-            [
-                ("media_id", list_id.to_string()),
-                ("pn", page.to_string()),
-                ("ps", "20".to_string()),
-            ],
-        )
-        .unwrap();
-        let resp = client().get(url).send().await?;
-        let mut json: serde_json::Value = resp.json().await?;
-        has_more = json
-            .pointer_mut("/data/has_more")
-            .unwrap()
-            .as_bool()
+    for list_id in list_ids {
+        let mut has_more = true;
+        let mut page = 1;
+        while has_more {
+            let url = reqwest::Url::parse_with_params(
+                FAV_API,
+                [
+                    ("media_id", list_id.to_string()),
+                    ("pn", page.to_string()),
+                    ("ps", "20".to_string()),
+                ],
+            )
             .unwrap();
-        page += 1;
-        ret.extend(
-            json.pointer_mut("/data/medias")
+            let resp = client().get(url).send().await?;
+            let mut json: serde_json::Value = resp.json().await?;
+            has_more = json
+                .pointer_mut("/data/has_more")
                 .unwrap()
-                .take()
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|v| {
-                    let mut ret: VideoMeta =
-                        parse_from_str_with_options(&v.to_string(), &PARSE_OPTIONS).unwrap();
-                    ret.list_id = Some(list_id);
-                    ret
-                }),
-        );
+                .as_bool()
+                .unwrap();
+            page += 1;
+            ret.extend(
+                json.pointer_mut("/data/medias")
+                    .unwrap()
+                    .take()
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|v| {
+                        let mut ret: VideoMeta =
+                            parse_from_str_with_options(&v.to_string(), &PARSE_OPTIONS).unwrap();
+                        ret.list_id = Some(list_id);
+                        ret
+                    }),
+            );
+        }
     }
     Ok(ret)
 }

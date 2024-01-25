@@ -12,7 +12,8 @@ message ListMeta {
     int64 id = 1;
     string title = 2;
     int32 media_count = 3;
-    optional string clarity = 4;
+    bool is_tracking = 4;
+    optional string clarity = 5;
 }
 
 message VideoMeta {
@@ -34,5 +35,5 @@ message Meta {
     repeated VideoMeta sav_but_unfav = 2;
     repeated VideoMeta unsav_but_fav = 3;
     repeated VideoMeta unsav_anymore = 4;
-    repeated ListMeta list = 5;
+    repeated ListMeta lists = 5;
 }
