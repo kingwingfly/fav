@@ -112,11 +112,16 @@ Back up your favorite online resources just like you would with git.
 
 ### init
 ```sh
-backup init
-```
-### fetch
-```sh
-backup fetch
+$ backup -h
+Back up your favorite online resources just like you would with git.
+
+Usage: backup <COMMAND>
+
+Commands:
+  init
+  login
+  fetch
+  help   Print this message or the help of the given subcommand(s)
 ```
 
 
@@ -140,7 +145,7 @@ See the [open issues](https://github.com/kingwingfly/backup/issues) for a full l
 <!-- CONTRIBUTING -->
 ## Contributing
 
-Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**.
+Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**. Moreover, it is recommended to open an issue before beginning to avoid repeated and useless work.
 
 If you have a suggestion that would make this better, please fork the repo and create a pull request. You can also simply open an issue with the tag "enhancement".
 Don't forget to give the project a star! Thanks again!
@@ -178,7 +183,7 @@ Project Link: [https://github.com/kingwingfly/backup](https://github.com/kingwin
 <!-- ACKNOWLEDGMENTS -->
 ## Acknowledgments
 
-* []()
+* [bilibili-API-collect](https://github.com/SocialSisterYi/bilibili-API-collect)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
