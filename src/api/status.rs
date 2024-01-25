@@ -1,14 +1,12 @@
 use super::error::Result;
 use crate::meta::meta;
-use crate::proto::data::ListMeta;
 use tabled::{
     builder::Builder,
-    settings::{object::Rows, Alignment, Modify, Style},
+    settings::{object::Rows, Alignment, Style},
 };
 
 pub(crate) fn status() -> Result<()> {
     let lists = &meta().lists;
-    let (x, y) = (lists.len(), 3);
 
     let mut builder = Builder::default();
 
