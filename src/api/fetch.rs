@@ -15,32 +15,27 @@ static PARSE_OPTIONS: ParseOptions = ParseOptions {
 
 pub(crate) async fn fetch(prune: bool) -> Result<()> {
     let mut meta = meta().clone();
+    // assume all lists are expired, and will be set to false if fetched
+    meta.lists.iter_mut().for_each(|l| l.expired = true);
     match config().kind {
         #[cfg(feature = "bili")]
-        Kind::Bili => match prune {
-            true => meta.fetch_bili_prune().await?,
-            false => meta.fetch_bili().await?,
-        },
+        Kind::Bili => meta.fetch_bili().await?,
     };
+    if prune {
+        meta.tidy();
+    }
     meta.persist();
     Ok(())
 }
 
+#[cfg(feature = "bili")]
 impl Meta {
-    #[cfg(feature = "bili")]
     async fn fetch_bili(&mut self) -> Result<()> {
         info!("fetching...");
         self.fetch_lists().await?;
         self.fetch_fav_videos().await?;
         self.tidy();
         info!("not saved favirite: {}", self.videos.len());
-        Ok(())
-    }
-
-    #[cfg(feature = "bili")]
-    async fn fetch_bili_prune(&mut self) -> Result<()> {
-        info!("prune fetching...");
-        unimplemented!();
         Ok(())
     }
 
@@ -63,6 +58,7 @@ impl Meta {
                 if let Some(l) = self.lists.iter_mut().find(|l| list.id == l.id) {
                     l.title = list.title;
                     l.media_count = list.media_count;
+                    l.expired = false;
                 } else {
                     self.lists.push(list);
                 }
@@ -71,29 +67,24 @@ impl Meta {
     }
 
     async fn fetch_fav_videos(&mut self) -> Result<()> {
-        let list_ids = self
+        for (list_id, count) in self
             .lists
             .iter()
             .filter(|list| list.is_tracked)
-            .map(|list| list.id);
-        for list_id in list_ids {
-            let mut has_more = true;
-            let mut page = 1;
-            while has_more {
+            .map(|list| (list.id, list.media_count))
+        {
+            for page in 0..=count / 20 {
                 let url = reqwest::Url::parse_with_params(
                     FAV_API,
                     [
                         ("media_id", list_id.to_string()),
-                        ("pn", page.to_string()),
+                        ("pn", (page + 1).to_string()),
                         ("ps", "20".to_string()),
                     ],
                 )
                 .unwrap();
                 let resp = client().get(url).send().await?;
                 let mut json: serde_json::Value = resp.json().await?;
-                has_more = json.pointer("/data/has_more").unwrap().as_bool().unwrap();
-                page += 1;
-
                 json.pointer_mut("/data/medias")
                     .unwrap()
                     .take()
@@ -118,8 +109,19 @@ impl Meta {
         Ok(())
     }
 
+    /// remove expired list and videos
     fn tidy(&mut self) {
         info!("tidyng...");
+        self.lists.retain(|l| {
+            if l.expired {
+                info!("remove list: {}", l.title);
+                self.videos.iter_mut().for_each(|v| {
+                    v.list_ids.retain(|id| id != &l.id);
+                });
+            }
+            !l.expired
+        });
+        self.videos.retain(|v| !v.list_ids.is_empty());
     }
 }
 

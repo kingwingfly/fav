@@ -26,27 +26,35 @@ enum Commands {
     Init {
         #[arg(value_enum)]
         kind: Kind,
+        /// The path to store the backup
         path: Option<std::path::PathBuf>,
     },
     /// Login your account
     Login {
+        /// Login method
         #[arg(value_enum)]
         method: LoginMethod,
     },
     /// Fetch from remote
     Fetch {
+        /// Prune data no longer on remote
         #[arg(long, short)]
         prune: bool,
     },
-    /// Show status of local
+    /// Show status of local, default to show video status
     Status {
+        /// Show list status
         #[arg(long, short)]
         list: bool,
+        /// Show video status
         #[arg(long, short)]
         video: bool,
     },
     /// Track a remote source
-    Track { id: i64 },
+    Track {
+        /// The id of the source
+        id: i64,
+    },
 }
 
 #[derive(ValueEnum, Clone)]

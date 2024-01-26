@@ -13,7 +13,8 @@ message ListMeta {
     string title = 2;
     int32 media_count = 3;
     bool is_tracked = 4;
-    optional string clarity = 5;
+    bool expired = 5;
+    optional string clarity = 100;
 }
 
 message VideoMeta {
