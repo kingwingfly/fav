@@ -7,7 +7,7 @@ impl Meta {
             .lists
             .iter_mut()
             .find(|l| l.id == id)
-            .expect(&format!("id {} not found", id));
+            .unwrap_or_else(|| panic!("id {} not found", id));
         target.is_tracked = true;
         info!("Tracking id:{} title:{}", target.id, target.title);
     }

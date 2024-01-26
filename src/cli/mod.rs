@@ -22,28 +22,31 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
+    /// Initialize the folder for backup
     Init {
         #[arg(value_enum)]
         kind: Kind,
         path: Option<std::path::PathBuf>,
     },
+    /// Login your account
     Login {
         #[arg(value_enum)]
         method: LoginMethod,
     },
+    /// Fetch from remote
     Fetch {
         #[arg(long, short)]
         prune: bool,
     },
+    /// Show status of local
     Status {
         #[arg(long, short)]
         list: bool,
         #[arg(long, short)]
         video: bool,
     },
-    Track {
-        id: i64,
-    },
+    /// Track a remote source
+    Track { id: i64 },
 }
 
 #[derive(ValueEnum, Clone)]
