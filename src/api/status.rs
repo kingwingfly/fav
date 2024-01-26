@@ -1,11 +1,12 @@
 use crate::{cli::utils::show_table, meta::meta, proto::data::Meta};
 
-pub(crate) fn status_list() {
+pub(crate) fn status_list(tracked: bool) {
     let lists = &meta().lists;
     show_table(
         ["ID", "Title", "Tracked"],
         lists
             .iter()
+            .filter(|l| !tracked || l.is_tracked)
             .map(|l| [l.id.to_string(), l.title.clone(), l.is_tracked.to_string()]),
     );
 }
@@ -42,6 +43,6 @@ mod tests {
 
     #[test]
     fn status_test() {
-        status_list();
+        status_list(false);
     }
 }

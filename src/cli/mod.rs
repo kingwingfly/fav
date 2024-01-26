@@ -44,11 +44,14 @@ enum Commands {
     /// Show status of local, default to show video status
     Status {
         /// Show list status
-        #[arg(long, short)]
+        #[arg(long, short, group = "l")]
         list: bool,
         /// Show video status
-        #[arg(long, short)]
+        #[arg(long, short, group = "v")]
         video: bool,
+        /// Show tracked only
+        #[arg(long, short, requires = "l")]
+        tracked: bool,
     },
     /// Track a remote source
     Track {
@@ -87,9 +90,12 @@ impl Cli {
                 }
             },
             Commands::Fetch { prune } => fetch(prune).await.unwrap(),
-            Commands::Status { list, video } => match (list, video) {
-                (true, false) => status_list(),
-                (false, true) => status_video(),
+            Commands::Status {
+                list,
+                video,
+                tracked,
+            } => match (list, video) {
+                (true, false) => status_list(tracked),
                 _ => status_video(),
             },
             Commands::Track { id } => track(id),
