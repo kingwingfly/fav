@@ -1,3 +1,9 @@
+//! List and Video are both resources that can be tracked. The difference is that
+//! List is a collection of Videos, and Video is a single video.
+//! So, the track method of ListMeta will also track all the videos in the list,
+//! and the track method of VideoMeta will only track the video itself.
+//! The same is untrack.
+
 use crate::{
     meta::meta,
     proto::data::{ListMeta, Meta, VideoMeta},

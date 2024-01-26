@@ -145,7 +145,7 @@ $ backup fetch
 $ backup status -l
 # track list (just like `git add`, by the way, commit is not needed)
 $ backup track <list_id/bvid>
-# fetch tracked
+# fetch
 $ backup fetch
 # pull videos (support dry-run)
 $ backup pull
