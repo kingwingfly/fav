@@ -177,7 +177,6 @@ mod tests {
     async fn update_meta_test() {
         let mut video = VideoMeta {
             bvid: "BV15u4y1L7xb".to_string(),
-            list_ids: vec![0],
             ..Default::default()
         };
         assert!(video.fetch().await.is_ok());
