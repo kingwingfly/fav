@@ -9,7 +9,7 @@ pub(crate) fn track(id: i64) -> Result<()> {
         .iter_mut()
         .find(|l| l.id == id)
         .expect(&format!("id {} not found", id));
-    target.is_tracking = true;
+    target.is_tracked = true;
     info!("Tracking id:{} title:{}", target.id, target.title);
     meta.persist();
     Ok(())

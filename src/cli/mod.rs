@@ -1,9 +1,16 @@
 //! The CLI module.
+pub(crate) mod utils;
 
 use clap::{Parser, Subcommand, ValueEnum};
 use tracing::info;
 
-use crate::api::{fetch::fetch, init::init, status::status, track::track};
+use crate::api::{
+    fetch::fetch,
+    init::init,
+    login::qr_login,
+    status::{status_list, status_video},
+    track::track,
+};
 
 /// The main CLI entry point.
 #[derive(Parser)]
@@ -25,7 +32,12 @@ enum Commands {
         method: LoginMethod,
     },
     Fetch {},
-    Status {},
+    Status {
+        #[arg(long, short)]
+        list: bool,
+        #[arg(long, short)]
+        video: bool,
+    },
     Track {
         id: i64,
     },
@@ -57,11 +69,15 @@ impl Cli {
                 }
                 LoginMethod::QrCode => {
                     info!("login with QR code");
-                    crate::api::login::qr_login().await.unwrap();
+                    qr_login().await.unwrap();
                 }
             },
             Commands::Fetch {} => fetch().await.unwrap(),
-            Commands::Status {} => status().unwrap(),
+            Commands::Status { list, video } => match (list, video) {
+                (true, false) => status_list(),
+                (false, true) => status_video(),
+                _ => status_video(),
+            },
             Commands::Track { id } => track(id).unwrap(),
         }
     }

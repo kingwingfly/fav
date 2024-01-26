@@ -12,7 +12,7 @@ message ListMeta {
     int64 id = 1;
     string title = 2;
     int32 media_count = 3;
-    bool is_tracking = 4;
+    bool is_tracked = 4;
     optional string clarity = 5;
 }
 

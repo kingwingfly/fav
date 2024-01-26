@@ -31,7 +31,7 @@ async fn fetch_bili() -> Result<()> {
         fetch_fav_videos(
             meta.lists
                 .iter()
-                .filter(|list| list.is_tracking)
+                .filter(|list| list.is_tracked)
                 .map(|list| list.id),
         )
         .await?,
@@ -49,7 +49,7 @@ async fn fetch_bili_prune() -> Result<()> {
     meta.unsav_but_fav = fetch_fav_videos(
         meta.lists
             .iter()
-            .filter(|list| list.is_tracking)
+            .filter(|list| list.is_tracked)
             .map(|list| list.id),
     )
     .await?;
@@ -59,7 +59,7 @@ async fn fetch_bili_prune() -> Result<()> {
     Ok(())
 }
 
-/// This will keep `is_tracking`
+/// This will keep `is_tracked`
 async fn fetch_lists() -> Result<Vec<ListMeta>> {
     let url = reqwest::Url::parse_with_params(LISTS_API, [("up_mid", &config().cookie.DedeUserID)])
         .unwrap();
@@ -75,11 +75,11 @@ async fn fetch_lists() -> Result<Vec<ListMeta>> {
         .map(|v| {
             let mut ret: ListMeta =
                 parse_from_str_with_options(&v.to_string(), &PARSE_OPTIONS).unwrap();
-            ret.is_tracking = meta()
+            ret.is_tracked = meta()
                 .lists
                 .iter()
                 .find(|list| list.id == ret.id)
-                .map(|list| list.is_tracking)
+                .map(|list| list.is_tracked)
                 .unwrap_or(false);
             ret
         })

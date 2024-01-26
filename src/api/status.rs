@@ -1,35 +1,38 @@
-use super::error::Result;
-use crate::meta::meta;
-use tabled::{
-    builder::Builder,
-    settings::{object::Rows, Alignment, Style},
-};
+use std::ops::Deref;
 
-pub(crate) fn status() -> Result<()> {
+use crate::{cli::utils::show_table, meta::meta, proto::data::Meta};
+
+pub(crate) fn status_list() {
     let lists = &meta().lists;
+    show_table(
+        ["ID", "Title", "Tracked"],
+        lists
+            .iter()
+            .map(|l| [l.id.to_string(), l.title.clone(), l.is_tracked.to_string()]),
+    );
+}
 
-    let mut builder = Builder::default();
-
-    let header = ["ID", "Title", "IsTracking"];
-    builder.push_record(header);
-
-    for list in lists {
-        let row = [
-            list.id.to_string(),
-            list.title.clone(),
-            list.is_tracking.to_string(),
-        ];
-        builder.push_record(row);
-    }
-
-    let table = builder
-        .build()
-        .with(Style::rounded())
-        .modify(Rows::new(1..), Alignment::left())
-        .to_string();
-    println!("{}", table);
-
-    Ok(())
+pub fn status_video() {
+    let Meta {
+        sav_and_fav,
+        sav_but_unfav,
+        unsav_but_fav,
+        unsav_anymore,
+        ..
+    } = &meta();
+    show_table(
+        ["BVID", "Title", "Saved", "Favorited", "Upper", "Clarity"],
+        sav_and_fav.iter().map(|v| {
+            [
+                v.bvid.deref(),
+                v.title.deref(),
+                "Yes",
+                "Yes",
+                v.upper.name.deref(),
+                v.clarity.as_deref().unwrap_or("default"),
+            ]
+        }),
+    );
 }
 
 #[cfg(test)]
@@ -38,6 +41,6 @@ mod tests {
 
     #[test]
     fn status_test() {
-        status().unwrap();
+        status_list();
     }
 }

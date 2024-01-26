@@ -110,7 +110,6 @@ Back up your favorite online resources just like you would with git.
 <!-- USAGE EXAMPLES -->
 ## Usage
 
-### init
 ```sh
 $ backup -h
 Back up your favorite online resources just like you would with git.
@@ -121,7 +120,26 @@ Commands:
   init
   login
   fetch
+  track
   help   Print this message or the help of the given subcommand(s)
+```
+
+### Example
+```sh
+# init for bilibili
+$ backup init bili
+# scan code to login
+$ backup login qr-code
+# fetch favorite list
+$ backup fetch
+# show status
+$ backup status
+# track list
+$ backup track <list_id>
+# fetch tracked
+$ backup fetch
+# pull videos (support dry-run)
+$ backup pull
 ```
 
 
