@@ -1,16 +1,20 @@
-use super::error::Result;
-use crate::meta::meta;
+use crate::{meta::meta, proto::data::Meta};
 use tracing::info;
 
-pub(crate) fn track(id: i64) -> Result<()> {
+impl Meta {
+    fn track(&mut self, id: i64) {
+        let target = self
+            .lists
+            .iter_mut()
+            .find(|l| l.id == id)
+            .expect(&format!("id {} not found", id));
+        target.is_tracked = true;
+        info!("Tracking id:{} title:{}", target.id, target.title);
+    }
+}
+
+pub(crate) fn track(id: i64) {
     let mut meta = meta().clone();
-    let target = meta
-        .lists
-        .iter_mut()
-        .find(|l| l.id == id)
-        .expect(&format!("id {} not found", id));
-    target.is_tracked = true;
-    info!("Tracking id:{} title:{}", target.id, target.title);
+    meta.track(id);
     meta.persist();
-    Ok(())
 }

@@ -31,7 +31,10 @@ enum Commands {
         #[arg(value_enum)]
         method: LoginMethod,
     },
-    Fetch {},
+    Fetch {
+        #[arg(long, short)]
+        prune: bool,
+    },
     Status {
         #[arg(long, short)]
         list: bool,
@@ -72,13 +75,13 @@ impl Cli {
                     qr_login().await.unwrap();
                 }
             },
-            Commands::Fetch {} => fetch().await.unwrap(),
+            Commands::Fetch { prune } => fetch(prune).await.unwrap(),
             Commands::Status { list, video } => match (list, video) {
                 (true, false) => status_list(),
                 (false, true) => status_video(),
                 _ => status_video(),
             },
-            Commands::Track { id } => track(id).unwrap(),
+            Commands::Track { id } => track(id),
         }
     }
 }

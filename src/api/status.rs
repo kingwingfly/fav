@@ -1,5 +1,3 @@
-use std::ops::Deref;
-
 use crate::{cli::utils::show_table, meta::meta, proto::data::Meta};
 
 pub(crate) fn status_list() {
@@ -13,23 +11,26 @@ pub(crate) fn status_list() {
 }
 
 pub fn status_video() {
-    let Meta {
-        sav_and_fav,
-        sav_but_unfav,
-        unsav_but_fav,
-        unsav_anymore,
-        ..
-    } = &meta();
+    let Meta { videos, .. } = &meta();
     show_table(
-        ["BVID", "Title", "Saved", "Favorited", "Upper", "Clarity"],
-        sav_and_fav.iter().map(|v| {
+        [
+            "BVID",
+            "Title",
+            "Saved",
+            "Favorited",
+            "Upper",
+            "Clarity",
+            "ToSave",
+        ],
+        videos.iter().map(|v| {
             [
-                v.bvid.deref(),
-                v.title.deref(),
-                "Yes",
-                "Yes",
-                v.upper.name.deref(),
-                v.clarity.as_deref().unwrap_or("default"),
+                v.bvid.clone(),
+                v.title.chars().take(20).collect(),
+                v.saved.to_string(),
+                v.fav.to_string(),
+                v.upper.name.clone(),
+                v.clarity.as_deref().unwrap_or("default").to_owned(),
+                v.to_save.to_string(),
             ]
         }),
     );

@@ -407,8 +407,18 @@ pub struct VideoMeta {
     pub upper: ::protobuf::MessageField<UserMeta>,
     // @@protoc_insertion_point(field:data.VideoMeta.type)
     pub type_: i32,
-    // @@protoc_insertion_point(field:data.VideoMeta.list_id)
-    pub list_id: ::std::option::Option<i64>,
+    // @@protoc_insertion_point(field:data.VideoMeta.saved)
+    pub saved: bool,
+    // @@protoc_insertion_point(field:data.VideoMeta.fav)
+    pub fav: bool,
+    // @@protoc_insertion_point(field:data.VideoMeta.expired)
+    pub expired: bool,
+    // @@protoc_insertion_point(field:data.VideoMeta.attr)
+    pub attr: i32,
+    // @@protoc_insertion_point(field:data.VideoMeta.to_save)
+    pub to_save: bool,
+    // @@protoc_insertion_point(field:data.VideoMeta.list_ids)
+    pub list_ids: ::std::vec::Vec<i64>,
     // @@protoc_insertion_point(field:data.VideoMeta.clarity)
     pub clarity: ::std::option::Option<::std::string::String>,
     // special fields
@@ -428,7 +438,7 @@ impl VideoMeta {
     }
 
     fn generated_message_descriptor_data() -> ::protobuf::reflect::GeneratedMessageDescriptorData {
-        let mut fields = ::std::vec::Vec::with_capacity(6);
+        let mut fields = ::std::vec::Vec::with_capacity(11);
         let mut oneofs = ::std::vec::Vec::with_capacity(0);
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
             "bvid",
@@ -450,10 +460,35 @@ impl VideoMeta {
             |m: &VideoMeta| { &m.type_ },
             |m: &mut VideoMeta| { &mut m.type_ },
         ));
-        fields.push(::protobuf::reflect::rt::v2::make_option_accessor::<_, _>(
-            "list_id",
-            |m: &VideoMeta| { &m.list_id },
-            |m: &mut VideoMeta| { &mut m.list_id },
+        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
+            "saved",
+            |m: &VideoMeta| { &m.saved },
+            |m: &mut VideoMeta| { &mut m.saved },
+        ));
+        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
+            "fav",
+            |m: &VideoMeta| { &m.fav },
+            |m: &mut VideoMeta| { &mut m.fav },
+        ));
+        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
+            "expired",
+            |m: &VideoMeta| { &m.expired },
+            |m: &mut VideoMeta| { &mut m.expired },
+        ));
+        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
+            "attr",
+            |m: &VideoMeta| { &m.attr },
+            |m: &mut VideoMeta| { &mut m.attr },
+        ));
+        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
+            "to_save",
+            |m: &VideoMeta| { &m.to_save },
+            |m: &mut VideoMeta| { &mut m.to_save },
+        ));
+        fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
+            "list_ids",
+            |m: &VideoMeta| { &m.list_ids },
+            |m: &mut VideoMeta| { &mut m.list_ids },
         ));
         fields.push(::protobuf::reflect::rt::v2::make_option_accessor::<_, _>(
             "clarity",
@@ -491,9 +526,27 @@ impl ::protobuf::Message for VideoMeta {
                     self.type_ = is.read_int32()?;
                 },
                 40 => {
-                    self.list_id = ::std::option::Option::Some(is.read_int64()?);
+                    self.saved = is.read_bool()?;
                 },
-                50 => {
+                48 => {
+                    self.fav = is.read_bool()?;
+                },
+                56 => {
+                    self.expired = is.read_bool()?;
+                },
+                64 => {
+                    self.attr = is.read_int32()?;
+                },
+                72 => {
+                    self.to_save = is.read_bool()?;
+                },
+                794 => {
+                    is.read_repeated_packed_int64_into(&mut self.list_ids)?;
+                },
+                792 => {
+                    self.list_ids.push(is.read_int64()?);
+                },
+                802 => {
                     self.clarity = ::std::option::Option::Some(is.read_string()?);
                 },
                 tag => {
@@ -521,11 +574,26 @@ impl ::protobuf::Message for VideoMeta {
         if self.type_ != 0 {
             my_size += ::protobuf::rt::int32_size(4, self.type_);
         }
-        if let Some(v) = self.list_id {
-            my_size += ::protobuf::rt::int64_size(5, v);
+        if self.saved != false {
+            my_size += 1 + 1;
         }
+        if self.fav != false {
+            my_size += 1 + 1;
+        }
+        if self.expired != false {
+            my_size += 1 + 1;
+        }
+        if self.attr != 0 {
+            my_size += ::protobuf::rt::int32_size(8, self.attr);
+        }
+        if self.to_save != false {
+            my_size += 1 + 1;
+        }
+        for value in &self.list_ids {
+            my_size += ::protobuf::rt::int64_size(99, *value);
+        };
         if let Some(v) = self.clarity.as_ref() {
-            my_size += ::protobuf::rt::string_size(6, &v);
+            my_size += ::protobuf::rt::string_size(100, &v);
         }
         my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
         self.special_fields.cached_size().set(my_size as u32);
@@ -545,11 +613,26 @@ impl ::protobuf::Message for VideoMeta {
         if self.type_ != 0 {
             os.write_int32(4, self.type_)?;
         }
-        if let Some(v) = self.list_id {
-            os.write_int64(5, v)?;
+        if self.saved != false {
+            os.write_bool(5, self.saved)?;
         }
+        if self.fav != false {
+            os.write_bool(6, self.fav)?;
+        }
+        if self.expired != false {
+            os.write_bool(7, self.expired)?;
+        }
+        if self.attr != 0 {
+            os.write_int32(8, self.attr)?;
+        }
+        if self.to_save != false {
+            os.write_bool(9, self.to_save)?;
+        }
+        for v in &self.list_ids {
+            os.write_int64(99, *v)?;
+        };
         if let Some(v) = self.clarity.as_ref() {
-            os.write_string(6, v)?;
+            os.write_string(100, v)?;
         }
         os.write_unknown_fields(self.special_fields.unknown_fields())?;
         ::std::result::Result::Ok(())
@@ -572,7 +655,12 @@ impl ::protobuf::Message for VideoMeta {
         self.title.clear();
         self.upper.clear();
         self.type_ = 0;
-        self.list_id = ::std::option::Option::None;
+        self.saved = false;
+        self.fav = false;
+        self.expired = false;
+        self.attr = 0;
+        self.to_save = false;
+        self.list_ids.clear();
         self.clarity = ::std::option::Option::None;
         self.special_fields.clear();
     }
@@ -583,7 +671,12 @@ impl ::protobuf::Message for VideoMeta {
             title: ::std::string::String::new(),
             upper: ::protobuf::MessageField::none(),
             type_: 0,
-            list_id: ::std::option::Option::None,
+            saved: false,
+            fav: false,
+            expired: false,
+            attr: 0,
+            to_save: false,
+            list_ids: ::std::vec::Vec::new(),
             clarity: ::std::option::Option::None,
             special_fields: ::protobuf::SpecialFields::new(),
         };
@@ -752,14 +845,8 @@ impl ::protobuf::reflect::ProtobufValue for UserMeta {
 #[derive(PartialEq,Clone,Default,Debug)]
 pub struct Meta {
     // message fields
-    // @@protoc_insertion_point(field:data.Meta.sav_and_fav)
-    pub sav_and_fav: ::std::vec::Vec<VideoMeta>,
-    // @@protoc_insertion_point(field:data.Meta.sav_but_unfav)
-    pub sav_but_unfav: ::std::vec::Vec<VideoMeta>,
-    // @@protoc_insertion_point(field:data.Meta.unsav_but_fav)
-    pub unsav_but_fav: ::std::vec::Vec<VideoMeta>,
-    // @@protoc_insertion_point(field:data.Meta.unsav_anymore)
-    pub unsav_anymore: ::std::vec::Vec<VideoMeta>,
+    // @@protoc_insertion_point(field:data.Meta.videos)
+    pub videos: ::std::vec::Vec<VideoMeta>,
     // @@protoc_insertion_point(field:data.Meta.lists)
     pub lists: ::std::vec::Vec<ListMeta>,
     // special fields
@@ -779,27 +866,12 @@ impl Meta {
     }
 
     fn generated_message_descriptor_data() -> ::protobuf::reflect::GeneratedMessageDescriptorData {
-        let mut fields = ::std::vec::Vec::with_capacity(5);
+        let mut fields = ::std::vec::Vec::with_capacity(2);
         let mut oneofs = ::std::vec::Vec::with_capacity(0);
         fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
-            "sav_and_fav",
-            |m: &Meta| { &m.sav_and_fav },
-            |m: &mut Meta| { &mut m.sav_and_fav },
-        ));
-        fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
-            "sav_but_unfav",
-            |m: &Meta| { &m.sav_but_unfav },
-            |m: &mut Meta| { &mut m.sav_but_unfav },
-        ));
-        fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
-            "unsav_but_fav",
-            |m: &Meta| { &m.unsav_but_fav },
-            |m: &mut Meta| { &mut m.unsav_but_fav },
-        ));
-        fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
-            "unsav_anymore",
-            |m: &Meta| { &m.unsav_anymore },
-            |m: &mut Meta| { &mut m.unsav_anymore },
+            "videos",
+            |m: &Meta| { &m.videos },
+            |m: &mut Meta| { &mut m.videos },
         ));
         fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
             "lists",
@@ -825,18 +897,9 @@ impl ::protobuf::Message for Meta {
         while let Some(tag) = is.read_raw_tag_or_eof()? {
             match tag {
                 10 => {
-                    self.sav_and_fav.push(is.read_message()?);
+                    self.videos.push(is.read_message()?);
                 },
                 18 => {
-                    self.sav_but_unfav.push(is.read_message()?);
-                },
-                26 => {
-                    self.unsav_but_fav.push(is.read_message()?);
-                },
-                34 => {
-                    self.unsav_anymore.push(is.read_message()?);
-                },
-                42 => {
                     self.lists.push(is.read_message()?);
                 },
                 tag => {
@@ -851,19 +914,7 @@ impl ::protobuf::Message for Meta {
     #[allow(unused_variables)]
     fn compute_size(&self) -> u64 {
         let mut my_size = 0;
-        for value in &self.sav_and_fav {
-            let len = value.compute_size();
-            my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
-        };
-        for value in &self.sav_but_unfav {
-            let len = value.compute_size();
-            my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
-        };
-        for value in &self.unsav_but_fav {
-            let len = value.compute_size();
-            my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
-        };
-        for value in &self.unsav_anymore {
+        for value in &self.videos {
             let len = value.compute_size();
             my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
         };
@@ -877,20 +928,11 @@ impl ::protobuf::Message for Meta {
     }
 
     fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
-        for v in &self.sav_and_fav {
+        for v in &self.videos {
             ::protobuf::rt::write_message_field_with_cached_size(1, v, os)?;
         };
-        for v in &self.sav_but_unfav {
-            ::protobuf::rt::write_message_field_with_cached_size(2, v, os)?;
-        };
-        for v in &self.unsav_but_fav {
-            ::protobuf::rt::write_message_field_with_cached_size(3, v, os)?;
-        };
-        for v in &self.unsav_anymore {
-            ::protobuf::rt::write_message_field_with_cached_size(4, v, os)?;
-        };
         for v in &self.lists {
-            ::protobuf::rt::write_message_field_with_cached_size(5, v, os)?;
+            ::protobuf::rt::write_message_field_with_cached_size(2, v, os)?;
         };
         os.write_unknown_fields(self.special_fields.unknown_fields())?;
         ::std::result::Result::Ok(())
@@ -909,20 +951,14 @@ impl ::protobuf::Message for Meta {
     }
 
     fn clear(&mut self) {
-        self.sav_and_fav.clear();
-        self.sav_but_unfav.clear();
-        self.unsav_but_fav.clear();
-        self.unsav_anymore.clear();
+        self.videos.clear();
         self.lists.clear();
         self.special_fields.clear();
     }
 
     fn default_instance() -> &'static Meta {
         static instance: Meta = Meta {
-            sav_and_fav: ::std::vec::Vec::new(),
-            sav_but_unfav: ::std::vec::Vec::new(),
-            unsav_but_fav: ::std::vec::Vec::new(),
-            unsav_anymore: ::std::vec::Vec::new(),
+            videos: ::std::vec::Vec::new(),
             lists: ::std::vec::Vec::new(),
             special_fields: ::protobuf::SpecialFields::new(),
         };
@@ -956,20 +992,19 @@ static file_descriptor_proto_data: &'static [u8] = b"\
     \x05title\x18\x02\x20\x01(\tR\x05title\x12\x1f\n\x0bmedia_count\x18\x03\
     \x20\x01(\x05R\nmediaCount\x12\x1d\n\nis_tracked\x18\x04\x20\x01(\x08R\t\
     isTracked\x12\x1d\n\x07clarity\x18\x05\x20\x01(\tH\0R\x07clarity\x88\x01\
-    \x01B\n\n\x08_clarity\"\xc4\x01\n\tVideoMeta\x12\x12\n\x04bvid\x18\x01\
+    \x01B\n\n\x08_clarity\"\xa4\x02\n\tVideoMeta\x12\x12\n\x04bvid\x18\x01\
     \x20\x01(\tR\x04bvid\x12\x14\n\x05title\x18\x02\x20\x01(\tR\x05title\x12\
     $\n\x05upper\x18\x03\x20\x01(\x0b2\x0e.data.UserMetaR\x05upper\x12\x12\n\
-    \x04type\x18\x04\x20\x01(\x05R\x04type\x12\x1c\n\x07list_id\x18\x05\x20\
-    \x01(\x03H\0R\x06listId\x88\x01\x01\x12\x1d\n\x07clarity\x18\x06\x20\x01\
-    (\tH\x01R\x07clarity\x88\x01\x01B\n\n\x08_list_idB\n\n\x08_clarity\"0\n\
+    \x04type\x18\x04\x20\x01(\x05R\x04type\x12\x14\n\x05saved\x18\x05\x20\
+    \x01(\x08R\x05saved\x12\x10\n\x03fav\x18\x06\x20\x01(\x08R\x03fav\x12\
+    \x18\n\x07expired\x18\x07\x20\x01(\x08R\x07expired\x12\x12\n\x04attr\x18\
+    \x08\x20\x01(\x05R\x04attr\x12\x17\n\x07to_save\x18\t\x20\x01(\x08R\x06t\
+    oSave\x12\x19\n\x08list_ids\x18c\x20\x03(\x03R\x07listIds\x12\x1d\n\x07c\
+    larity\x18d\x20\x01(\tH\0R\x07clarity\x88\x01\x01B\n\n\x08_clarity\"0\n\
     \x08UserMeta\x12\x10\n\x03mid\x18\x01\x20\x01(\x03R\x03mid\x12\x12\n\x04\
-    name\x18\x02\x20\x01(\tR\x04name\"\xfd\x01\n\x04Meta\x12/\n\x0bsav_and_f\
-    av\x18\x01\x20\x03(\x0b2\x0f.data.VideoMetaR\tsavAndFav\x123\n\rsav_but_\
-    unfav\x18\x02\x20\x03(\x0b2\x0f.data.VideoMetaR\x0bsavButUnfav\x123\n\ru\
-    nsav_but_fav\x18\x03\x20\x03(\x0b2\x0f.data.VideoMetaR\x0bunsavButFav\
-    \x124\n\runsav_anymore\x18\x04\x20\x03(\x0b2\x0f.data.VideoMetaR\x0cunsa\
-    vAnymore\x12$\n\x05lists\x18\x05\x20\x03(\x0b2\x0e.data.ListMetaR\x05lis\
-    tsb\x06proto3\
+    name\x18\x02\x20\x01(\tR\x04name\"U\n\x04Meta\x12'\n\x06videos\x18\x01\
+    \x20\x03(\x0b2\x0f.data.VideoMetaR\x06videos\x12$\n\x05lists\x18\x02\x20\
+    \x03(\x0b2\x0e.data.ListMetaR\x05listsb\x06proto3\
 ";
 
 /// `FileDescriptorProto` object which was a source for this generated file

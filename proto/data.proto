@@ -19,10 +19,17 @@ message ListMeta {
 message VideoMeta {
     string bvid = 1;
     string title = 2;
+    // todo upper may mutil
     UserMeta upper = 3;
     int32 type = 4;
-    optional int64 list_id = 5;
-    optional string clarity = 6;
+    bool saved = 5;
+    bool fav = 6;
+    bool expired = 7;
+    // 0 for normal; 1 or 9 for expired
+    int32 attr = 8;
+    bool to_save = 9;
+    repeated int64 list_ids = 99;
+    optional string clarity = 100;
 }
 
 message UserMeta {
@@ -31,9 +38,6 @@ message UserMeta {
 }
 
 message Meta {
-    repeated VideoMeta sav_and_fav = 1;
-    repeated VideoMeta sav_but_unfav = 2;
-    repeated VideoMeta unsav_but_fav = 3;
-    repeated VideoMeta unsav_anymore = 4;
-    repeated ListMeta lists = 5;
+    repeated VideoMeta videos = 1;
+    repeated ListMeta lists = 2;
 }
