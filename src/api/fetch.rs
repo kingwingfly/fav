@@ -101,7 +101,7 @@ impl Meta {
                     .unwrap()
                     .iter()
                     .for_each(|v| {
-                        let video: VideoMeta =
+                        let mut video: VideoMeta =
                             parse_from_str_with_options(&v.to_string(), &PARSE_OPTIONS).unwrap();
                         if let Some(v) = self.videos.iter_mut().find(|v| v.bvid == video.bvid) {
                             v.expired = video.attr != 0;
@@ -109,6 +109,7 @@ impl Meta {
                                 v.list_ids.push(list_id);
                             }
                         } else {
+                            video.list_ids.push(list_id);
                             self.videos.push(video);
                         }
                     });
