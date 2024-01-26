@@ -55,7 +55,6 @@ impl Meta {
             info!("Mark video with id:{id} as untracked");
             self.videos.push(VideoMeta {
                 bvid: id,
-                list_ids: vec![0], // avoid being removed by tidy()
                 ..Default::default()
             });
         }

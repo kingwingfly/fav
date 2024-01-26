@@ -1,7 +1,7 @@
 use super::client;
 use super::error::Result;
 use crate::meta::meta;
-use crate::proto::data::{ListMeta, Meta, VideoMeta};
+use crate::proto::data::{ListMeta, Meta, UserMeta, VideoMeta};
 use crate::{cli::Kind, config::config};
 use protobuf_json_mapping::{parse_from_str_with_options, ParseOptions};
 use tracing::info;
@@ -37,7 +37,6 @@ impl Meta {
         self.fetch_lists().await?;
         self.fetch_videos().await?;
         self.fetch_metas().await?;
-        self.tidy();
         Ok(())
     }
 
@@ -45,7 +44,10 @@ impl Meta {
         // assume all lists are expired, and will be set to false if fetched
         self.lists.iter_mut().for_each(|l| l.expired = true);
         // assume all video are not favorite, and will be set to true if fetched
-        self.videos.iter_mut().for_each(|v| v.fav = false);
+        self.videos.iter_mut().for_each(|v| {
+            v.fav = false;
+            v.list_ids.clear();
+        });
     }
 
     /// This will keep `track`
@@ -123,24 +125,16 @@ impl Meta {
 
     async fn fetch_metas(&mut self) -> Result<()> {
         for video in self.videos.iter_mut().filter(|v| v.title.is_empty()) {
-            video.update().await?;
+            video.fetch().await?;
         }
         Ok(())
     }
 
-    /// remove expired lists, then remove videos only in them
+    /// remove lists that are expired and untracked, then remove videos only in them and untracked
     fn tidy(&mut self) {
         info!("tidyng...");
-        self.lists.retain(|l| {
-            if l.expired {
-                info!("remove list: {}", l.title);
-                self.videos.iter_mut().for_each(|v| {
-                    v.list_ids.retain(|id| id != &l.id);
-                });
-            }
-            !l.expired
-        });
-        self.videos.retain(|v| !v.list_ids.is_empty());
+        self.lists.retain(|l| !l.expired);
+        self.videos.retain(|v| !v.list_ids.is_empty() && v.track);
     }
 
     fn after_fetch(&self) {
@@ -151,12 +145,16 @@ impl Meta {
 }
 
 impl VideoMeta {
-    async fn update(&mut self) -> Result<()> {
+    async fn fetch(&mut self) -> Result<()> {
         let url = reqwest::Url::parse_with_params(VIDEO_API, [("bvid", self.bvid.clone())]);
         let resp = client().get(url.unwrap()).send().await?;
         let mut json: serde_json::Value = resp.json().await?;
-        let v = json.pointer_mut("/data").unwrap().take();
-        *self = parse_from_str_with_options(&v.to_string(), &PARSE_OPTIONS).unwrap();
+        let mut v = json.pointer_mut("/data").unwrap().take();
+        let u = v.pointer_mut("/owner").unwrap().take();
+        let upper: UserMeta = parse_from_str_with_options(&u.to_string(), &PARSE_OPTIONS).unwrap();
+        let new: VideoMeta = parse_from_str_with_options(&v.to_string(), &PARSE_OPTIONS).unwrap();
+        self.upper = protobuf::MessageField::some(upper);
+        self.title = new.title;
         Ok(())
     }
 }
@@ -182,7 +180,7 @@ mod tests {
             list_ids: vec![0],
             ..Default::default()
         };
-        assert!(video.update().await.is_ok());
+        assert!(video.fetch().await.is_ok());
         assert_eq!(video.title, "【文档生成PPT+ChatGPT命名实体识别+k8s】 Rust nextjs gRPC postgres k8s全栈项目 课程设计演示");
     }
 }
