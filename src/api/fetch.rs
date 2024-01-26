@@ -38,7 +38,6 @@ impl Meta {
         self.fetch_videos().await?;
         self.fetch_metas().await?;
         self.tidy();
-        info!("not saved favirite: {}", self.videos.len());
         Ok(())
     }
 
@@ -49,7 +48,7 @@ impl Meta {
         self.videos.iter_mut().for_each(|v| v.fav = false);
     }
 
-    /// This will keep `is_tracked`
+    /// This will keep `track`
     async fn fetch_lists(&mut self) -> Result<()> {
         let url =
             reqwest::Url::parse_with_params(LISTS_API, [("up_mid", &config().cookie.DedeUserID)])
@@ -80,7 +79,7 @@ impl Meta {
         for (list_id, count) in self
             .lists
             .iter()
-            .filter(|list| list.is_tracked)
+            .filter(|list| list.track)
             .map(|list| (list.id, list.media_count))
         {
             for page in 0..=count / 20 {
@@ -113,6 +112,7 @@ impl Meta {
                         } else {
                             video.list_ids.push(list_id);
                             video.fav = true;
+                            video.track = true;
                             self.videos.push(video);
                         }
                     });
@@ -144,6 +144,7 @@ impl Meta {
     }
 
     fn after_fetch(&self) {
+        self.status_video();
         self.status_expired();
         self.status_not_fav();
     }

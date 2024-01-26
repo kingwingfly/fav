@@ -2,16 +2,18 @@ use crate::{cli::utils::show_table, proto::data::Meta};
 
 impl Meta {
     pub(crate) fn status_list(&self, tracked: bool) {
+        println!("Lists:");
         show_table(
-            ["ID", "Title", "Tracked"],
+            ["ID", "Title", "Track"],
             self.lists
                 .iter()
-                .filter(|l| !tracked || l.is_tracked)
-                .map(|l| [l.id.to_string(), l.title.clone(), l.is_tracked.to_string()]),
+                .filter(|l| !tracked || l.track)
+                .map(|l| [l.id.to_string(), l.title.clone(), l.track.to_string()]),
         );
     }
 
     pub(crate) fn status_video(&self) {
+        println!("Videos:");
         show_table(
             [
                 "BVID",
@@ -20,7 +22,7 @@ impl Meta {
                 "Favorited",
                 "Upper",
                 "Clarity",
-                "ToSave",
+                "Track",
             ],
             self.videos.iter().map(|v| {
                 [
@@ -30,7 +32,7 @@ impl Meta {
                     v.fav.to_string(),
                     v.upper.name.clone(),
                     v.clarity.as_deref().unwrap_or("default").to_owned(),
-                    v.to_save.to_string(),
+                    v.track.to_string(),
                 ]
             }),
         );

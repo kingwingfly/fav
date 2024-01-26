@@ -168,7 +168,7 @@ _For more examples, please refer to the [Documentation](https://example.com)_
 - [x] Fetch
 - [x] Status
 - [x] Track
-- [ ] Untrack
+- [x] Untrack
 - [ ] Pull
 - [ ] Push
 - [ ] Ignore

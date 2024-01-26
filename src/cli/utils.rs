@@ -17,11 +17,16 @@ where
     rows.into_iter()
         .inspect(|_| count += 1)
         .for_each(|r| builder.push_record(r));
-    let table = builder
-        .build()
-        .with(Style::modern())
-        .modify(Rows::new(1..), Alignment::left())
-        .to_string();
-    println!("{}", table);
-    println!("Total: {}", count);
+    match count {
+        0 => {}
+        _ => {
+            let table = builder
+                .build()
+                .with(Style::modern())
+                .modify(Rows::new(1..), Alignment::left())
+                .to_string();
+            println!("{}", table);
+        }
+    }
+    println!("Count: {}\n", count);
 }

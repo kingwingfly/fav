@@ -13,7 +13,7 @@ message ListMeta {
     string title = 2;
     int32 media_count = 3;
 
-    bool is_tracked = 4;
+    bool track = 4;
     bool expired = 5;
     optional string clarity = 100;
 }
@@ -30,7 +30,7 @@ message VideoMeta {
     bool expired = 7;
     // 0 for normal; 1 or 9 for expired
     int32 attr = 8;
-    bool to_save = 9;
+    bool track = 9;
     repeated int64 list_ids = 99;
     optional string clarity = 100;
 }

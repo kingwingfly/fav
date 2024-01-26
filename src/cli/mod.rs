@@ -5,7 +5,7 @@ use clap::{Parser, Subcommand, ValueEnum};
 use tracing::info;
 
 use crate::{
-    api::{fetch::fetch, init::init, login::qr_login, track::track},
+    api::{fetch::fetch, init::init, login::qr_login, track::track, untrack::untrack},
     meta::meta,
 };
 
@@ -52,12 +52,12 @@ enum Commands {
     },
     /// Track a remote source
     Track {
-        /// The id of the source
+        /// The id of the source to track
         id: String,
     },
     /// Untrack a remote source
     Untrack {
-        /// The id of the source
+        /// The id of the source to untrack
         id: String,
     },
     /// Pull remote data
@@ -107,7 +107,7 @@ impl Cli {
                 _ => meta().status_video(),
             },
             Commands::Track { id } => track(id),
-            Commands::Untrack { .. } => unimplemented!(),
+            Commands::Untrack { id } => untrack(id),
             Commands::Pull => todo!(),
             Commands::Push => todo!(),
             Commands::Ignore => todo!(),
