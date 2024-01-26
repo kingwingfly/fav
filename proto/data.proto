@@ -12,6 +12,7 @@ message ListMeta {
     int64 id = 1;
     string title = 2;
     int32 media_count = 3;
+
     bool is_tracked = 4;
     bool expired = 5;
     optional string clarity = 100;
@@ -23,6 +24,7 @@ message VideoMeta {
     // todo upper may mutil
     UserMeta upper = 3;
     int32 type = 4;
+
     bool saved = 5;
     bool fav = 6;
     bool expired = 7;
