@@ -4,12 +4,9 @@ pub(crate) mod utils;
 use clap::{Parser, Subcommand, ValueEnum};
 use tracing::info;
 
-use crate::api::{
-    fetch::fetch,
-    init::init,
-    login::qr_login,
-    status::{status_list, status_video},
-    track::track,
+use crate::{
+    api::{fetch::fetch, init::init, login::qr_login, track::track},
+    meta::meta,
 };
 
 /// The main CLI entry point.
@@ -56,12 +53,12 @@ enum Commands {
     /// Track a remote source
     Track {
         /// The id of the source
-        id: i64,
+        id: String,
     },
     /// Untrack a remote source
     Untrack {
         /// The id of the source
-        id: i64,
+        id: String,
     },
     /// Pull remote data
     Pull,
@@ -106,11 +103,11 @@ impl Cli {
                 video,
                 tracked,
             } => match (list, video) {
-                (true, false) => status_list(tracked),
-                _ => status_video(),
+                (true, false) => meta().status_list(tracked),
+                _ => meta().status_video(),
             },
             Commands::Track { id } => track(id),
-            Commands::Untrack { id } => unimplemented!(),
+            Commands::Untrack { .. } => unimplemented!(),
             Commands::Pull => todo!(),
             Commands::Push => todo!(),
             Commands::Ignore => todo!(),

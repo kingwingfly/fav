@@ -1,48 +1,76 @@
-use crate::{cli::utils::show_table, meta::meta, proto::data::Meta};
+use crate::{cli::utils::show_table, proto::data::Meta};
 
-pub(crate) fn status_list(tracked: bool) {
-    let lists = &meta().lists;
-    show_table(
-        ["ID", "Title", "Tracked"],
-        lists
-            .iter()
-            .filter(|l| !tracked || l.is_tracked)
-            .map(|l| [l.id.to_string(), l.title.clone(), l.is_tracked.to_string()]),
-    );
-}
+impl Meta {
+    pub(crate) fn status_list(&self, tracked: bool) {
+        show_table(
+            ["ID", "Title", "Tracked"],
+            self.lists
+                .iter()
+                .filter(|l| !tracked || l.is_tracked)
+                .map(|l| [l.id.to_string(), l.title.clone(), l.is_tracked.to_string()]),
+        );
+    }
 
-pub fn status_video() {
-    let Meta { videos, .. } = &meta();
-    show_table(
-        [
-            "BVID",
-            "Title",
-            "Saved",
-            "Favorited",
-            "Upper",
-            "Clarity",
-            "ToSave",
-        ],
-        videos.iter().map(|v| {
+    pub(crate) fn status_video(&self) {
+        show_table(
             [
-                v.bvid.clone(),
-                v.title.chars().take(20).collect(),
-                v.saved.to_string(),
-                v.fav.to_string(),
-                v.upper.name.clone(),
-                v.clarity.as_deref().unwrap_or("default").to_owned(),
-                v.to_save.to_string(),
-            ]
-        }),
-    );
+                "BVID",
+                "Title",
+                "Saved",
+                "Favorited",
+                "Upper",
+                "Clarity",
+                "ToSave",
+            ],
+            self.videos.iter().map(|v| {
+                [
+                    v.bvid.clone(),
+                    v.title.chars().take(20).collect(),
+                    v.saved.to_string(),
+                    v.fav.to_string(),
+                    v.upper.name.clone(),
+                    v.clarity.as_deref().unwrap_or("default").to_owned(),
+                    v.to_save.to_string(),
+                ]
+            }),
+        );
+    }
+
+    pub(crate) fn status_expired(&self) {
+        println!("Expired videos:");
+        show_table(
+            ["BVID", "Title", "Upper"],
+            self.videos.iter().filter(|v| v.expired).map(|v| {
+                [
+                    v.bvid.to_string(),
+                    v.title.chars().take(20).collect(),
+                    v.upper.name.clone(),
+                ]
+            }),
+        );
+    }
+
+    pub(crate) fn status_not_fav(&self) {
+        println!("Not Favorite:");
+        show_table(
+            ["BVID", "Title", "Upper"],
+            self.videos.iter().filter(|v| !v.fav).map(|v| {
+                [
+                    v.bvid.to_string(),
+                    v.title.chars().take(20).collect(),
+                    v.upper.name.clone(),
+                ]
+            }),
+        );
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::meta::meta;
 
     #[test]
     fn status_test() {
-        status_list(false);
+        meta().status_list(false);
     }
 }
