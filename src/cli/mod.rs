@@ -58,6 +58,17 @@ enum Commands {
         /// The id of the source
         id: i64,
     },
+    /// Untrack a remote source
+    Untrack {
+        /// The id of the source
+        id: i64,
+    },
+    /// Pull remote data
+    Pull,
+    /// Push local data
+    Push,
+    /// Ignore
+    Ignore,
 }
 
 #[derive(ValueEnum, Clone)]
@@ -99,6 +110,10 @@ impl Cli {
                 _ => status_video(),
             },
             Commands::Track { id } => track(id),
+            Commands::Untrack { id } => unimplemented!(),
+            Commands::Pull => todo!(),
+            Commands::Push => todo!(),
+            Commands::Ignore => todo!(),
         }
     }
 }

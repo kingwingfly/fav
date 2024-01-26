@@ -139,12 +139,18 @@ $ backup login qr-code
 $ backup fetch
 # show status
 $ backup status -l
-# track list
-$ backup track <list_id>
+# track list (just like `git add`, by the way, commit is not needed)
+$ backup track <list_id/bvid>
 # fetch tracked
 $ backup fetch
 # pull videos (support dry-run)
 $ backup pull
+# push videos (support dry-run)
+$ backup push
+# ignore list or video
+$ backup ignore <list_id/bvid>
+# untrack list or video (just like `git rm`)
+$ backup untrack <list_id/bvid>
 ```
 
 
@@ -157,7 +163,16 @@ _For more examples, please refer to the [Documentation](https://example.com)_
 <!-- ROADMAP -->
 ## Roadmap
 
-- [ ] Feature
+- [x] Init
+- [x] Login
+- [x] Fetch
+- [x] Status
+- [x] Track
+- [ ] Untrack
+- [ ] Pull
+- [ ] Push
+- [ ] Ignore
+- [ ] Sync
 
 See the [open issues](https://github.com/kingwingfly/backup/issues) for a full list of proposed features (and known issues).
 
