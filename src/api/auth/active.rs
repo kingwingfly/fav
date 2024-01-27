@@ -29,7 +29,7 @@ struct Payload {
 }
 
 impl Payload {
-    fn new() -> Self {
+    fn new(uuid: &str) -> Self {
         let mut rng = rand::thread_rng();
         let mut inner: serde_json::Value =
             serde_json::from_str(include_str!("payload.json")).unwrap();
@@ -37,6 +37,7 @@ impl Payload {
         *inner.pointer_mut("/5062").unwrap() = ts.into();
         *inner.pointer_mut("/6e7c").unwrap() =
             format!("{}x{}", rng.gen_range(800..1200), rng.gen_range(1200..3000)).into();
+        *inner.pointer_mut("/df35").unwrap() = uuid.into();
         Payload {
             inner: inner.to_string(),
         }
@@ -54,7 +55,7 @@ pub(super) async fn active_buvid(cookie: &mut Cookie) -> Result<()> {
 
     cookie._uuid = uuid();
 
-    let payload = Payload::new();
+    let payload = Payload::new(&cookie._uuid);
     cookie.buvid_fp = buvid_fp(&payload.inner);
 
     let resp = client()
@@ -278,7 +279,7 @@ mod tests {
 
     #[test]
     fn buvid_fp_test() {
-        let payload = Payload::new();
+        let payload = Payload::new(&uuid());
         println!("{}", buvid_fp(&payload.inner));
     }
 }

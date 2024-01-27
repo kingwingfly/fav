@@ -1,6 +1,5 @@
-use tracing::{info, warn};
-
 use crate::{api::error::Result, config::config};
+use tracing::{info, warn};
 
 const LOG_OUT_API: &str = "https://passport.bilibili.com/login/exit/v2";
 
