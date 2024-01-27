@@ -46,8 +46,7 @@ impl Payload {
 pub(super) async fn active_buvid(cookie: &mut Cookie) -> Result<()> {
     let resp = client().get(BUVID_API).send().await?;
     let mut json: serde_json::Value = resp.json().await?;
-    let buvids =
-        serde_json::from_value::<Buvids>(json.pointer_mut("/data").unwrap().take()).unwrap();
+    let buvids: Buvids = serde_json::from_value(json.pointer_mut("/data").unwrap().take()).unwrap();
     Buvids {
         buvid3: cookie.buvid3,
         buvid4: cookie.buvid4,
