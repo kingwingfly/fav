@@ -99,6 +99,7 @@ fn uuid() -> String {
     format!("{}{}{}", result, format!("{:0>5}", t), "infoc")
 }
 
+/// https://github.com/SocialSisterYi/bilibili-API-collect/issues/933#issue-2073916390
 fn buvid_fp(payload: &str) -> String {
     let tmp: u128 = murmur3_x64_128(&mut Cursor::new(payload), 31);
     format!("{:016x}{:016x}", tmp & (u64::MAX as u128), tmp >> 64)
