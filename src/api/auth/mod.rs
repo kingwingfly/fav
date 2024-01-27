@@ -1,4 +1,4 @@
-mod active;
+mod activate;
 mod login;
 mod logout;
 
