@@ -118,14 +118,14 @@ Usage: backup <COMMAND>
 
 Commands:
   init     Initialize the folder for backup
-  login    Login your account
+  auth     Login your account
   fetch    Fetch from remote
   status   Show status of local, default to show video status
   track    Track a remote source
   untrack  Untrack a remote source
   pull     Pull remote data
   push     Push local data
-  ignore   Ignore
+  like     Like a video
   help     Print this message or the help of the given subcommand(s)
 
 Options:
@@ -155,6 +155,8 @@ $ backup push
 $ backup ignore <list_id/bvid>
 # untrack list or video (just like `git rm`)
 $ backup untrack <list_id/bvid>
+# like
+$ backup like --all
 ```
 
 
