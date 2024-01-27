@@ -104,13 +104,6 @@ fn buvid_fp(payload: &str) -> String {
     format!("{:016x}{:016x}", tmp & (u64::MAX as u128), tmp >> 64)
 }
 
-fn timestamp() -> u128 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
-        .as_millis()
-}
-
 pub fn murmur3_x64_128<T: Read>(source: &mut T, seed: u32) -> u128 {
     const C1: u64 = 0x87c3_7b91_1142_53d5;
     const C2: u64 = 0x4cf5_ad43_2745_937f;
@@ -209,6 +202,13 @@ pub fn murmur3_x64_128<T: Read>(source: &mut T, seed: u32) -> u128 {
             h1 ^= k1;
         }
     }
+}
+
+fn timestamp() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
 }
 
 #[inline]
