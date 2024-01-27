@@ -75,10 +75,9 @@ pub(super) async fn active_buvid(cookie: &mut Cookie) -> Result<()> {
         0 => info!("Actived Buvid."),
         _ => warn!(
             "Failed to active Buvid. Error Message: {}",
-            json.pointer("/message").unwrap().as_str().unwrap()
+            json.pointer("/message").unwrap()
         ),
     }
-    println!("{:#?}", json);
     Ok(())
 }
 
@@ -237,10 +236,6 @@ where
     a
 }
 
-/// Try to fill buf with data from source, dealing with short reads such as
-/// caused by Chain.
-///
-/// Errors: See `std::io::Read`.
 #[inline]
 fn read_bytes<R>(source: &mut R, buf: &mut [u8]) -> std::io::Result<usize>
 where
