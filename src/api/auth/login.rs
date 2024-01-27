@@ -5,7 +5,7 @@ use crate::{
 use qrcode::{render::unicode, QrCode};
 use tracing::{info, warn};
 
-use super::active::active_buvid;
+use super::active::activate_buvid;
 
 const QR_API: &str = "https://passport.bilibili.com/x/passport-login/web/qrcode/generate";
 const QR_RET_API: &str = "https://passport.bilibili.com/x/passport-login/web/qrcode/poll";
@@ -41,7 +41,7 @@ async fn try_persist_cookie(resp: &reqwest::Response) {
                 name => warn!("unknown cookie: {}", name),
             }
         }
-        active_buvid(&mut cookie).await.unwrap();
+        activate_buvid(&mut cookie).await.unwrap();
         cookie.persist();
     }
 }

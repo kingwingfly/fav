@@ -44,7 +44,8 @@ impl Payload {
     }
 }
 
-pub(super) async fn active_buvid(cookie: &mut Cookie) -> Result<()> {
+/// Activate the buvid, add `buvid3` `buvid4` `_uuid` `buvid_fp` to cookie.
+pub(super) async fn activate_buvid(cookie: &mut Cookie) -> Result<()> {
     let resp = client().get(BUVID_API).send().await?;
     let mut json: serde_json::Value = resp.json().await?;
     let buvids: Buvids = serde_json::from_value(json.pointer_mut("/data").unwrap().take()).unwrap();
@@ -269,7 +270,7 @@ mod tests {
     #[tokio::test]
     async fn active_buvid_test() {
         let mut cookie = Cookie::default();
-        assert!(active_buvid(&mut cookie).await.is_ok());
+        assert!(activate_buvid(&mut cookie).await.is_ok());
     }
 
     #[test]
