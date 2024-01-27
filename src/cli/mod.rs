@@ -73,7 +73,7 @@ enum Commands {
     /// Like a video
     Like {
         /// The id of the video to like
-        id: Option<String>,
+        bvid: Option<String>,
         /// Like all videos tracked
         #[arg(long, short)]
         all: bool,
@@ -118,8 +118,8 @@ impl Cli {
             Commands::Untrack { id } => untrack(id),
             Commands::Pull => todo!(),
             Commands::Push => todo!(),
-            Commands::Like { id, all } => match (id, all) {
-                (Some(id), false) => like(id).await,
+            Commands::Like { bvid, all } => match (bvid, all) {
+                (Some(bvid), false) => like(bvid).await,
                 (None, true) => like_all().await,
                 (None, false) => Cli::command()
                     .error(ErrorKind::MissingRequiredArgument, "id is required.")

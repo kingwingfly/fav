@@ -2,7 +2,7 @@ use crate::{cli::Kind, proto::data::Cookie};
 use protobuf::Message;
 use std::sync::OnceLock;
 
-const ERR_HINT: &str = "run `backup init` first";
+const ERR_HINT: &str = "run `backup init` and `backup auth login` first";
 const KIND_PATH: &str = ".backup/kind";
 const COOKIE_PATH: &str = ".backup/cookie";
 

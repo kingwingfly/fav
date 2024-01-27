@@ -17,6 +17,31 @@ pub(crate) async fn qr_login() -> Result<()> {
     Ok(())
 }
 
+pub(crate) async fn logout() -> Result<()> {
+    use reqwest::header::COOKIE;
+
+    let cookie = &config().cookie;
+    let url =
+        reqwest::Url::parse_with_params(LOG_OUT_API, [("biliCSRF", &cookie.bili_jct)]).unwrap();
+    let resp = reqwest::Client::new()
+        .post(url)
+        .header(
+            COOKIE,
+            format!(
+                "DedeUserID={}; bili_jct={}; SESSDATA={}",
+                cookie.DedeUserID, cookie.bili_jct, cookie.SESSDATA
+            ),
+        )
+        .send()
+        .await?;
+    let json: serde_json::Value = resp.json().await?;
+    match json.pointer("/code").unwrap().as_i64().unwrap() {
+        0 => info!("logged out"),
+        _ => warn!("failed to log out"),
+    }
+    Ok(())
+}
+
 #[cfg(feature = "bili")]
 #[derive(serde::Deserialize)]
 struct QrInfo {
@@ -87,32 +112,12 @@ async fn get_buvid() -> Result<String> {
         .send()
         .await?;
     let json: serde_json::Value = resp.json().await?;
-    Ok(json.pointer("/data/b_3").unwrap().to_string())
-}
-
-pub(crate) async fn logout() -> Result<()> {
-    use reqwest::header::COOKIE;
-
-    let cookie = &config().cookie;
-    let url =
-        reqwest::Url::parse_with_params(LOG_OUT_API, [("biliCSRF", &cookie.bili_jct)]).unwrap();
-    let resp = reqwest::Client::new()
-        .post(url)
-        .header(
-            COOKIE,
-            format!(
-                "DedeUserID={}; bili_jct={}; SESSDATA={}",
-                cookie.DedeUserID, cookie.bili_jct, cookie.SESSDATA
-            ),
-        )
-        .send()
-        .await?;
-    let json: serde_json::Value = resp.json().await?;
-    match json.pointer("/code").unwrap().as_i64().unwrap() {
-        0 => info!("logged out"),
-        _ => warn!("failed to log out"),
-    }
-    Ok(())
+    Ok(json
+        .pointer("/data/b_3")
+        .unwrap()
+        .as_str()
+        .unwrap()
+        .to_string())
 }
 
 #[cfg(test)]
@@ -122,5 +127,10 @@ mod tests {
     #[tokio::test]
     async fn logout_test() {
         assert!(logout().await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn get_buvid_test() {
+        assert!(get_buvid().await.is_ok());
     }
 }
