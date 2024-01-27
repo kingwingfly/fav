@@ -39,6 +39,14 @@ pub struct Cookie {
     pub bili_jct: ::std::string::String,
     // @@protoc_insertion_point(field:data.Cookie.buvid3)
     pub buvid3: ::std::string::String,
+    // @@protoc_insertion_point(field:data.Cookie.buvid4)
+    pub buvid4: ::std::string::String,
+    // @@protoc_insertion_point(field:data.Cookie._uuid)
+    pub _uuid: ::std::string::String,
+    // @@protoc_insertion_point(field:data.Cookie.buvid_fp)
+    pub buvid_fp: ::std::string::String,
+    // @@protoc_insertion_point(field:data.Cookie.sid)
+    pub sid: ::std::string::String,
     // special fields
     // @@protoc_insertion_point(special_field:data.Cookie.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
@@ -56,7 +64,7 @@ impl Cookie {
     }
 
     fn generated_message_descriptor_data() -> ::protobuf::reflect::GeneratedMessageDescriptorData {
-        let mut fields = ::std::vec::Vec::with_capacity(5);
+        let mut fields = ::std::vec::Vec::with_capacity(9);
         let mut oneofs = ::std::vec::Vec::with_capacity(0);
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
             "DedeUserID",
@@ -82,6 +90,26 @@ impl Cookie {
             "buvid3",
             |m: &Cookie| { &m.buvid3 },
             |m: &mut Cookie| { &mut m.buvid3 },
+        ));
+        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
+            "buvid4",
+            |m: &Cookie| { &m.buvid4 },
+            |m: &mut Cookie| { &mut m.buvid4 },
+        ));
+        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
+            "_uuid",
+            |m: &Cookie| { &m._uuid },
+            |m: &mut Cookie| { &mut m._uuid },
+        ));
+        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
+            "buvid_fp",
+            |m: &Cookie| { &m.buvid_fp },
+            |m: &mut Cookie| { &mut m.buvid_fp },
+        ));
+        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
+            "sid",
+            |m: &Cookie| { &m.sid },
+            |m: &mut Cookie| { &mut m.sid },
         ));
         ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<Cookie>(
             "Cookie",
@@ -116,6 +144,18 @@ impl ::protobuf::Message for Cookie {
                 42 => {
                     self.buvid3 = is.read_string()?;
                 },
+                50 => {
+                    self.buvid4 = is.read_string()?;
+                },
+                58 => {
+                    self._uuid = is.read_string()?;
+                },
+                66 => {
+                    self.buvid_fp = is.read_string()?;
+                },
+                74 => {
+                    self.sid = is.read_string()?;
+                },
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
                 },
@@ -143,6 +183,18 @@ impl ::protobuf::Message for Cookie {
         if !self.buvid3.is_empty() {
             my_size += ::protobuf::rt::string_size(5, &self.buvid3);
         }
+        if !self.buvid4.is_empty() {
+            my_size += ::protobuf::rt::string_size(6, &self.buvid4);
+        }
+        if !self._uuid.is_empty() {
+            my_size += ::protobuf::rt::string_size(7, &self._uuid);
+        }
+        if !self.buvid_fp.is_empty() {
+            my_size += ::protobuf::rt::string_size(8, &self.buvid_fp);
+        }
+        if !self.sid.is_empty() {
+            my_size += ::protobuf::rt::string_size(9, &self.sid);
+        }
         my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
         self.special_fields.cached_size().set(my_size as u32);
         my_size
@@ -163,6 +215,18 @@ impl ::protobuf::Message for Cookie {
         }
         if !self.buvid3.is_empty() {
             os.write_string(5, &self.buvid3)?;
+        }
+        if !self.buvid4.is_empty() {
+            os.write_string(6, &self.buvid4)?;
+        }
+        if !self._uuid.is_empty() {
+            os.write_string(7, &self._uuid)?;
+        }
+        if !self.buvid_fp.is_empty() {
+            os.write_string(8, &self.buvid_fp)?;
+        }
+        if !self.sid.is_empty() {
+            os.write_string(9, &self.sid)?;
         }
         os.write_unknown_fields(self.special_fields.unknown_fields())?;
         ::std::result::Result::Ok(())
@@ -186,6 +250,10 @@ impl ::protobuf::Message for Cookie {
         self.SESSDATA.clear();
         self.bili_jct.clear();
         self.buvid3.clear();
+        self.buvid4.clear();
+        self._uuid.clear();
+        self.buvid_fp.clear();
+        self.sid.clear();
         self.special_fields.clear();
     }
 
@@ -196,6 +264,10 @@ impl ::protobuf::Message for Cookie {
             SESSDATA: ::std::string::String::new(),
             bili_jct: ::std::string::String::new(),
             buvid3: ::std::string::String::new(),
+            buvid4: ::std::string::String::new(),
+            _uuid: ::std::string::String::new(),
+            buvid_fp: ::std::string::String::new(),
+            sid: ::std::string::String::new(),
             special_fields: ::protobuf::SpecialFields::new(),
         };
         &instance
@@ -1020,29 +1092,31 @@ impl ::protobuf::reflect::ProtobufValue for Meta {
 }
 
 static file_descriptor_proto_data: &'static [u8] = b"\
-    \n\ndata.proto\x12\x04data\"\xa3\x01\n\x06Cookie\x12\x1e\n\nDedeUserID\
+    \n\ndata.proto\x12\x04data\"\xfd\x01\n\x06Cookie\x12\x1e\n\nDedeUserID\
     \x18\x01\x20\x01(\tR\nDedeUserID\x12*\n\x11DedeUserID__ckMd5\x18\x02\x20\
     \x01(\tR\x0fDedeUserIDCkMd5\x12\x1a\n\x08SESSDATA\x18\x03\x20\x01(\tR\
     \x08SESSDATA\x12\x19\n\x08bili_jct\x18\x04\x20\x01(\tR\x07biliJct\x12\
-    \x16\n\x06buvid3\x18\x05\x20\x01(\tR\x06buvid3\"\xac\x01\n\x08ListMeta\
-    \x12\x0e\n\x02id\x18\x01\x20\x01(\x03R\x02id\x12\x14\n\x05title\x18\x02\
-    \x20\x01(\tR\x05title\x12\x1f\n\x0bmedia_count\x18\x03\x20\x01(\x05R\nme\
-    diaCount\x12\x14\n\x05track\x18\x04\x20\x01(\x08R\x05track\x12\x18\n\x07\
-    expired\x18\x05\x20\x01(\x08R\x07expired\x12\x1d\n\x07clarity\x18d\x20\
-    \x01(\tH\0R\x07clarity\x88\x01\x01B\n\n\x08_clarity\"\xa1\x02\n\tVideoMe\
-    ta\x12\x12\n\x04bvid\x18\x01\x20\x01(\tR\x04bvid\x12\x14\n\x05title\x18\
-    \x02\x20\x01(\tR\x05title\x12$\n\x05upper\x18\x03\x20\x01(\x0b2\x0e.data\
-    .UserMetaR\x05upper\x12\x12\n\x04type\x18\x04\x20\x01(\x05R\x04type\x12\
-    \x14\n\x05saved\x18\x05\x20\x01(\x08R\x05saved\x12\x10\n\x03fav\x18\x06\
-    \x20\x01(\x08R\x03fav\x12\x18\n\x07expired\x18\x07\x20\x01(\x08R\x07expi\
-    red\x12\x12\n\x04attr\x18\x08\x20\x01(\x05R\x04attr\x12\x14\n\x05track\
-    \x18\t\x20\x01(\x08R\x05track\x12\x19\n\x08list_ids\x18c\x20\x03(\x03R\
-    \x07listIds\x12\x1d\n\x07clarity\x18d\x20\x01(\tH\0R\x07clarity\x88\x01\
-    \x01B\n\n\x08_clarity\"0\n\x08UserMeta\x12\x10\n\x03mid\x18\x01\x20\x01(\
-    \x03R\x03mid\x12\x12\n\x04name\x18\x02\x20\x01(\tR\x04name\"U\n\x04Meta\
-    \x12'\n\x06videos\x18\x01\x20\x03(\x0b2\x0f.data.VideoMetaR\x06videos\
-    \x12$\n\x05lists\x18\x02\x20\x03(\x0b2\x0e.data.ListMetaR\x05listsb\x06p\
-    roto3\
+    \x16\n\x06buvid3\x18\x05\x20\x01(\tR\x06buvid3\x12\x16\n\x06buvid4\x18\
+    \x06\x20\x01(\tR\x06buvid4\x12\x13\n\x05_uuid\x18\x07\x20\x01(\tR\x04Uui\
+    d\x12\x19\n\x08buvid_fp\x18\x08\x20\x01(\tR\x07buvidFp\x12\x10\n\x03sid\
+    \x18\t\x20\x01(\tR\x03sid\"\xac\x01\n\x08ListMeta\x12\x0e\n\x02id\x18\
+    \x01\x20\x01(\x03R\x02id\x12\x14\n\x05title\x18\x02\x20\x01(\tR\x05title\
+    \x12\x1f\n\x0bmedia_count\x18\x03\x20\x01(\x05R\nmediaCount\x12\x14\n\
+    \x05track\x18\x04\x20\x01(\x08R\x05track\x12\x18\n\x07expired\x18\x05\
+    \x20\x01(\x08R\x07expired\x12\x1d\n\x07clarity\x18d\x20\x01(\tH\0R\x07cl\
+    arity\x88\x01\x01B\n\n\x08_clarity\"\xa1\x02\n\tVideoMeta\x12\x12\n\x04b\
+    vid\x18\x01\x20\x01(\tR\x04bvid\x12\x14\n\x05title\x18\x02\x20\x01(\tR\
+    \x05title\x12$\n\x05upper\x18\x03\x20\x01(\x0b2\x0e.data.UserMetaR\x05up\
+    per\x12\x12\n\x04type\x18\x04\x20\x01(\x05R\x04type\x12\x14\n\x05saved\
+    \x18\x05\x20\x01(\x08R\x05saved\x12\x10\n\x03fav\x18\x06\x20\x01(\x08R\
+    \x03fav\x12\x18\n\x07expired\x18\x07\x20\x01(\x08R\x07expired\x12\x12\n\
+    \x04attr\x18\x08\x20\x01(\x05R\x04attr\x12\x14\n\x05track\x18\t\x20\x01(\
+    \x08R\x05track\x12\x19\n\x08list_ids\x18c\x20\x03(\x03R\x07listIds\x12\
+    \x1d\n\x07clarity\x18d\x20\x01(\tH\0R\x07clarity\x88\x01\x01B\n\n\x08_cl\
+    arity\"0\n\x08UserMeta\x12\x10\n\x03mid\x18\x01\x20\x01(\x03R\x03mid\x12\
+    \x12\n\x04name\x18\x02\x20\x01(\tR\x04name\"U\n\x04Meta\x12'\n\x06videos\
+    \x18\x01\x20\x03(\x0b2\x0f.data.VideoMetaR\x06videos\x12$\n\x05lists\x18\
+    \x02\x20\x03(\x0b2\x0e.data.ListMetaR\x05listsb\x06proto3\
 ";
 
 /// `FileDescriptorProto` object which was a source for this generated file

@@ -27,9 +27,10 @@ pub(crate) async fn like(bvid: String) {
         .unwrap();
     let json: serde_json::Value = resp.json().await.unwrap();
     match json.pointer("/code").unwrap().as_i64().unwrap() {
-        0 | 65006 => info!("liked bvid{}", bvid),
+        0 => info!("Liked bvid:{}", bvid),
+        65006 => info!("Already liked bvid:{}", bvid),
         _ => warn!(
-            "failed to like bvid:{}; Error Message, {}",
+            "Failed to like bvid:{}; Error Message, {}",
             bvid,
             json.pointer("/message").unwrap()
         ),

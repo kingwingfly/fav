@@ -1,44 +1,22 @@
-use super::{client, error::Result};
-use crate::{config::config, proto::data::Cookie};
+use crate::{
+    api::{client, error::Result},
+    proto::data::Cookie,
+};
 use qrcode::{render::unicode, QrCode};
-use tracing::{info, instrument, warn};
+use tracing::{info, warn};
+
+use super::active::active_buvid;
 
 const QR_API: &str = "https://passport.bilibili.com/x/passport-login/web/qrcode/generate";
 const QR_RET_API: &str = "https://passport.bilibili.com/x/passport-login/web/qrcode/poll";
-const LOG_OUT_API: &str = "https://passport.bilibili.com/login/exit/v2";
 const POLL_INTERVAL: u64 = 3;
 
 /// Login with QR code.
-#[instrument(name = "QR Login", ret)]
 pub(crate) async fn qr_login() -> Result<()> {
     let QrInfo { url, qrcode_key } = qr_info().await?;
     show_qr_code(url).await?;
     qr_ret(qrcode_key).await?;
-    Ok(())
-}
-
-pub(crate) async fn logout() -> Result<()> {
-    use reqwest::header::COOKIE;
-
-    let cookie = &config().cookie;
-    let url =
-        reqwest::Url::parse_with_params(LOG_OUT_API, [("biliCSRF", &cookie.bili_jct)]).unwrap();
-    let resp = reqwest::Client::new()
-        .post(url)
-        .header(
-            COOKIE,
-            format!(
-                "DedeUserID={}; bili_jct={}; SESSDATA={}",
-                cookie.DedeUserID, cookie.bili_jct, cookie.SESSDATA
-            ),
-        )
-        .send()
-        .await?;
-    let json: serde_json::Value = resp.json().await?;
-    match json.pointer("/code").unwrap().as_i64().unwrap() {
-        0 => info!("logged out"),
-        _ => warn!("failed to log out"),
-    }
+    info!("log in successfully");
     Ok(())
 }
 
@@ -50,10 +28,7 @@ struct QrInfo {
 }
 
 async fn try_persist_cookie(resp: &reqwest::Response) {
-    let mut buffer = vec![];
-    for c in resp.cookies() {
-        buffer.push(c);
-    }
+    let buffer: Vec<reqwest::cookie::Cookie<'_>> = resp.cookies().collect();
     if !buffer.is_empty() {
         let mut cookie = Cookie::default();
         for c in buffer {
@@ -62,10 +37,11 @@ async fn try_persist_cookie(resp: &reqwest::Response) {
                 "DedeUserID__ckMd5" => cookie.DedeUserID__ckMd5 = c.value().to_string(),
                 "SESSDATA" => cookie.SESSDATA = c.value().to_string(),
                 "bili_jct" => cookie.bili_jct = c.value().to_string(),
+                "sid" => cookie.sid = c.value().to_string(),
                 name => warn!("unknown cookie: {}", name),
             }
         }
-        cookie.buvid3 = get_buvid().await.unwrap();
+        active_buvid(&mut cookie).await.unwrap();
         cookie.persist();
     }
 }
@@ -73,7 +49,6 @@ async fn try_persist_cookie(resp: &reqwest::Response) {
 async fn qr_info() -> Result<QrInfo> {
     let resp = reqwest::get(QR_API).await?;
     let mut json: serde_json::Value = resp.json().await?;
-    tracing::debug!("{:#?}", json);
     Ok(serde_json::from_value(json.pointer_mut("/data").unwrap().take()).unwrap())
 }
 
@@ -95,42 +70,11 @@ async fn qr_ret(qrcode_key: String) -> Result<()> {
         try_persist_cookie(&resp).await;
         let json: serde_json::Value = resp.json().await?;
         match json.pointer("/data/code").unwrap().as_i64().unwrap() {
-            0 => {
-                break;
-            }
+            0 => break,
             86038 => warn!("QR code expired"),
             _ => tracing::debug!("{:#?}", json.pointer("/data/message").unwrap()),
         }
         tokio::time::sleep(std::time::Duration::from_secs(POLL_INTERVAL)).await;
     }
     Ok(())
-}
-
-async fn get_buvid() -> Result<String> {
-    let resp = client()
-        .get(" https://api.bilibili.com/x/frontend/finger/spi")
-        .send()
-        .await?;
-    let json: serde_json::Value = resp.json().await?;
-    Ok(json
-        .pointer("/data/b_3")
-        .unwrap()
-        .as_str()
-        .unwrap()
-        .to_string())
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn logout_test() {
-        assert!(logout().await.is_ok());
-    }
-
-    #[tokio::test]
-    async fn get_buvid_test() {
-        assert!(get_buvid().await.is_ok());
-    }
 }

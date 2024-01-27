@@ -25,11 +25,18 @@ impl Config {
         let kind = match std::fs::read_to_string(KIND_PATH).expect(ERR_HINT).as_str() {
             #[cfg(feature = "bili")]
             "bili" => Kind::Bili,
-            _ => panic!("unknown kind"),
+            _ => panic!("Unknown kind"),
         };
-        let mut file = std::fs::File::open(COOKIE_PATH).expect(ERR_HINT);
-        let cookie = Cookie::parse_from_reader(&mut file).unwrap();
-        Self { kind, cookie }
+        match std::fs::File::open(COOKIE_PATH) {
+            Ok(mut file) => {
+                let cookie = Cookie::parse_from_reader(&mut file).unwrap();
+                Self { kind, cookie }
+            }
+            Err(_) => Self {
+                kind,
+                cookie: Cookie::default(),
+            },
+        }
     }
 }
 

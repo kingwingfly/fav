@@ -12,11 +12,11 @@ pub(crate) async fn init(path: Option<PathBuf>, kind: Kind) -> Result<()> {
         logout().await?;
     }
     if path.exists() {
-        info!("remove old {}", path.display());
+        info!("Remove old {}", path.display());
         std::fs::remove_dir_all(&path).ok();
     }
     std::fs::create_dir_all(&path).unwrap();
-    info!("init {}", path.display());
+    info!("Init {}", path.display());
     match kind {
         #[cfg(feature = "bili")]
         Kind::Bili => std::fs::write(path.join("kind"), "bili").unwrap(),

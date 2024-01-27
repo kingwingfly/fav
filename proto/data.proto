@@ -7,6 +7,10 @@ message Cookie {
     string SESSDATA = 3;
     string bili_jct = 4;
     string buvid3 = 5;
+    string buvid4 = 6;
+    string _uuid = 7;
+    string buvid_fp = 8;
+    string sid = 9;
 }
 
 message ListMeta {

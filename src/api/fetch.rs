@@ -3,7 +3,7 @@ use super::{client, parse_message};
 use crate::meta::meta;
 use crate::proto::data::{ListMeta, Meta, UserMeta, VideoMeta};
 use crate::{cli::Kind, config::config};
-use tracing::info;
+use tracing::{info, warn};
 
 const LISTS_API: &str = "https://api.bilibili.com/x/v3/fav/folder/created/list-all";
 const FAV_API: &str = "https://api.bilibili.com/x/v3/fav/resource/list";
@@ -51,6 +51,10 @@ impl Meta {
                 .unwrap();
         let resp = client().get(url).send().await?;
         let mut json: serde_json::Value = resp.json().await?;
+        if json.pointer("/data").unwrap().is_null() {
+            warn!("No list found; Ensure you have created at least one list or logged in");
+            return Ok(());
+        }
         json.pointer_mut("/data/list")
             .unwrap()
             .take()
