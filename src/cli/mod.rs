@@ -1,11 +1,17 @@
 //! The CLI module.
 pub(crate) mod utils;
 
-use clap::{Parser, Subcommand, ValueEnum};
-use tracing::info;
+use clap::{error::ErrorKind, CommandFactory, Parser, Subcommand, ValueEnum};
 
 use crate::{
-    api::{fetch::fetch, init::init, login::qr_login, track::track, untrack::untrack},
+    api::{
+        auth::{logout, qr_login},
+        fetch::fetch,
+        init::init,
+        like::{like, like_all},
+        track::track,
+        untrack::untrack,
+    },
     meta::meta,
 };
 
@@ -27,10 +33,10 @@ enum Commands {
         path: Option<std::path::PathBuf>,
     },
     /// Login your account
-    Login {
+    Auth {
         /// Login method
-        #[arg(value_enum)]
-        method: LoginMethod,
+        #[clap(subcommand)]
+        subcmd: AuthCommands,
     },
     /// Fetch from remote
     Fetch {
@@ -64,14 +70,22 @@ enum Commands {
     Pull,
     /// Push local data
     Push,
-    /// Ignore
-    Ignore,
+    /// Like a video
+    Like {
+        /// The id of the video to like
+        id: Option<String>,
+        /// Like all videos tracked
+        #[arg(long, short)]
+        all: bool,
+    },
 }
 
-#[derive(ValueEnum, Clone)]
-enum LoginMethod {
-    Password,
-    QrCode,
+#[derive(Subcommand)]
+enum AuthCommands {
+    /// Login with password
+    Login,
+    /// Login with QR code
+    Logout,
 }
 
 #[derive(ValueEnum, Clone, Debug)]
@@ -87,15 +101,9 @@ impl Cli {
         let args = Self::parse();
         match args.subcmd {
             Commands::Init { path, kind } => init(path, kind).await.unwrap(),
-            Commands::Login { method } => match method {
-                LoginMethod::Password => {
-                    info!("login with password");
-                    unimplemented!();
-                }
-                LoginMethod::QrCode => {
-                    info!("login with QR code");
-                    qr_login().await.unwrap();
-                }
+            Commands::Auth { subcmd } => match subcmd {
+                AuthCommands::Login => qr_login().await.unwrap(),
+                AuthCommands::Logout => logout().await.unwrap(),
             },
             Commands::Fetch { prune } => fetch(prune).await.unwrap(),
             Commands::Status {
@@ -110,7 +118,19 @@ impl Cli {
             Commands::Untrack { id } => untrack(id),
             Commands::Pull => todo!(),
             Commands::Push => todo!(),
-            Commands::Ignore => todo!(),
+            Commands::Like { id, all } => match (id, all) {
+                (Some(id), false) => like(id).await,
+                (None, true) => like_all().await,
+                (None, false) => Cli::command()
+                    .error(ErrorKind::MissingRequiredArgument, "id is required.")
+                    .exit(),
+                (Some(_), true) => Cli::command()
+                    .error(
+                        ErrorKind::ArgumentConflict,
+                        "The -a, options to 'git branch' does not take a id.",
+                    )
+                    .exit(),
+            },
         }
     }
 }

@@ -138,7 +138,7 @@ Options:
 # init for bilibili
 $ backup init bili
 # scan code to login
-$ backup login qr-code
+$ backup auth login
 # fetch favorite list
 $ backup fetch
 # show status
@@ -168,7 +168,7 @@ _For more examples, please refer to the [Documentation](https://example.com)_
 ## Roadmap
 
 - [x] Init
-- [x] Login
+- [x] Auth
 - [x] Fetch
 - [x] Status
 - [x] Track
@@ -176,6 +176,7 @@ _For more examples, please refer to the [Documentation](https://example.com)_
 - [ ] Pull
 - [ ] Push
 - [ ] Ignore
+- [ ] Like
 - [ ] Sync
 
 See the [open issues](https://github.com/kingwingfly/backup/issues) for a full list of proposed features (and known issues).

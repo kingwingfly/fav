@@ -1,10 +1,11 @@
 use super::{client, error::Result};
-use crate::proto::data::Cookie;
+use crate::{config::config, proto::data::Cookie};
 use qrcode::{render::unicode, QrCode};
-use tracing::{instrument, warn};
+use tracing::{info, instrument, warn};
 
 const QR_API: &str = "https://passport.bilibili.com/x/passport-login/web/qrcode/generate";
 const QR_RET_API: &str = "https://passport.bilibili.com/x/passport-login/web/qrcode/poll";
+const LOG_OUT_API: &str = "https://passport.bilibili.com/login/exit/v2";
 const POLL_INTERVAL: u64 = 3;
 
 /// Login with QR code.
@@ -23,13 +24,14 @@ struct QrInfo {
     qrcode_key: String,
 }
 
-impl<'a, T> From<T> for Cookie
-where
-    T: Iterator<Item = reqwest::cookie::Cookie<'a>> + 'a,
-{
-    fn from(cookies: T) -> Self {
-        let mut cookie = Self::default();
-        for c in cookies {
+async fn try_persist_cookie(resp: &reqwest::Response) {
+    let mut buffer = vec![];
+    for c in resp.cookies() {
+        buffer.push(c);
+    }
+    if !buffer.is_empty() {
+        let mut cookie = Cookie::default();
+        for c in buffer {
             match c.name() {
                 "DedeUserID" => cookie.DedeUserID = c.value().to_string(),
                 "DedeUserID__ckMd5" => cookie.DedeUserID__ckMd5 = c.value().to_string(),
@@ -38,7 +40,8 @@ where
                 name => warn!("unknown cookie: {}", name),
             }
         }
-        cookie
+        cookie.buvid3 = get_buvid().await.unwrap();
+        cookie.persist();
     }
 }
 
@@ -64,11 +67,10 @@ async fn qr_ret(qrcode_key: String) -> Result<()> {
     let url = reqwest::Url::parse_with_params(QR_RET_API, [("qrcode_key", qrcode_key)]).unwrap();
     loop {
         let resp = client().get(url.clone()).send().await?;
-        let cookie: Cookie = resp.cookies().into();
+        try_persist_cookie(&resp).await;
         let json: serde_json::Value = resp.json().await?;
         match json.pointer("/data/code").unwrap().as_i64().unwrap() {
             0 => {
-                cookie.persist();
                 break;
             }
             86038 => warn!("QR code expired"),
@@ -77,4 +79,48 @@ async fn qr_ret(qrcode_key: String) -> Result<()> {
         tokio::time::sleep(std::time::Duration::from_secs(POLL_INTERVAL)).await;
     }
     Ok(())
+}
+
+async fn get_buvid() -> Result<String> {
+    let resp = client()
+        .get(" https://api.bilibili.com/x/frontend/finger/spi")
+        .send()
+        .await?;
+    let json: serde_json::Value = resp.json().await?;
+    Ok(json.pointer("/data/b_3").unwrap().to_string())
+}
+
+pub(crate) async fn logout() -> Result<()> {
+    use reqwest::header::COOKIE;
+
+    let cookie = &config().cookie;
+    let url =
+        reqwest::Url::parse_with_params(LOG_OUT_API, [("biliCSRF", &cookie.bili_jct)]).unwrap();
+    let resp = reqwest::Client::new()
+        .post(url)
+        .header(
+            COOKIE,
+            format!(
+                "DedeUserID={}; bili_jct={}; SESSDATA={}",
+                cookie.DedeUserID, cookie.bili_jct, cookie.SESSDATA
+            ),
+        )
+        .send()
+        .await?;
+    let json: serde_json::Value = resp.json().await?;
+    match json.pointer("/code").unwrap().as_i64().unwrap() {
+        0 => info!("logged out"),
+        _ => warn!("failed to log out"),
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn logout_test() {
+        assert!(logout().await.is_ok());
+    }
 }

@@ -1,19 +1,13 @@
-use super::client;
 use super::error::Result;
+use super::{client, parse_message};
 use crate::meta::meta;
 use crate::proto::data::{ListMeta, Meta, UserMeta, VideoMeta};
 use crate::{cli::Kind, config::config};
-use protobuf_json_mapping::{parse_from_str_with_options, ParseOptions};
 use tracing::info;
 
 const LISTS_API: &str = "https://api.bilibili.com/x/v3/fav/folder/created/list-all";
 const FAV_API: &str = "https://api.bilibili.com/x/v3/fav/resource/list";
 const VIDEO_API: &str = "https://api.bilibili.com/x/web-interface/view";
-
-static PARSE_OPTIONS: ParseOptions = ParseOptions {
-    ignore_unknown_fields: true,
-    _future_options: (),
-};
 
 pub(crate) async fn fetch(prune: bool) -> Result<()> {
     let mut meta = meta().clone();
@@ -64,8 +58,7 @@ impl Meta {
             .unwrap()
             .iter()
             .for_each(|v| {
-                let list: ListMeta =
-                    parse_from_str_with_options(&v.to_string(), &PARSE_OPTIONS).unwrap();
+                let list: ListMeta = parse_message(v);
                 if let Some(l) = self.lists.iter_mut().find(|l| list.id == l.id) {
                     l.title = list.title;
                     l.media_count = list.media_count;
@@ -103,8 +96,7 @@ impl Meta {
                     .unwrap()
                     .iter()
                     .for_each(|v| {
-                        let mut video: VideoMeta =
-                            parse_from_str_with_options(&v.to_string(), &PARSE_OPTIONS).unwrap();
+                        let mut video: VideoMeta = parse_message(v);
                         if let Some(v) = self.videos.iter_mut().find(|v| v.bvid == video.bvid) {
                             v.expired = video.attr != 0;
                             v.fav = true;
@@ -151,8 +143,8 @@ impl VideoMeta {
         let mut json: serde_json::Value = resp.json().await?;
         let mut v = json.pointer_mut("/data").unwrap().take();
         let u = v.pointer_mut("/owner").unwrap().take();
-        let upper: UserMeta = parse_from_str_with_options(&u.to_string(), &PARSE_OPTIONS).unwrap();
-        let new: VideoMeta = parse_from_str_with_options(&v.to_string(), &PARSE_OPTIONS).unwrap();
+        let upper: UserMeta = parse_message(&u);
+        let new: VideoMeta = parse_message(&v);
         self.upper = protobuf::MessageField::some(upper);
         self.title = new.title;
         Ok(())

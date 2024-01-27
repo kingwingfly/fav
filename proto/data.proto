@@ -6,6 +6,7 @@ message Cookie {
     string DedeUserID__ckMd5 = 2;
     string SESSDATA = 3;
     string bili_jct = 4;
+    string buvid3 = 5;
 }
 
 message ListMeta {
