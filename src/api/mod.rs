@@ -15,6 +15,8 @@ pub(crate) mod status;
 pub(crate) mod track;
 pub(crate) mod untrack;
 
+#[allow(unused)]
+pub(super) const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15";
 static PARSE_OPTIONS: ParseOptions = ParseOptions {
     ignore_unknown_fields: true,
     _future_options: (),
@@ -38,4 +40,11 @@ fn client() -> &'static Client {
 
 fn parse_message<M: MessageFull>(json: &serde_json::Value) -> M {
     parse_from_str_with_options(&json.to_string(), &PARSE_OPTIONS).unwrap()
+}
+
+pub(super) fn timestamp() -> u128 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
 }

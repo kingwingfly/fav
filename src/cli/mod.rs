@@ -47,13 +47,13 @@ enum Commands {
     /// Show status of local, default to show video status
     Status {
         /// Show list status
-        #[arg(long, short, group = "l")]
+        #[arg(long, short)]
         list: bool,
         /// Show video status
-        #[arg(long, short, group = "v")]
+        #[arg(long, short)]
         video: bool,
         /// Show tracked only
-        #[arg(long, short, requires = "l")]
+        #[arg(long, short)]
         tracked: bool,
     },
     /// Track a remote source
@@ -103,7 +103,7 @@ impl Cli {
             Commands::Init { path, kind } => init(path, kind).await.unwrap(),
             Commands::Auth { subcmd } => match subcmd {
                 AuthCommands::Login => qr_login().await.unwrap(),
-                AuthCommands::Logout => logout().await.unwrap(),
+                AuthCommands::Logout => logout().await,
             },
             Commands::Fetch { prune } => fetch(prune).await.unwrap(),
             Commands::Status {
@@ -112,7 +112,7 @@ impl Cli {
                 tracked,
             } => match (list, video) {
                 (true, false) => meta().status_list(tracked),
-                _ => meta().status_video(),
+                _ => meta().status_video(tracked),
             },
             Commands::Track { id } => track(id),
             Commands::Untrack { id } => untrack(id),

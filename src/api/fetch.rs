@@ -110,6 +110,7 @@ impl Meta {
                         } else {
                             video.list_ids.push(list_id);
                             video.fav = true;
+                            video.expired = video.attr != 0;
                             video.track = true;
                             self.videos.push(video);
                         }
@@ -134,7 +135,7 @@ impl Meta {
     }
 
     fn after_fetch(&self) {
-        self.status_video();
+        self.status_video(false);
         self.status_expired();
         self.status_not_fav();
     }

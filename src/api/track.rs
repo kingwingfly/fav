@@ -19,6 +19,7 @@ impl ListMeta {
             ),
             false => {
                 self.track = true;
+                info!("Track list id:{} title:{}", self.id, self.title);
             }
         }
     }

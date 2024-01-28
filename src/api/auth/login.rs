@@ -16,7 +16,7 @@ pub(crate) async fn qr_login() -> Result<()> {
     let QrInfo { url, qrcode_key } = qr_info().await?;
     show_qr_code(url).await?;
     qr_ret(qrcode_key).await?;
-    info!("log in successfully");
+    info!("Login successfully");
     Ok(())
 }
 

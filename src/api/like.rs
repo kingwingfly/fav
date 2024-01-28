@@ -20,7 +20,7 @@ pub(crate) async fn like(bvid: String) {
         .post(url)
         .header(
             COOKIE,
-            format!("SESSDATA={}; buvid3={}", cookie.SESSDATA, cookie.buvid3),
+            format!("SESSDATA={}; buvid3={}", cookie.SESSDATA, cookie.buvid3,),
         )
         .send()
         .await

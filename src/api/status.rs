@@ -12,7 +12,7 @@ impl Meta {
         );
     }
 
-    pub(crate) fn status_video(&self) {
+    pub(crate) fn status_video(&self, tracked: bool) {
         println!("Videos:");
         show_table(
             [
@@ -24,7 +24,7 @@ impl Meta {
                 "Clarity",
                 "Track",
             ],
-            self.videos.iter().map(|v| {
+            self.videos.iter().filter(|v| !tracked || v.track).map(|v| {
                 [
                     v.bvid.clone(),
                     v.title.chars().take(20).collect(),

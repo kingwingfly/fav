@@ -1,10 +1,12 @@
 use snafu::Snafu;
 
 #[derive(Debug, Snafu)]
-#[snafu(visibility(pub(crate)), context(suffix(None)))]
+#[snafu(visibility(pub(super)), context(suffix(false)))]
 pub enum ApiError {
-    #[snafu(display("reqwest error: {}", source), context(false))]
+    #[snafu(display("Reqwest error: {}", source), context(false))]
     NetWorkError { source: reqwest::Error },
+    #[snafu(display("{}", msg))]
+    LogoutFail { source: reqwest::Error, msg: String },
 }
 
 pub type Result<T, E = ApiError> = std::result::Result<T, E>;

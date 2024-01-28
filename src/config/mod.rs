@@ -1,6 +1,7 @@
 use crate::{cli::Kind, proto::data::Cookie};
 use protobuf::Message;
 use std::sync::OnceLock;
+use tracing::info;
 
 const ERR_HINT: &str = "run `backup init` and `backup auth login` first";
 const KIND_PATH: &str = ".backup/kind";
@@ -10,6 +11,7 @@ impl Cookie {
     pub(crate) fn persist(&self) {
         let mut file = std::fs::File::create(COOKIE_PATH).expect(ERR_HINT);
         self.write_to_writer(&mut file).expect(ERR_HINT);
+        info!("Cookie persisted");
     }
 }
 

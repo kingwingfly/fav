@@ -1,16 +1,7 @@
 mod activate;
 mod login;
 mod logout;
+mod utils;
 
 pub(crate) use login::*;
 pub(crate) use logout::*;
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn logout_test() {
-        assert!(logout().await.is_ok());
-    }
-}

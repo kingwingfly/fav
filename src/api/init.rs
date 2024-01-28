@@ -4,12 +4,10 @@ use std::path::PathBuf;
 use tracing::info;
 
 pub(crate) async fn init(path: Option<PathBuf>, kind: Kind) -> Result<()> {
-    let path = path
-        .unwrap_or(std::path::PathBuf::from("."))
-        .join(".backup");
+    let path = path.unwrap_or(std::path::PathBuf::from(".backup"));
     if path.join("cookie").exists() {
         info!("Try logging out");
-        logout().await?;
+        logout().await;
     }
     if path.exists() {
         info!("Remove old {}", path.display());
