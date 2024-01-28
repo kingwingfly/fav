@@ -13,6 +13,7 @@ documentation = ""
 [dependencies]
 # CLI
 clap = { version = "4.4", features = ["derive"]}
+tabled = "0.15.0"
 # Error
 snafu = { version = "0.8" }
 # Serde
@@ -23,6 +24,8 @@ protobuf = { version = "3", features = ["with-bytes"] }
 protobuf-json-mapping = { version = "3" }
 # Tools
 qrcode = { version = "0.13", default-features = false }
+rand = "0.8.5"
+base64 = "0.21.7"
 # Net
 reqwest = { version = "0.11.23", features = ["json", "cookies"] }
 # Runtime
@@ -30,8 +33,7 @@ tokio = { version = "1", features = ["full"] }
 # Log
 tracing = { version = "0.1" }
 tracing-subscriber = { version = "0.3" }
-tabled = "0.15.0"
-rand = "0.8.5"
+
 
 [build-dependencies]
 protobuf-codegen = { version = "3" }

@@ -7,6 +7,8 @@ use reqwest::header::COOKIE;
 use std::io::Cursor;
 use tracing::{info, warn};
 
+use super::utils::webgl_str;
+
 const BUVID_API: &str = "https://api.bilibili.com/x/frontend/finger/spi";
 const ACTIVE_API: &str = "https://api.bilibili.com/x/internal/gaia-gateway/ExClimbWuzhi";
 
@@ -25,14 +27,14 @@ struct Payload {
 }
 
 impl Payload {
-    fn new(uuid: &str) -> Self {
+    fn new() -> Self {
         let mut rng = rand::thread_rng();
         let mut inner: serde_json::Value =
             serde_json::from_str(include_str!("payload.json")).unwrap();
         *inner.pointer_mut("/5062").unwrap() = timestamp().to_string().into();
         *inner.pointer_mut("/6e7c").unwrap() =
             format!("{}x{}", rng.gen_range(800..1200), rng.gen_range(1200..3000)).into();
-        *inner.pointer_mut("/df35").unwrap() = uuid.into();
+        *inner.pointer_mut("/3c43/bfe9").unwrap() = webgl_str().into();
         Payload {
             inner: inner.to_string(),
         }
@@ -51,7 +53,7 @@ pub(super) async fn activate_buvid(cookie: &mut Cookie) -> Result<()> {
 
     cookie._uuid = uuid();
 
-    let payload = Payload::new(&cookie._uuid);
+    let payload = Payload::new();
     cookie.buvid_fp = buvid_fp(&payload.inner);
 
     let resp = client()
@@ -69,10 +71,14 @@ pub(super) async fn activate_buvid(cookie: &mut Cookie) -> Result<()> {
     let json: serde_json::Value = resp.json().await?;
     match json.pointer("/code").unwrap().as_i64().unwrap() {
         0 => info!("Actived Buvid."),
-        _ => warn!(
-            "Failed to active Buvid. Error Message: {}",
-            json.pointer("/message").unwrap()
-        ),
+        _ => {
+            #[cfg(test)]
+            println!("Activate Buvid Failed");
+            warn!(
+                "Failed to active Buvid. Error Message: {}",
+                json.pointer("/message").unwrap()
+            );
+        }
     }
     Ok(())
 }
@@ -120,7 +126,7 @@ mod tests {
 
     #[test]
     fn buvid_fp_test() {
-        let payload = Payload::new(&uuid());
+        let payload = Payload::new();
         println!("{}", buvid_fp(&payload.inner));
     }
 }

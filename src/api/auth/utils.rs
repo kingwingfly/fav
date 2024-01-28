@@ -1,7 +1,20 @@
+use base64::Engine;
+use rand::Rng;
 use std::{
     io::{ErrorKind, Read},
     ops::Shl,
 };
+
+pub(super) fn webgl_str() -> String {
+    let mut rng = rand::thread_rng();
+    let mut rand_png_end = rng.gen::<[u8; 32]>().to_vec();
+    rand_png_end.extend_from_slice(&[0; 4]);
+    rand_png_end.extend_from_slice(b"IEND");
+    rand_png_end.extend_from_slice(&rng.gen::<[u8; 4]>());
+
+    let encoded = base64::prelude::BASE64_STANDARD.encode(&rand_png_end);
+    encoded.split_at(encoded.len() - 50).1.to_owned()
+}
 
 pub(super) fn murmur3_x64_128<T: Read>(source: &mut T, seed: u32) -> u128 {
     const C1: u64 = 0x87c3_7b91_1142_53d5;
