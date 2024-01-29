@@ -47,7 +47,7 @@ async fn try_persist_cookie(resp: &reqwest::Response) {
 }
 
 async fn qr_info() -> Result<QrInfo> {
-    let resp = reqwest::get(QR_API).await?;
+    let resp = client().get(QR_API).send().await?;
     let mut json: serde_json::Value = resp.json().await?;
     Ok(serde_json::from_value(json["data"].take()).unwrap())
 }

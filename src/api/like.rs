@@ -4,7 +4,7 @@ use tracing::{info, warn};
 
 const LIKE_API: &str = "https://api.bilibili.com/x/web-interface/archive/like";
 const QUERY_LIKE_API: &str = "https://api.bilibili.com/x/web-interface/archive/has/like";
-const LIKE_INTERVAL: u64 = 3;
+const LIKE_INTERVAL: u64 = 1;
 
 pub(crate) async fn like(bvid: &str) {
     match is_liked(bvid).await {

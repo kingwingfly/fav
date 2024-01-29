@@ -35,6 +35,7 @@ impl Payload {
         inner["6e7c"] =
             format!("{}x{}", rng.gen_range(800..1200), rng.gen_range(1200..3000)).into();
         inner["3c43"]["bfe9"] = webgl_str().into();
+        inner["d02f"] = format!("124.0434{:010}", rng.gen::<usize>() % 1e10 as usize).into();
         Payload {
             inner: inner.to_string(),
         }
@@ -69,6 +70,8 @@ pub(super) async fn activate_buvid(cookie: &mut Cookie) -> Result<()> {
         .send()
         .await?;
     let json: serde_json::Value = resp.json().await?;
+    #[cfg(test)]
+    println!("Activate buvid json = {:#?}", json);
     match json["code"].as_i64().unwrap() {
         0 => info!("Actived Buvid."),
         _ => {

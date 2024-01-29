@@ -11,7 +11,6 @@ pub(super) fn webgl_str() -> String {
     rand_png_end.extend_from_slice(&[0; 4]);
     rand_png_end.extend_from_slice(b"IEND");
     rand_png_end.extend_from_slice(&rng.gen::<[u8; 4]>());
-
     let encoded = base64::prelude::BASE64_STANDARD.encode(&rand_png_end);
     encoded.split_at(encoded.len() - 50).1.to_owned()
 }
