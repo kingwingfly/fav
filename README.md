@@ -110,7 +110,7 @@ Back up your favorite online resources just like you would with git.
 <!-- USAGE EXAMPLES -->
 ## Usage
 
-```sh
+```
 $ backup -h
 Back up your favorite online resources just like you would with git.
 
@@ -175,7 +175,7 @@ _For more examples, please refer to the [Documentation](https://example.com)_
 - [x] Status
 - [x] Track
 - [x] Untrack
-- [ ] Pull
+- [x] Pull
 - [ ] Push
 - [ ] Ignore
 - [x] Like

@@ -26,8 +26,17 @@ impl From<VideoMeta> for PullOption {
     }
 }
 
-pub(crate) async fn pull() {
-    let videos: Vec<_> = meta().videos.iter().filter(|v| v.track).collect();
+pub(crate) async fn pull(id: Option<String>) {
+    let videos: Vec<_> = match id {
+        Some(id) => meta()
+            .videos
+            .iter()
+            .filter(|v| {
+                (v.track && v.list_ids.contains(&id.parse().unwrap_or_default())) || v.bvid == id
+            })
+            .collect(),
+        None => meta().videos.iter().filter(|v| v.track).collect(),
+    };
     let mut meta = meta().clone();
     for batch in videos.chunks(10) {
         let jhs: Vec<_> = batch

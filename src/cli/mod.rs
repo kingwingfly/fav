@@ -68,7 +68,11 @@ enum Commands {
         id: String,
     },
     /// Pull remote data
-    Pull,
+    Pull {
+        /// The id of the source to pull
+        #[arg(long, short)]
+        id: Option<String>,
+    },
     /// Push local data
     Push,
     /// Like a video
@@ -117,7 +121,7 @@ impl Cli {
             },
             Commands::Track { id } => track(id),
             Commands::Untrack { id } => untrack(id),
-            Commands::Pull => pull().await,
+            Commands::Pull { id } => pull(id).await,
             Commands::Push => todo!(),
             Commands::Like { bvid, all } => match (bvid, all) {
                 (Some(bvid), false) => like(&bvid).await,
