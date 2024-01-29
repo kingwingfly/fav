@@ -1,14 +1,21 @@
-use crate::{cli::utils::show_table, proto::data::Meta};
+use crate::{
+    cli::utils::show_table,
+    proto::data::{Clarity, Meta},
+};
 
 impl Meta {
     pub(crate) fn status_list(&self, tracked: bool) {
         println!("Lists:");
         show_table(
-            ["ID", "Title", "Track"],
-            self.lists
-                .iter()
-                .filter(|l| !tracked || l.track)
-                .map(|l| [l.id.to_string(), l.title.clone(), l.track.to_string()]),
+            ["ID", "Title", "Count", "Track"],
+            self.lists.iter().filter(|l| !tracked || l.track).map(|l| {
+                [
+                    l.id.to_string(),
+                    l.title.clone(),
+                    l.media_count.to_string(),
+                    l.track.to_string(),
+                ]
+            }),
         );
     }
 
@@ -25,7 +32,7 @@ impl Meta {
                     v.saved.to_string(),
                     v.fav.to_string(),
                     v.upper.name.clone(),
-                    v.clarity.as_deref().unwrap_or("default").to_owned(),
+                    v.clarity.unwrap().to_string(),
                     v.track.to_string(),
                     v.expired.to_string(),
                 ]
@@ -59,6 +66,23 @@ impl Meta {
                 ]
             }),
         );
+    }
+}
+
+impl ToString for Clarity {
+    fn to_string(&self) -> String {
+        match self {
+            Clarity::FourK => "4k",
+            Clarity::FullHDHighFrame => "1080P60",
+            Clarity::FullHDHighCode => "1080P+",
+            Clarity::FullHD => "1080P",
+            Clarity::HDHighFrame => "720P60",
+            Clarity::HD => "720P",
+            Clarity::SD => "480P",
+            Clarity::LD => "360P",
+            Clarity::VLD => "240P",
+        }
+        .to_string()
     }
 }
 

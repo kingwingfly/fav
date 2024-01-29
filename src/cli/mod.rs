@@ -9,6 +9,7 @@ use crate::{
         fetch::fetch,
         init::init,
         like::{like, like_all},
+        pull::pull,
         track::track,
         untrack::untrack,
     },
@@ -116,7 +117,7 @@ impl Cli {
             },
             Commands::Track { id } => track(id),
             Commands::Untrack { id } => untrack(id),
-            Commands::Pull => todo!(),
+            Commands::Pull => pull().await,
             Commands::Push => todo!(),
             Commands::Like { bvid, all } => match (bvid, all) {
                 (Some(bvid), false) => like(&bvid).await,

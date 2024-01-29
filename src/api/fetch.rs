@@ -11,16 +11,10 @@ const VIDEO_API: &str = "https://api.bilibili.com/x/web-interface/view";
 
 pub(crate) async fn fetch(prune: bool) -> Result<()> {
     let mut meta = meta().clone();
-    meta.before_fetch();
     match config().kind {
         #[cfg(feature = "bili")]
-        Kind::Bili => meta.fetch_bili().await?,
+        Kind::Bili => meta.fetch_bili(prune).await?,
     };
-    if prune {
-        meta.tidy();
-    }
-    meta.after_fetch();
-    meta.persist();
     Ok(())
 }
 
@@ -36,16 +30,23 @@ impl Meta {
         });
     }
 
-    async fn fetch_bili(&mut self) -> Result<()> {
-        info!("fetching...");
+    async fn fetch_bili(&mut self, prune: bool) -> Result<()> {
+        info!("Fetching...");
+        self.before_fetch();
         self.fetch_lists().await?;
         self.fetch_videos().await?;
         self.fetch_metas().await?;
+        if prune {
+            self.tidy();
+        }
+        self.after_fetch();
+        self.persist();
         Ok(())
     }
 
     /// This will keep `track`
     async fn fetch_lists(&mut self) -> Result<()> {
+        info!("Fetching fave lists");
         let url =
             reqwest::Url::parse_with_params(LISTS_API, [("up_mid", &config().cookie.DedeUserID)])
                 .unwrap();
@@ -73,6 +74,7 @@ impl Meta {
     }
 
     async fn fetch_videos(&mut self) -> Result<()> {
+        info!("Fetching fave videos tracked");
         for (list_id, count) in self
             .lists
             .iter()
@@ -117,15 +119,29 @@ impl Meta {
     }
 
     async fn fetch_metas(&mut self) -> Result<()> {
-        for video in self.videos.iter_mut().filter(|v| v.title.is_empty()) {
-            video.fetch().await?;
+        info!("Fetching video metadatas");
+
+        let videos = std::mem::replace(&mut self.videos, vec![]);
+        let jhs: Vec<_> = videos
+            .into_iter()
+            .map(|mut v| {
+                tokio::spawn(async move {
+                    if v.cid == 0 {
+                        v.fetch().await.unwrap();
+                    }
+                    v
+                })
+            })
+            .collect();
+        for jh in jhs {
+            self.videos.push(jh.await.unwrap())
         }
         Ok(())
     }
 
     /// remove lists that are expired and untracked, and remove videos untracked
     fn tidy(&mut self) {
-        info!("tidyng...");
+        info!("Tidyng...");
         self.lists
             .iter_mut()
             .filter(|l| l.expired)
@@ -146,10 +162,17 @@ impl VideoMeta {
         let url = reqwest::Url::parse_with_params(VIDEO_API, [("bvid", self.bvid.clone())]);
         let resp = client().get(url.unwrap()).send().await?;
         let json: serde_json::Value = resp.json().await?;
-        let new: VideoMeta = parse_message(&json["data"]);
-        let upper: UserMeta = parse_message(&json["data"]["owner"]);
-        self.upper = protobuf::MessageField::some(upper);
-        self.title = new.title;
+        match json["code"].as_i64().unwrap() {
+            0 => {
+                let new: VideoMeta = parse_message(&json["data"]);
+                let upper: UserMeta = parse_message(&json["data"]["owner"]);
+                self.upper = protobuf::MessageField::some(upper);
+                self.title = new.title;
+                self.cid = new.cid;
+            }
+            _ => self.cid = -1,
+        }
+
         Ok(())
     }
 }

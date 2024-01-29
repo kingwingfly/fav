@@ -20,7 +20,7 @@ message ListMeta {
 
     bool track = 4;
     bool expired = 5;
-    optional string clarity = 100;
+    Clarity clarity = 100;
 }
 
 message VideoMeta {
@@ -28,7 +28,7 @@ message VideoMeta {
     string title = 2;
     // todo upper may mutil
     UserMeta upper = 3;
-    int32 type = 4;
+    int64 type = 4;
 
     bool saved = 5;
     bool fav = 6;
@@ -36,8 +36,9 @@ message VideoMeta {
     // 0 for normal; 1 or 9 for expired
     int32 attr = 8;
     bool track = 9;
+    int64 cid = 10;
     repeated int64 list_ids = 99;
-    optional string clarity = 100;
+    Clarity clarity = 100;
 }
 
 message UserMeta {
@@ -48,4 +49,32 @@ message UserMeta {
 message Meta {
     repeated VideoMeta videos = 1;
     repeated ListMeta lists = 2;
+}
+
+enum Clarity {
+    // 4K
+    FourK = 0;
+    // 1080P60
+    FullHDHighFrame = 1;
+    // 1080+
+    FullHDHighCode = 2;
+    // 1080P
+    FullHD = 3;
+    // 720P60
+    HDHighFrame = 4;
+    // 720P
+    HD = 5;
+    // 480P
+    SD = 6;
+    // 360P
+    LD = 7;
+    // 240P
+    VLD = 8;
+}
+
+message PlayInfo {
+    string url = 1;
+    int64 length = 2;
+    int64 size = 3;
+    string title = 4;
 }

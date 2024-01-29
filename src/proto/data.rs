@@ -306,7 +306,7 @@ pub struct ListMeta {
     // @@protoc_insertion_point(field:data.ListMeta.expired)
     pub expired: bool,
     // @@protoc_insertion_point(field:data.ListMeta.clarity)
-    pub clarity: ::std::option::Option<::std::string::String>,
+    pub clarity: ::protobuf::EnumOrUnknown<Clarity>,
     // special fields
     // @@protoc_insertion_point(special_field:data.ListMeta.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
@@ -351,7 +351,7 @@ impl ListMeta {
             |m: &ListMeta| { &m.expired },
             |m: &mut ListMeta| { &mut m.expired },
         ));
-        fields.push(::protobuf::reflect::rt::v2::make_option_accessor::<_, _>(
+        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
             "clarity",
             |m: &ListMeta| { &m.clarity },
             |m: &mut ListMeta| { &mut m.clarity },
@@ -389,8 +389,8 @@ impl ::protobuf::Message for ListMeta {
                 40 => {
                     self.expired = is.read_bool()?;
                 },
-                802 => {
-                    self.clarity = ::std::option::Option::Some(is.read_string()?);
+                800 => {
+                    self.clarity = is.read_enum_or_unknown()?;
                 },
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
@@ -419,8 +419,8 @@ impl ::protobuf::Message for ListMeta {
         if self.expired != false {
             my_size += 1 + 1;
         }
-        if let Some(v) = self.clarity.as_ref() {
-            my_size += ::protobuf::rt::string_size(100, &v);
+        if self.clarity != ::protobuf::EnumOrUnknown::new(Clarity::FourK) {
+            my_size += ::protobuf::rt::int32_size(100, self.clarity.value());
         }
         my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
         self.special_fields.cached_size().set(my_size as u32);
@@ -443,8 +443,8 @@ impl ::protobuf::Message for ListMeta {
         if self.expired != false {
             os.write_bool(5, self.expired)?;
         }
-        if let Some(v) = self.clarity.as_ref() {
-            os.write_string(100, v)?;
+        if self.clarity != ::protobuf::EnumOrUnknown::new(Clarity::FourK) {
+            os.write_enum(100, ::protobuf::EnumOrUnknown::value(&self.clarity))?;
         }
         os.write_unknown_fields(self.special_fields.unknown_fields())?;
         ::std::result::Result::Ok(())
@@ -468,7 +468,7 @@ impl ::protobuf::Message for ListMeta {
         self.media_count = 0;
         self.track = false;
         self.expired = false;
-        self.clarity = ::std::option::Option::None;
+        self.clarity = ::protobuf::EnumOrUnknown::new(Clarity::FourK);
         self.special_fields.clear();
     }
 
@@ -479,7 +479,7 @@ impl ::protobuf::Message for ListMeta {
             media_count: 0,
             track: false,
             expired: false,
-            clarity: ::std::option::Option::None,
+            clarity: ::protobuf::EnumOrUnknown::from_i32(0),
             special_fields: ::protobuf::SpecialFields::new(),
         };
         &instance
@@ -514,7 +514,7 @@ pub struct VideoMeta {
     // @@protoc_insertion_point(field:data.VideoMeta.upper)
     pub upper: ::protobuf::MessageField<UserMeta>,
     // @@protoc_insertion_point(field:data.VideoMeta.type)
-    pub type_: i32,
+    pub type_: i64,
     // @@protoc_insertion_point(field:data.VideoMeta.saved)
     pub saved: bool,
     // @@protoc_insertion_point(field:data.VideoMeta.fav)
@@ -525,10 +525,12 @@ pub struct VideoMeta {
     pub attr: i32,
     // @@protoc_insertion_point(field:data.VideoMeta.track)
     pub track: bool,
+    // @@protoc_insertion_point(field:data.VideoMeta.cid)
+    pub cid: i64,
     // @@protoc_insertion_point(field:data.VideoMeta.list_ids)
     pub list_ids: ::std::vec::Vec<i64>,
     // @@protoc_insertion_point(field:data.VideoMeta.clarity)
-    pub clarity: ::std::option::Option<::std::string::String>,
+    pub clarity: ::protobuf::EnumOrUnknown<Clarity>,
     // special fields
     // @@protoc_insertion_point(special_field:data.VideoMeta.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
@@ -546,7 +548,7 @@ impl VideoMeta {
     }
 
     fn generated_message_descriptor_data() -> ::protobuf::reflect::GeneratedMessageDescriptorData {
-        let mut fields = ::std::vec::Vec::with_capacity(11);
+        let mut fields = ::std::vec::Vec::with_capacity(12);
         let mut oneofs = ::std::vec::Vec::with_capacity(0);
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
             "bvid",
@@ -593,12 +595,17 @@ impl VideoMeta {
             |m: &VideoMeta| { &m.track },
             |m: &mut VideoMeta| { &mut m.track },
         ));
+        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
+            "cid",
+            |m: &VideoMeta| { &m.cid },
+            |m: &mut VideoMeta| { &mut m.cid },
+        ));
         fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
             "list_ids",
             |m: &VideoMeta| { &m.list_ids },
             |m: &mut VideoMeta| { &mut m.list_ids },
         ));
-        fields.push(::protobuf::reflect::rt::v2::make_option_accessor::<_, _>(
+        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
             "clarity",
             |m: &VideoMeta| { &m.clarity },
             |m: &mut VideoMeta| { &mut m.clarity },
@@ -631,7 +638,7 @@ impl ::protobuf::Message for VideoMeta {
                     ::protobuf::rt::read_singular_message_into_field(is, &mut self.upper)?;
                 },
                 32 => {
-                    self.type_ = is.read_int32()?;
+                    self.type_ = is.read_int64()?;
                 },
                 40 => {
                     self.saved = is.read_bool()?;
@@ -648,14 +655,17 @@ impl ::protobuf::Message for VideoMeta {
                 72 => {
                     self.track = is.read_bool()?;
                 },
+                80 => {
+                    self.cid = is.read_int64()?;
+                },
                 794 => {
                     is.read_repeated_packed_int64_into(&mut self.list_ids)?;
                 },
                 792 => {
                     self.list_ids.push(is.read_int64()?);
                 },
-                802 => {
-                    self.clarity = ::std::option::Option::Some(is.read_string()?);
+                800 => {
+                    self.clarity = is.read_enum_or_unknown()?;
                 },
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
@@ -680,7 +690,7 @@ impl ::protobuf::Message for VideoMeta {
             my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
         }
         if self.type_ != 0 {
-            my_size += ::protobuf::rt::int32_size(4, self.type_);
+            my_size += ::protobuf::rt::int64_size(4, self.type_);
         }
         if self.saved != false {
             my_size += 1 + 1;
@@ -697,11 +707,14 @@ impl ::protobuf::Message for VideoMeta {
         if self.track != false {
             my_size += 1 + 1;
         }
+        if self.cid != 0 {
+            my_size += ::protobuf::rt::int64_size(10, self.cid);
+        }
         for value in &self.list_ids {
             my_size += ::protobuf::rt::int64_size(99, *value);
         };
-        if let Some(v) = self.clarity.as_ref() {
-            my_size += ::protobuf::rt::string_size(100, &v);
+        if self.clarity != ::protobuf::EnumOrUnknown::new(Clarity::FourK) {
+            my_size += ::protobuf::rt::int32_size(100, self.clarity.value());
         }
         my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
         self.special_fields.cached_size().set(my_size as u32);
@@ -719,7 +732,7 @@ impl ::protobuf::Message for VideoMeta {
             ::protobuf::rt::write_message_field_with_cached_size(3, v, os)?;
         }
         if self.type_ != 0 {
-            os.write_int32(4, self.type_)?;
+            os.write_int64(4, self.type_)?;
         }
         if self.saved != false {
             os.write_bool(5, self.saved)?;
@@ -736,11 +749,14 @@ impl ::protobuf::Message for VideoMeta {
         if self.track != false {
             os.write_bool(9, self.track)?;
         }
+        if self.cid != 0 {
+            os.write_int64(10, self.cid)?;
+        }
         for v in &self.list_ids {
             os.write_int64(99, *v)?;
         };
-        if let Some(v) = self.clarity.as_ref() {
-            os.write_string(100, v)?;
+        if self.clarity != ::protobuf::EnumOrUnknown::new(Clarity::FourK) {
+            os.write_enum(100, ::protobuf::EnumOrUnknown::value(&self.clarity))?;
         }
         os.write_unknown_fields(self.special_fields.unknown_fields())?;
         ::std::result::Result::Ok(())
@@ -768,8 +784,9 @@ impl ::protobuf::Message for VideoMeta {
         self.expired = false;
         self.attr = 0;
         self.track = false;
+        self.cid = 0;
         self.list_ids.clear();
-        self.clarity = ::std::option::Option::None;
+        self.clarity = ::protobuf::EnumOrUnknown::new(Clarity::FourK);
         self.special_fields.clear();
     }
 
@@ -784,8 +801,9 @@ impl ::protobuf::Message for VideoMeta {
             expired: false,
             attr: 0,
             track: false,
+            cid: 0,
             list_ids: ::std::vec::Vec::new(),
-            clarity: ::std::option::Option::None,
+            clarity: ::protobuf::EnumOrUnknown::from_i32(0),
             special_fields: ::protobuf::SpecialFields::new(),
         };
         &instance
@@ -1091,6 +1109,279 @@ impl ::protobuf::reflect::ProtobufValue for Meta {
     type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
 }
 
+// @@protoc_insertion_point(message:data.PlayInfo)
+#[derive(PartialEq,Clone,Default,Debug)]
+pub struct PlayInfo {
+    // message fields
+    // @@protoc_insertion_point(field:data.PlayInfo.url)
+    pub url: ::std::string::String,
+    // @@protoc_insertion_point(field:data.PlayInfo.length)
+    pub length: i64,
+    // @@protoc_insertion_point(field:data.PlayInfo.size)
+    pub size: i64,
+    // @@protoc_insertion_point(field:data.PlayInfo.title)
+    pub title: ::std::string::String,
+    // special fields
+    // @@protoc_insertion_point(special_field:data.PlayInfo.special_fields)
+    pub special_fields: ::protobuf::SpecialFields,
+}
+
+impl<'a> ::std::default::Default for &'a PlayInfo {
+    fn default() -> &'a PlayInfo {
+        <PlayInfo as ::protobuf::Message>::default_instance()
+    }
+}
+
+impl PlayInfo {
+    pub fn new() -> PlayInfo {
+        ::std::default::Default::default()
+    }
+
+    fn generated_message_descriptor_data() -> ::protobuf::reflect::GeneratedMessageDescriptorData {
+        let mut fields = ::std::vec::Vec::with_capacity(4);
+        let mut oneofs = ::std::vec::Vec::with_capacity(0);
+        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
+            "url",
+            |m: &PlayInfo| { &m.url },
+            |m: &mut PlayInfo| { &mut m.url },
+        ));
+        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
+            "length",
+            |m: &PlayInfo| { &m.length },
+            |m: &mut PlayInfo| { &mut m.length },
+        ));
+        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
+            "size",
+            |m: &PlayInfo| { &m.size },
+            |m: &mut PlayInfo| { &mut m.size },
+        ));
+        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
+            "title",
+            |m: &PlayInfo| { &m.title },
+            |m: &mut PlayInfo| { &mut m.title },
+        ));
+        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<PlayInfo>(
+            "PlayInfo",
+            fields,
+            oneofs,
+        )
+    }
+}
+
+impl ::protobuf::Message for PlayInfo {
+    const NAME: &'static str = "PlayInfo";
+
+    fn is_initialized(&self) -> bool {
+        true
+    }
+
+    fn merge_from(&mut self, is: &mut ::protobuf::CodedInputStream<'_>) -> ::protobuf::Result<()> {
+        while let Some(tag) = is.read_raw_tag_or_eof()? {
+            match tag {
+                10 => {
+                    self.url = is.read_string()?;
+                },
+                16 => {
+                    self.length = is.read_int64()?;
+                },
+                24 => {
+                    self.size = is.read_int64()?;
+                },
+                34 => {
+                    self.title = is.read_string()?;
+                },
+                tag => {
+                    ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
+                },
+            };
+        }
+        ::std::result::Result::Ok(())
+    }
+
+    // Compute sizes of nested messages
+    #[allow(unused_variables)]
+    fn compute_size(&self) -> u64 {
+        let mut my_size = 0;
+        if !self.url.is_empty() {
+            my_size += ::protobuf::rt::string_size(1, &self.url);
+        }
+        if self.length != 0 {
+            my_size += ::protobuf::rt::int64_size(2, self.length);
+        }
+        if self.size != 0 {
+            my_size += ::protobuf::rt::int64_size(3, self.size);
+        }
+        if !self.title.is_empty() {
+            my_size += ::protobuf::rt::string_size(4, &self.title);
+        }
+        my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
+        self.special_fields.cached_size().set(my_size as u32);
+        my_size
+    }
+
+    fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
+        if !self.url.is_empty() {
+            os.write_string(1, &self.url)?;
+        }
+        if self.length != 0 {
+            os.write_int64(2, self.length)?;
+        }
+        if self.size != 0 {
+            os.write_int64(3, self.size)?;
+        }
+        if !self.title.is_empty() {
+            os.write_string(4, &self.title)?;
+        }
+        os.write_unknown_fields(self.special_fields.unknown_fields())?;
+        ::std::result::Result::Ok(())
+    }
+
+    fn special_fields(&self) -> &::protobuf::SpecialFields {
+        &self.special_fields
+    }
+
+    fn mut_special_fields(&mut self) -> &mut ::protobuf::SpecialFields {
+        &mut self.special_fields
+    }
+
+    fn new() -> PlayInfo {
+        PlayInfo::new()
+    }
+
+    fn clear(&mut self) {
+        self.url.clear();
+        self.length = 0;
+        self.size = 0;
+        self.title.clear();
+        self.special_fields.clear();
+    }
+
+    fn default_instance() -> &'static PlayInfo {
+        static instance: PlayInfo = PlayInfo {
+            url: ::std::string::String::new(),
+            length: 0,
+            size: 0,
+            title: ::std::string::String::new(),
+            special_fields: ::protobuf::SpecialFields::new(),
+        };
+        &instance
+    }
+}
+
+impl ::protobuf::MessageFull for PlayInfo {
+    fn descriptor() -> ::protobuf::reflect::MessageDescriptor {
+        static descriptor: ::protobuf::rt::Lazy<::protobuf::reflect::MessageDescriptor> = ::protobuf::rt::Lazy::new();
+        descriptor.get(|| file_descriptor().message_by_package_relative_name("PlayInfo").unwrap()).clone()
+    }
+}
+
+impl ::std::fmt::Display for PlayInfo {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        ::protobuf::text_format::fmt(self, f)
+    }
+}
+
+impl ::protobuf::reflect::ProtobufValue for PlayInfo {
+    type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
+}
+
+#[derive(Clone,Copy,PartialEq,Eq,Debug,Hash)]
+// @@protoc_insertion_point(enum:data.Clarity)
+pub enum Clarity {
+    // @@protoc_insertion_point(enum_value:data.Clarity.FourK)
+    FourK = 0,
+    // @@protoc_insertion_point(enum_value:data.Clarity.FullHDHighFrame)
+    FullHDHighFrame = 1,
+    // @@protoc_insertion_point(enum_value:data.Clarity.FullHDHighCode)
+    FullHDHighCode = 2,
+    // @@protoc_insertion_point(enum_value:data.Clarity.FullHD)
+    FullHD = 3,
+    // @@protoc_insertion_point(enum_value:data.Clarity.HDHighFrame)
+    HDHighFrame = 4,
+    // @@protoc_insertion_point(enum_value:data.Clarity.HD)
+    HD = 5,
+    // @@protoc_insertion_point(enum_value:data.Clarity.SD)
+    SD = 6,
+    // @@protoc_insertion_point(enum_value:data.Clarity.LD)
+    LD = 7,
+    // @@protoc_insertion_point(enum_value:data.Clarity.VLD)
+    VLD = 8,
+}
+
+impl ::protobuf::Enum for Clarity {
+    const NAME: &'static str = "Clarity";
+
+    fn value(&self) -> i32 {
+        *self as i32
+    }
+
+    fn from_i32(value: i32) -> ::std::option::Option<Clarity> {
+        match value {
+            0 => ::std::option::Option::Some(Clarity::FourK),
+            1 => ::std::option::Option::Some(Clarity::FullHDHighFrame),
+            2 => ::std::option::Option::Some(Clarity::FullHDHighCode),
+            3 => ::std::option::Option::Some(Clarity::FullHD),
+            4 => ::std::option::Option::Some(Clarity::HDHighFrame),
+            5 => ::std::option::Option::Some(Clarity::HD),
+            6 => ::std::option::Option::Some(Clarity::SD),
+            7 => ::std::option::Option::Some(Clarity::LD),
+            8 => ::std::option::Option::Some(Clarity::VLD),
+            _ => ::std::option::Option::None
+        }
+    }
+
+    fn from_str(str: &str) -> ::std::option::Option<Clarity> {
+        match str {
+            "FourK" => ::std::option::Option::Some(Clarity::FourK),
+            "FullHDHighFrame" => ::std::option::Option::Some(Clarity::FullHDHighFrame),
+            "FullHDHighCode" => ::std::option::Option::Some(Clarity::FullHDHighCode),
+            "FullHD" => ::std::option::Option::Some(Clarity::FullHD),
+            "HDHighFrame" => ::std::option::Option::Some(Clarity::HDHighFrame),
+            "HD" => ::std::option::Option::Some(Clarity::HD),
+            "SD" => ::std::option::Option::Some(Clarity::SD),
+            "LD" => ::std::option::Option::Some(Clarity::LD),
+            "VLD" => ::std::option::Option::Some(Clarity::VLD),
+            _ => ::std::option::Option::None
+        }
+    }
+
+    const VALUES: &'static [Clarity] = &[
+        Clarity::FourK,
+        Clarity::FullHDHighFrame,
+        Clarity::FullHDHighCode,
+        Clarity::FullHD,
+        Clarity::HDHighFrame,
+        Clarity::HD,
+        Clarity::SD,
+        Clarity::LD,
+        Clarity::VLD,
+    ];
+}
+
+impl ::protobuf::EnumFull for Clarity {
+    fn enum_descriptor() -> ::protobuf::reflect::EnumDescriptor {
+        static descriptor: ::protobuf::rt::Lazy<::protobuf::reflect::EnumDescriptor> = ::protobuf::rt::Lazy::new();
+        descriptor.get(|| file_descriptor().enum_by_package_relative_name("Clarity").unwrap()).clone()
+    }
+
+    fn descriptor(&self) -> ::protobuf::reflect::EnumValueDescriptor {
+        let index = *self as usize;
+        Self::enum_descriptor().value_by_index(index)
+    }
+}
+
+impl ::std::default::Default for Clarity {
+    fn default() -> Self {
+        Clarity::FourK
+    }
+}
+
+impl Clarity {
+    fn generated_enum_descriptor_data() -> ::protobuf::reflect::GeneratedEnumDescriptorData {
+        ::protobuf::reflect::GeneratedEnumDescriptorData::new::<Clarity>("Clarity")
+    }
+}
+
 static file_descriptor_proto_data: &'static [u8] = b"\
     \n\ndata.proto\x12\x04data\"\xfd\x01\n\x06Cookie\x12\x1e\n\nDedeUserID\
     \x18\x01\x20\x01(\tR\nDedeUserID\x12*\n\x11DedeUserID__ckMd5\x18\x02\x20\
@@ -1099,24 +1390,31 @@ static file_descriptor_proto_data: &'static [u8] = b"\
     \x16\n\x06buvid3\x18\x05\x20\x01(\tR\x06buvid3\x12\x16\n\x06buvid4\x18\
     \x06\x20\x01(\tR\x06buvid4\x12\x13\n\x05_uuid\x18\x07\x20\x01(\tR\x04Uui\
     d\x12\x19\n\x08buvid_fp\x18\x08\x20\x01(\tR\x07buvidFp\x12\x10\n\x03sid\
-    \x18\t\x20\x01(\tR\x03sid\"\xac\x01\n\x08ListMeta\x12\x0e\n\x02id\x18\
+    \x18\t\x20\x01(\tR\x03sid\"\xaa\x01\n\x08ListMeta\x12\x0e\n\x02id\x18\
     \x01\x20\x01(\x03R\x02id\x12\x14\n\x05title\x18\x02\x20\x01(\tR\x05title\
     \x12\x1f\n\x0bmedia_count\x18\x03\x20\x01(\x05R\nmediaCount\x12\x14\n\
     \x05track\x18\x04\x20\x01(\x08R\x05track\x12\x18\n\x07expired\x18\x05\
-    \x20\x01(\x08R\x07expired\x12\x1d\n\x07clarity\x18d\x20\x01(\tH\0R\x07cl\
-    arity\x88\x01\x01B\n\n\x08_clarity\"\xa1\x02\n\tVideoMeta\x12\x12\n\x04b\
-    vid\x18\x01\x20\x01(\tR\x04bvid\x12\x14\n\x05title\x18\x02\x20\x01(\tR\
-    \x05title\x12$\n\x05upper\x18\x03\x20\x01(\x0b2\x0e.data.UserMetaR\x05up\
-    per\x12\x12\n\x04type\x18\x04\x20\x01(\x05R\x04type\x12\x14\n\x05saved\
-    \x18\x05\x20\x01(\x08R\x05saved\x12\x10\n\x03fav\x18\x06\x20\x01(\x08R\
-    \x03fav\x12\x18\n\x07expired\x18\x07\x20\x01(\x08R\x07expired\x12\x12\n\
-    \x04attr\x18\x08\x20\x01(\x05R\x04attr\x12\x14\n\x05track\x18\t\x20\x01(\
-    \x08R\x05track\x12\x19\n\x08list_ids\x18c\x20\x03(\x03R\x07listIds\x12\
-    \x1d\n\x07clarity\x18d\x20\x01(\tH\0R\x07clarity\x88\x01\x01B\n\n\x08_cl\
-    arity\"0\n\x08UserMeta\x12\x10\n\x03mid\x18\x01\x20\x01(\x03R\x03mid\x12\
-    \x12\n\x04name\x18\x02\x20\x01(\tR\x04name\"U\n\x04Meta\x12'\n\x06videos\
-    \x18\x01\x20\x03(\x0b2\x0f.data.VideoMetaR\x06videos\x12$\n\x05lists\x18\
-    \x02\x20\x03(\x0b2\x0e.data.ListMetaR\x05listsb\x06proto3\
+    \x20\x01(\x08R\x07expired\x12'\n\x07clarity\x18d\x20\x01(\x0e2\r.data.Cl\
+    arityR\x07clarity\"\xb1\x02\n\tVideoMeta\x12\x12\n\x04bvid\x18\x01\x20\
+    \x01(\tR\x04bvid\x12\x14\n\x05title\x18\x02\x20\x01(\tR\x05title\x12$\n\
+    \x05upper\x18\x03\x20\x01(\x0b2\x0e.data.UserMetaR\x05upper\x12\x12\n\
+    \x04type\x18\x04\x20\x01(\x03R\x04type\x12\x14\n\x05saved\x18\x05\x20\
+    \x01(\x08R\x05saved\x12\x10\n\x03fav\x18\x06\x20\x01(\x08R\x03fav\x12\
+    \x18\n\x07expired\x18\x07\x20\x01(\x08R\x07expired\x12\x12\n\x04attr\x18\
+    \x08\x20\x01(\x05R\x04attr\x12\x14\n\x05track\x18\t\x20\x01(\x08R\x05tra\
+    ck\x12\x10\n\x03cid\x18\n\x20\x01(\x03R\x03cid\x12\x19\n\x08list_ids\x18\
+    c\x20\x03(\x03R\x07listIds\x12'\n\x07clarity\x18d\x20\x01(\x0e2\r.data.C\
+    larityR\x07clarity\"0\n\x08UserMeta\x12\x10\n\x03mid\x18\x01\x20\x01(\
+    \x03R\x03mid\x12\x12\n\x04name\x18\x02\x20\x01(\tR\x04name\"U\n\x04Meta\
+    \x12'\n\x06videos\x18\x01\x20\x03(\x0b2\x0f.data.VideoMetaR\x06videos\
+    \x12$\n\x05lists\x18\x02\x20\x03(\x0b2\x0e.data.ListMetaR\x05lists\"^\n\
+    \x08PlayInfo\x12\x10\n\x03url\x18\x01\x20\x01(\tR\x03url\x12\x16\n\x06le\
+    ngth\x18\x02\x20\x01(\x03R\x06length\x12\x12\n\x04size\x18\x03\x20\x01(\
+    \x03R\x04size\x12\x14\n\x05title\x18\x04\x20\x01(\tR\x05title*{\n\x07Cla\
+    rity\x12\t\n\x05FourK\x10\0\x12\x13\n\x0fFullHDHighFrame\x10\x01\x12\x12\
+    \n\x0eFullHDHighCode\x10\x02\x12\n\n\x06FullHD\x10\x03\x12\x0f\n\x0bHDHi\
+    ghFrame\x10\x04\x12\x06\n\x02HD\x10\x05\x12\x06\n\x02SD\x10\x06\x12\x06\
+    \n\x02LD\x10\x07\x12\x07\n\x03VLD\x10\x08b\x06proto3\
 ";
 
 /// `FileDescriptorProto` object which was a source for this generated file
@@ -1134,13 +1432,15 @@ pub fn file_descriptor() -> &'static ::protobuf::reflect::FileDescriptor {
     file_descriptor.get(|| {
         let generated_file_descriptor = generated_file_descriptor_lazy.get(|| {
             let mut deps = ::std::vec::Vec::with_capacity(0);
-            let mut messages = ::std::vec::Vec::with_capacity(5);
+            let mut messages = ::std::vec::Vec::with_capacity(6);
             messages.push(Cookie::generated_message_descriptor_data());
             messages.push(ListMeta::generated_message_descriptor_data());
             messages.push(VideoMeta::generated_message_descriptor_data());
             messages.push(UserMeta::generated_message_descriptor_data());
             messages.push(Meta::generated_message_descriptor_data());
-            let mut enums = ::std::vec::Vec::with_capacity(0);
+            messages.push(PlayInfo::generated_message_descriptor_data());
+            let mut enums = ::std::vec::Vec::with_capacity(1);
+            enums.push(Clarity::generated_enum_descriptor_data());
             ::protobuf::reflect::GeneratedFileDescriptor::new_generated(
                 file_descriptor_proto(),
                 deps,

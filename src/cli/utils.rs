@@ -1,3 +1,4 @@
+use indicatif::{ProgressBar, ProgressStyle};
 use tabled::{
     builder::Builder,
     settings::{object::Rows, Alignment, Style},
@@ -30,4 +31,12 @@ where
         }
     }
     println!("Count: {}\n", count);
+}
+
+pub(crate) fn download_bar(size: i64) -> ProgressBar {
+    let pb = ProgressBar::new(size as u64);
+    pb.set_style(ProgressStyle::with_template("{spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
+            .unwrap()
+            .progress_chars("#>-"));
+    pb
 }
