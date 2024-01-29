@@ -22,6 +22,7 @@ pub(crate) async fn like_all() {
 }
 
 #[allow(unused)]
+#[deprecated(note = "Fast operation will lead server rejection")]
 pub(crate) async fn like_all_fast() {
     let meta = meta();
     let jhs: Vec<_> = meta

@@ -178,7 +178,7 @@ _For more examples, please refer to the [Documentation](https://example.com)_
 - [ ] Pull
 - [ ] Push
 - [ ] Ignore
-- [ ] Like
+- [x] Like
 - [ ] Sync
 - [ ] Serve
 

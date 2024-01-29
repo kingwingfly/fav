@@ -72,7 +72,7 @@ async fn qr_ret(qrcode_key: String) -> Result<()> {
         match json["data"]["code"].as_i64().unwrap() {
             0 => break,
             86038 => warn!("QR code expired"),
-            _ => tracing::debug!("{:#?}", json["data"]["message"]),
+            _ => {}
         }
         tokio::time::sleep(std::time::Duration::from_secs(POLL_INTERVAL)).await;
     }
