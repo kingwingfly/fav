@@ -49,7 +49,7 @@ async fn try_persist_cookie(resp: &reqwest::Response) {
 async fn qr_info() -> Result<QrInfo> {
     let resp = reqwest::get(QR_API).await?;
     let mut json: serde_json::Value = resp.json().await?;
-    Ok(serde_json::from_value(json.pointer_mut("/data").unwrap().take()).unwrap())
+    Ok(serde_json::from_value(json["data"].take()).unwrap())
 }
 
 async fn show_qr_code(url: String) -> Result<()> {
@@ -69,10 +69,10 @@ async fn qr_ret(qrcode_key: String) -> Result<()> {
         let resp = client().get(url.clone()).send().await?;
         try_persist_cookie(&resp).await;
         let json: serde_json::Value = resp.json().await?;
-        match json.pointer("/data/code").unwrap().as_i64().unwrap() {
+        match json["data"]["code"].as_i64().unwrap() {
             0 => break,
             86038 => warn!("QR code expired"),
-            _ => tracing::debug!("{:#?}", json.pointer("/data/message").unwrap()),
+            _ => tracing::debug!("{:#?}", json["data"]["message"]),
         }
         tokio::time::sleep(std::time::Duration::from_secs(POLL_INTERVAL)).await;
     }

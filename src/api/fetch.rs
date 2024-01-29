@@ -26,14 +26,6 @@ pub(crate) async fn fetch(prune: bool) -> Result<()> {
 
 #[cfg(feature = "bili")]
 impl Meta {
-    async fn fetch_bili(&mut self) -> Result<()> {
-        info!("fetching...");
-        self.fetch_lists().await?;
-        self.fetch_videos().await?;
-        self.fetch_metas().await?;
-        Ok(())
-    }
-
     fn before_fetch(&mut self) {
         // assume all lists are expired, and will be set to false if fetched
         self.lists.iter_mut().for_each(|l| l.expired = true);
@@ -44,20 +36,26 @@ impl Meta {
         });
     }
 
+    async fn fetch_bili(&mut self) -> Result<()> {
+        info!("fetching...");
+        self.fetch_lists().await?;
+        self.fetch_videos().await?;
+        self.fetch_metas().await?;
+        Ok(())
+    }
+
     /// This will keep `track`
     async fn fetch_lists(&mut self) -> Result<()> {
         let url =
             reqwest::Url::parse_with_params(LISTS_API, [("up_mid", &config().cookie.DedeUserID)])
                 .unwrap();
         let resp = client().get(url).send().await?;
-        let mut json: serde_json::Value = resp.json().await?;
-        if json.pointer("/data").unwrap().is_null() {
+        let json: serde_json::Value = resp.json().await?;
+        if json["data"].is_null() {
             warn!("No list found; Ensure you have created at least one list or logged in");
             return Ok(());
         }
-        json.pointer_mut("/data/list")
-            .unwrap()
-            .take()
+        json["data"]["list"]
             .as_array()
             .unwrap()
             .iter()
@@ -92,10 +90,8 @@ impl Meta {
                 )
                 .unwrap();
                 let resp = client().get(url).send().await?;
-                let mut json: serde_json::Value = resp.json().await?;
-                json.pointer_mut("/data/medias")
-                    .unwrap()
-                    .take()
+                let json: serde_json::Value = resp.json().await?;
+                json["data"]["medias"]
                     .as_array()
                     .unwrap()
                     .iter()
@@ -127,11 +123,15 @@ impl Meta {
         Ok(())
     }
 
-    /// remove lists that are expired and untracked, then remove videos only in them and untracked
+    /// remove lists that are expired and untracked, and remove videos untracked
     fn tidy(&mut self) {
         info!("tidyng...");
-        self.lists.retain(|l| !l.expired);
-        self.videos.retain(|v| !v.list_ids.is_empty() && v.track);
+        self.lists
+            .iter_mut()
+            .filter(|l| l.expired)
+            .for_each(|l| l.untrack());
+        self.lists.retain(|l| l.track);
+        self.videos.retain(|v| v.track);
     }
 
     fn after_fetch(&self) {
@@ -145,11 +145,9 @@ impl VideoMeta {
     async fn fetch(&mut self) -> Result<()> {
         let url = reqwest::Url::parse_with_params(VIDEO_API, [("bvid", self.bvid.clone())]);
         let resp = client().get(url.unwrap()).send().await?;
-        let mut json: serde_json::Value = resp.json().await?;
-        let mut v = json.pointer_mut("/data").unwrap().take();
-        let u = v.pointer_mut("/owner").unwrap().take();
-        let upper: UserMeta = parse_message(&u);
-        let new: VideoMeta = parse_message(&v);
+        let json: serde_json::Value = resp.json().await?;
+        let new: VideoMeta = parse_message(&json["data"]);
+        let upper: UserMeta = parse_message(&json["data"]["owner"]);
         self.upper = protobuf::MessageField::some(upper);
         self.title = new.title;
         Ok(())

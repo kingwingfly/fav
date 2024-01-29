@@ -31,10 +31,10 @@ impl Payload {
         let mut rng = rand::thread_rng();
         let mut inner: serde_json::Value =
             serde_json::from_str(include_str!("payload.json")).unwrap();
-        *inner.pointer_mut("/5062").unwrap() = timestamp().to_string().into();
-        *inner.pointer_mut("/6e7c").unwrap() =
+        inner["5062"] = timestamp().to_string().into();
+        inner["6e7c"] =
             format!("{}x{}", rng.gen_range(800..1200), rng.gen_range(1200..3000)).into();
-        *inner.pointer_mut("/3c43/bfe9").unwrap() = webgl_str().into();
+        inner["3c43"]["bfe9"] = webgl_str().into();
         Payload {
             inner: inner.to_string(),
         }
@@ -45,7 +45,7 @@ impl Payload {
 pub(super) async fn activate_buvid(cookie: &mut Cookie) -> Result<()> {
     let resp = client().get(BUVID_API).send().await?;
     let mut json: serde_json::Value = resp.json().await?;
-    let buvids: Buvids = serde_json::from_value(json.pointer_mut("/data").unwrap().take()).unwrap();
+    let buvids: Buvids = serde_json::from_value(json["data"].take()).unwrap();
     Buvids {
         buvid3: cookie.buvid3,
         buvid4: cookie.buvid4,
@@ -69,15 +69,12 @@ pub(super) async fn activate_buvid(cookie: &mut Cookie) -> Result<()> {
         .send()
         .await?;
     let json: serde_json::Value = resp.json().await?;
-    match json.pointer("/code").unwrap().as_i64().unwrap() {
+    match json["code"].as_i64().unwrap() {
         0 => info!("Actived Buvid."),
         _ => {
             #[cfg(test)]
             println!("Activate Buvid Failed");
-            warn!(
-                "Failed to active Buvid. Error Message: {}",
-                json.pointer("/message").unwrap()
-            );
+            warn!("Failed to active Buvid. Error Message: {}", json["message"]);
         }
     }
     Ok(())
@@ -85,7 +82,7 @@ pub(super) async fn activate_buvid(cookie: &mut Cookie) -> Result<()> {
 
 fn uuid() -> String {
     const LEN: usize = 16;
-    const DIGHT_MAP: [&'static str; LEN] = [
+    const DIGHT_MAP: [&str; LEN] = [
         "1", "2", "3", "4", "5", "6", "7", "8", "9", "A", "B", "C", "D", "E", "F", "10",
     ];
     let t = timestamp() % 100_000;
@@ -98,7 +95,7 @@ fn uuid() -> String {
         };
         result.push_str(DIGHT_MAP[(i & 0x0f) as usize]);
     });
-    format!("{}{}{}", result, format!("{:0>5}", t), "infoc")
+    format!("{}{:0>5}{}", result, t, "infoc")
 }
 
 /// https://github.com/SocialSisterYi/bilibili-API-collect/issues/933#issue-2073916390

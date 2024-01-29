@@ -14,9 +14,10 @@ where
     let mut builder = Builder::default();
     builder.push_record(header);
     let mut count = 0;
-    rows.into_iter()
-        .inspect(|_| count += 1)
-        .for_each(|r| builder.push_record(r));
+    rows.into_iter().for_each(|r| {
+        count += 1;
+        builder.push_record(r);
+    });
     match count {
         0 => {}
         _ => {

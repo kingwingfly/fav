@@ -16,13 +16,7 @@ impl Meta {
         println!("Videos:");
         show_table(
             [
-                "BVID",
-                "Title",
-                "Saved",
-                "Favorited",
-                "Upper",
-                "Clarity",
-                "Track",
+                "BVID", "Title", "Saved", "Fave", "Upper", "Clarity", "Track", "Expired",
             ],
             self.videos.iter().filter(|v| !tracked || v.track).map(|v| {
                 [
@@ -33,6 +27,7 @@ impl Meta {
                     v.upper.name.clone(),
                     v.clarity.as_deref().unwrap_or("default").to_owned(),
                     v.track.to_string(),
+                    v.expired.to_string(),
                 ]
             }),
         );

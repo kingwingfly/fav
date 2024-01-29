@@ -180,6 +180,7 @@ _For more examples, please refer to the [Documentation](https://example.com)_
 - [ ] Ignore
 - [ ] Like
 - [ ] Sync
+- [ ] Serve
 
 See the [open issues](https://github.com/kingwingfly/backup/issues) for a full list of proposed features (and known issues).
 

@@ -31,7 +31,7 @@ async fn try_logout() -> Result<()> {
         .send()
         .await?;
     let json: serde_json::Value = resp.json().await.context(LogoutFail { msg: "Not login" })?;
-    match json.pointer("/code").unwrap().as_i64().unwrap() {
+    match json["code"].as_i64().unwrap() {
         0 => info!("Logged out"),
         _ => warn!("Failed to log out"),
     }

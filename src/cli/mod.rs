@@ -119,10 +119,10 @@ impl Cli {
             Commands::Pull => todo!(),
             Commands::Push => todo!(),
             Commands::Like { bvid, all } => match (bvid, all) {
-                (Some(bvid), false) => like(bvid).await,
+                (Some(bvid), false) => like(&bvid).await,
                 (None, true) => like_all().await,
                 (None, false) => Cli::command()
-                    .error(ErrorKind::MissingRequiredArgument, "id is required.")
+                    .error(ErrorKind::MissingRequiredArgument, "bvid is required.")
                     .exit(),
                 (Some(_), true) => Cli::command()
                     .error(
