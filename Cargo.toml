@@ -27,6 +27,7 @@ protobuf-json-mapping = { version = "3" }
 qrcode = { version = "0.13", default-features = false }
 rand = "0.8.5"
 base64 = "0.21.7"
+tempfile = "3.9.0"
 # Net
 reqwest = { version = "0.11.23", features = ["json", "cookies"] }
 # Runtime

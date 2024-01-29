@@ -3,8 +3,7 @@ use crate::api::error::PullFail;
 use crate::cli::utils::download_bar;
 use crate::meta::meta;
 use crate::proto::data::{Clarity, PlayInfo, VideoMeta};
-use tokio::fs::File;
-use tokio::io::{AsyncWriteExt as _, BufWriter};
+use std::io::{BufWriter, Write as _};
 use tracing::warn;
 
 const API: &str = "https://api.bilibili.com/x/player/playurl";
@@ -33,7 +32,7 @@ pub(crate) async fn pull() {
     for batch in videos.chunks(10) {
         let jhs: Vec<_> = batch
             .into_iter()
-            .filter(|v| v.track)
+            .filter(|v| v.track && !v.saved)
             .map(|&v| tokio::spawn(do_pull(v.clone().into())))
             .collect();
         for jh in jhs {
@@ -49,6 +48,7 @@ pub(crate) async fn pull() {
             }
         }
     }
+    meta.persist();
 }
 
 async fn do_pull(opt: PullOption) -> Result<String> {
@@ -83,12 +83,29 @@ async fn download(play_info: PlayInfo) -> Result<()> {
     } = play_info;
     let pb = download_bar(size);
     let mut resp = client().get(url).send().await?;
-    let mut file = BufWriter::new(File::create(format!("{title}.mp4")).await.unwrap());
-    while let Some(chunk) = resp.chunk().await.unwrap() {
-        pb.inc(chunk.len() as u64);
-        file.write_all(&chunk).await.unwrap();
+    let mut file = BufWriter::new(tempfile::NamedTempFile::new()?);
+    loop {
+        tokio::select! {
+            chunk = resp.chunk() => {
+                match chunk? {
+                    Some(chunk) => {
+                        pb.inc(chunk.len() as u64);
+                        file.write_all(&chunk).unwrap();
+                    }
+                    None => break,
+                }
+            },
+            _ = tokio::signal::ctrl_c() => {
+                file.into_inner().unwrap().close()?;
+                return PullFail {
+                    msg: format!("Download Fail; Ctrl-C"),
+                }.fail();
+            }
+
+        }
     }
-    file.flush().await.unwrap();
+    file.flush().unwrap();
+    file.into_inner().unwrap().persist(format!("{title}.mp4"))?;
     pb.finish();
     Ok(())
 }
@@ -117,10 +134,10 @@ mod tests {
     #[tokio::test]
     async fn pull_test() {
         let opt = PullOption {
-            title: "test2".to_string(),
-            bvid: "BV1mM4y1C7Kc".to_string(),
-            cid: 1093879241,
-            clarity: Clarity::FourK,
+            title: "test".to_string(),
+            bvid: "BV157411h7Et".to_string(),
+            cid: 148866581,
+            clarity: Clarity::VLD,
         };
         do_pull(opt).await.unwrap();
     }
