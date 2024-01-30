@@ -1,5 +1,3 @@
-mod query;
-
 use crate::proto::data::Meta;
 use protobuf::Message;
 use std::sync::OnceLock;

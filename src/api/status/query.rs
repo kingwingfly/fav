@@ -13,6 +13,6 @@ mod tests {
 
     #[test]
     fn query_test() {
-        query("".to_string());
+        query("videos in 823946488".to_string());
     }
 }
