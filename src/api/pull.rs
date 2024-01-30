@@ -26,17 +26,24 @@ impl From<VideoMeta> for PullOption {
     }
 }
 
-pub(crate) async fn pull(id: Option<String>) {
-    let videos: Vec<_> = match id {
-        Some(id) => meta()
-            .videos
-            .iter()
-            .filter(|v| {
+pub(crate) async fn pull_all() {
+    let videos = meta().videos.iter().filter(|v| v.track).collect();
+    try_pull(videos).await;
+}
+
+pub(crate) async fn pull(id: Vec<String>) {
+    let videos = id
+        .into_iter()
+        .flat_map(|id| {
+            meta().videos.iter().filter(move |v| {
                 (v.track && v.list_ids.contains(&id.parse().unwrap_or_default())) || v.bvid == id
             })
-            .collect(),
-        None => meta().videos.iter().filter(|v| v.track).collect(),
-    };
+        })
+        .collect();
+    try_pull(videos).await;
+}
+
+async fn try_pull(videos: Vec<&VideoMeta>) {
     let mut meta = meta().clone();
     for batch in videos.chunks(10) {
         let jhs: Vec<_> = batch

@@ -9,7 +9,7 @@ use crate::{
         fetch::fetch,
         init::init,
         like::{like, like_all},
-        pull::pull,
+        pull::{pull, pull_all},
         track::track,
         untrack::untrack,
     },
@@ -60,25 +60,24 @@ enum Commands {
     /// Track a remote source
     Track {
         /// The id of the source to track
-        id: String,
+        id: Vec<String>,
     },
     /// Untrack a remote source
     Untrack {
         /// The id of the source to untrack
-        id: String,
+        id: Vec<String>,
     },
     /// Pull remote data
     Pull {
         /// The id of the source to pull
-        #[arg(long, short)]
-        id: Option<String>,
+        id: Option<Vec<String>>,
     },
     /// Push local data
     Push,
     /// Like a video
     Like {
         /// The id of the video to like
-        bvid: Option<String>,
+        bvid: Option<Vec<String>>,
         /// Like all videos tracked
         #[arg(long, short)]
         all: bool,
@@ -119,12 +118,15 @@ impl Cli {
                 (true, false) => meta().status_list(tracked),
                 _ => meta().status_video(tracked),
             },
-            Commands::Track { id } => track(id),
-            Commands::Untrack { id } => untrack(id),
-            Commands::Pull { id } => pull(id).await,
+            Commands::Track { id } => id.into_iter().for_each(|id| track(id)),
+            Commands::Untrack { id } => id.into_iter().for_each(|id| untrack(id)),
+            Commands::Pull { id } => match id {
+                Some(id) => pull(id).await,
+                None => pull_all().await,
+            },
             Commands::Push => todo!(),
             Commands::Like { bvid, all } => match (bvid, all) {
-                (Some(bvid), false) => like(&bvid).await,
+                (Some(bvid), false) => like(bvid).await,
                 (None, true) => like_all().await,
                 (None, false) => Cli::command()
                     .error(ErrorKind::MissingRequiredArgument, "bvid is required.")

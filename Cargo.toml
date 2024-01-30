@@ -35,6 +35,9 @@ tokio = { version = "1", features = ["full"] }
 # Log
 tracing = { version = "0.1" }
 tracing-subscriber = { version = "0.3" }
+# Query
+pest = { version = "2" }
+pest_derive = { version = "2" }
 
 
 [build-dependencies]

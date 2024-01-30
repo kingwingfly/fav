@@ -6,18 +6,25 @@ const LIKE_API: &str = "https://api.bilibili.com/x/web-interface/archive/like";
 const QUERY_LIKE_API: &str = "https://api.bilibili.com/x/web-interface/archive/has/like";
 const LIKE_INTERVAL: u64 = 1;
 
-pub(crate) async fn like(bvid: &str) {
-    match is_liked(bvid).await {
-        true => info!("Already liked bvid:{}", bvid),
-        false => do_like(bvid).await,
+pub(crate) async fn like(bvid: Vec<String>) {
+    for v in bvid.iter() {
+        try_like(v).await;
+        std::thread::sleep(std::time::Duration::from_secs(LIKE_INTERVAL));
     }
 }
 
 pub(crate) async fn like_all() {
     let videos = &meta().videos;
     for v in videos.iter().filter(|v| v.track).map(|v| &v.bvid) {
-        like(v).await;
+        try_like(v).await;
         std::thread::sleep(std::time::Duration::from_secs(LIKE_INTERVAL));
+    }
+}
+
+async fn try_like(bvid: &str) {
+    match is_liked(bvid).await {
+        true => info!("Already liked bvid:{}", bvid),
+        false => do_like(bvid).await,
     }
 }
 
@@ -29,7 +36,7 @@ pub(crate) async fn like_all_fast() {
         .videos
         .iter()
         .filter_map(|v| match v.track {
-            true => Some(tokio::spawn(like(&v.bvid))),
+            true => Some(tokio::spawn(try_like(&v.bvid))),
             false => None,
         })
         .collect();
