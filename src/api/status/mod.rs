@@ -69,6 +69,65 @@ impl Meta {
             }),
         );
     }
+
+    pub(crate) fn status_of(&self, id: String) {
+        if let Some(list) = self
+            .lists
+            .iter()
+            .find(|l| l.id == id.parse::<i64>().unwrap_or_default())
+        {
+            println!("List<{}> Status:", list.title);
+            show_table(
+                ["Id", "Title", "Count", "Expired", "Track"],
+                [[
+                    list.id.to_string(),
+                    list.title.chars().take(20).collect(),
+                    list.media_count.to_string(),
+                    list.expired.to_string(),
+                    list.track.to_string(),
+                ]],
+            );
+            println!("Videos in list<{}>:", list.title);
+            show_table(
+                [
+                    "BVID", "Title", "Saved", "Fave", "Upper", "Clarity", "Track", "Expired",
+                ],
+                self.videos
+                    .iter()
+                    .filter(|v| v.list_ids.contains(&list.id))
+                    .map(|v| {
+                        [
+                            v.bvid.clone(),
+                            v.title.chars().take(20).collect(),
+                            v.saved.to_string(),
+                            v.fav.to_string(),
+                            v.upper.name.clone(),
+                            v.clarity.unwrap().to_string(),
+                            v.track.to_string(),
+                            v.expired.to_string(),
+                        ]
+                    }),
+            );
+        }
+        if let Some(video) = self.videos.iter().find(|v| v.bvid == id) {
+            println!("Video<{}> Status:", video.bvid);
+            show_table(
+                [
+                    "BVID", "Title", "Saved", "Fave", "Upper", "Clarity", "Track", "Expired",
+                ],
+                [[
+                    video.bvid.clone(),
+                    video.title.chars().take(20).collect(),
+                    video.saved.to_string(),
+                    video.fav.to_string(),
+                    video.upper.name.clone(),
+                    video.clarity.unwrap().to_string(),
+                    video.track.to_string(),
+                    video.expired.to_string(),
+                ]],
+            );
+        }
+    }
 }
 
 impl ToString for Clarity {
@@ -95,5 +154,10 @@ mod tests {
     #[test]
     fn status_test() {
         meta().status_list(false);
+    }
+
+    #[test]
+    fn status_of_test() {
+        meta().status_of("822720888".to_string());
     }
 }
