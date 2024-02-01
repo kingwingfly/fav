@@ -121,7 +121,7 @@ impl Meta {
     async fn fetch_metas(&mut self) -> Result<()> {
         info!("Fetching video metadatas");
 
-        let videos = std::mem::replace(&mut self.videos, vec![]);
+        let videos = std::mem::take(&mut self.videos);
         let jhs: Vec<_> = videos
             .into_iter()
             .map(|mut v| {

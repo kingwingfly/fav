@@ -1,5 +1,3 @@
-mod query;
-
 use crate::{
     cli::utils::show_table,
     proto::data::{Clarity, Meta},

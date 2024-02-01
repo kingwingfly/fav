@@ -47,10 +47,12 @@ enum Commands {
     },
     /// Show status of local, default to show video status
     Status {
-        /// Show list status
+        /// Show resource status
+        id: Option<String>,
+        /// Show all list status
         #[arg(long, short)]
         list: bool,
-        /// Show video status
+        /// Show all video status
         #[arg(long, short)]
         video: bool,
         /// Show tracked only
@@ -111,15 +113,23 @@ impl Cli {
             },
             Commands::Fetch { prune } => fetch(prune).await.unwrap(),
             Commands::Status {
+                id,
                 list,
                 video,
                 tracked,
-            } => match (list, video) {
-                (true, false) => meta().status_list(tracked),
+            } => match (id, list, video) {
+                (Some(id), false, false) => meta().status_of(id),
+                (None, true, false) => meta().status_list(tracked),
+                (Some(_), list, video) if (list | video) => Cli::command()
+                    .error(
+                        ErrorKind::ArgumentConflict,
+                        "The -l, -v options to 'backup status' does not take a id.",
+                    )
+                    .exit(),
                 _ => meta().status_video(tracked),
             },
-            Commands::Track { id } => id.into_iter().for_each(|id| track(id)),
-            Commands::Untrack { id } => id.into_iter().for_each(|id| untrack(id)),
+            Commands::Track { id } => id.into_iter().for_each(track),
+            Commands::Untrack { id } => id.into_iter().for_each(untrack),
             Commands::Pull { id } => match id {
                 Some(id) => pull(id).await,
                 None => pull_all().await,

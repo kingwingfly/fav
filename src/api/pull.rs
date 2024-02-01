@@ -47,7 +47,7 @@ async fn try_pull(videos: Vec<&VideoMeta>) {
     let mut meta = meta().clone();
     for batch in videos.chunks(10) {
         let jhs: Vec<_> = batch
-            .into_iter()
+            .iter()
             .filter(|v| v.track && !v.saved)
             .map(|&v| tokio::spawn(do_pull(v.clone().into())))
             .collect();
@@ -114,7 +114,7 @@ async fn download(play_info: PlayInfo) -> Result<()> {
             _ = tokio::signal::ctrl_c() => {
                 file.into_inner().unwrap().close()?;
                 return PullFail {
-                    msg: format!("Download Fail; Ctrl-C"),
+                    msg: "Download Fail; Ctrl-C",
                 }.fail();
             }
 
@@ -127,7 +127,7 @@ async fn download(play_info: PlayInfo) -> Result<()> {
 }
 
 impl Clarity {
-    fn to_qn(&self) -> String {
+    fn to_qn(self) -> String {
         match self {
             Clarity::FourK => "120",
             Clarity::FullHDHighFrame => "116",
