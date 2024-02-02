@@ -10,6 +10,12 @@ use crate::{
 };
 use tracing::info;
 
+pub(crate) fn track(id: Vec<String>) {
+    let mut meta = meta().clone();
+    id.into_iter().for_each(|id| meta.track(id));
+    meta.persist();
+}
+
 impl ListMeta {
     pub(super) fn track(&mut self) {
         match self.track {
@@ -59,10 +65,4 @@ impl Meta {
             });
         }
     }
-}
-
-pub(crate) fn track(id: String) {
-    let mut meta = meta().clone();
-    meta.track(id);
-    meta.persist();
 }

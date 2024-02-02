@@ -5,6 +5,12 @@ use crate::{
     proto::data::{ListMeta, Meta, VideoMeta},
 };
 
+pub(crate) fn untrack(id: Vec<String>) {
+    let mut meta = meta().clone();
+    id.into_iter().for_each(|id| meta.untrack(id));
+    meta.persist();
+}
+
 impl ListMeta {
     pub(super) fn untrack(&mut self) {
         match self.track {
@@ -33,12 +39,6 @@ impl VideoMeta {
             ),
         }
     }
-}
-
-pub(crate) fn untrack(id: String) {
-    let mut meta = meta().clone();
-    meta.untrack(id);
-    meta.persist();
 }
 
 impl Meta {

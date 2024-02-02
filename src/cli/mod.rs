@@ -128,8 +128,8 @@ impl Cli {
                     .exit(),
                 _ => meta().status_video(tracked),
             },
-            Commands::Track { id } => id.into_iter().for_each(track),
-            Commands::Untrack { id } => id.into_iter().for_each(untrack),
+            Commands::Track { id } => track(id),
+            Commands::Untrack { id } => untrack(id),
             Commands::Pull { id } => match id {
                 Some(id) => pull(id).await,
                 None => pull_all().await,

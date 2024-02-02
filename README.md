@@ -181,6 +181,7 @@ _For more examples, please refer to the [Documentation](https://example.com)_
 - [x] Like
 - [ ] Sync
 - [ ] Serve
+- [ ] Tui
 
 See the [open issues](https://github.com/kingwingfly/backup/issues) for a full list of proposed features (and known issues).
 
