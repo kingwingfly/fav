@@ -2,7 +2,7 @@
 name = "backup"
 version = "0.1.0"
 authors = ["Louis <836250617@qq.com>"]
-description = "Back up your favorite online resources just like you would with git."
+description = "Back up your favorite online resources with CLI."
 license = "MIT"
 edition = "2021"
 repository = "https://github.com/kingwingfly/backup"

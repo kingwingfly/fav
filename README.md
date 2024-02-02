@@ -113,7 +113,7 @@ Back up your favorite online resources with CLI.
 
 ```
 $ backup -h
-Back up your favorite online resources just like you would with git.
+Back up your favorite online resources with CLI.
 
 Usage: backup <COMMAND>
 
