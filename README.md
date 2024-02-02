@@ -20,7 +20,7 @@
 <h3 align="center">backup</h3>
 
   <p align="center">
-    Back up your favorite online resources just like you would with git.
+    Back up your favorite online resources with CLI.
     <br />
     <a href="https://github.com/kingwingfly/repo_name"><strong>Explore the docs »</strong></a>
     <br />
@@ -66,9 +66,9 @@
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-[![Product Name Screen Shot][product-screenshot]](https://example.com)
+[![Product Name Screen Shot][product-screenshot]](https://github.com/kingwingfly/backup)
 
-Back up your favorite online resources just like you would with git.
+Back up your favorite online resources with CLI.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -91,6 +91,7 @@ Back up your favorite online resources just like you would with git.
   ```sh
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
   ```
+  You may need add some dependencies for protobuf yourself.
 
 ### Compilation
 
@@ -132,6 +133,13 @@ Options:
   -h, --help     Print help
   -V, --version  Print version
 ```
+### Steps
+
+1. Init and Login first
+2. Fetch the favorite list
+3. Track the bvid or list_id you want to backup. You can see them through `backup status -l/v`
+4. Fetch tracked resources
+5. Pull the resources (Now only tracked resource can be pulled, since c_id need for pulling while only tracked resource has c_id fetched)
 
 ### Example
 ```sh
@@ -160,7 +168,7 @@ $ backup like --all
 ```
 
 
-_For more examples, please refer to the [Documentation](https://example.com)_
+_For more examples, please refer to the [Documentation](https://github.com/kingwingfly/backup)_
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

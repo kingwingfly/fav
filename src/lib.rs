@@ -7,6 +7,5 @@ mod cli;
 mod config;
 mod meta;
 mod proto;
-mod tui;
 
 pub use cli::Cli;
