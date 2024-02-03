@@ -6,7 +6,7 @@ use tracing_subscriber::{filter, prelude::*};
 async fn main() {
     let filter = filter::Targets::new()
         // Enable the `INFO` level for anything in `my_crate`
-        .with_target("backup", Level::DEBUG);
+        .with_target("backup", Level::INFO);
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::fmt::layer()
