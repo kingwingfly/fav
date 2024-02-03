@@ -34,7 +34,7 @@ where
     println!("Count: {}\n", count);
 }
 
-pub(crate) fn download_bar(size: i64) -> ProgressBar {
+pub(crate) fn download_bar(size: usize) -> ProgressBar {
     static PBS: OnceLock<MultiProgress> = OnceLock::new();
     let pbs = PBS.get_or_init(MultiProgress::new);
     let pb = pbs.add(ProgressBar::new(size as u64));

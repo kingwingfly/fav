@@ -1,5 +1,5 @@
 [package]
-name = "backup"
+name = "fav"
 version = "0.1.0"
 authors = ["Louis <836250617@qq.com>"]
 description = "Back up your favorite online resources with CLI."
@@ -31,7 +31,7 @@ tempfile = "3.9.0"
 # Net
 reqwest = { version = "0.11.23", features = ["json", "cookies"] }
 # Runtime
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "process"] }
 # Log
 tracing = { version = "0.1" }
 tracing-subscriber = { version = "0.3" }

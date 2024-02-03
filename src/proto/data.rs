@@ -306,7 +306,7 @@ pub struct ListMeta {
     // @@protoc_insertion_point(field:data.ListMeta.expired)
     pub expired: bool,
     // @@protoc_insertion_point(field:data.ListMeta.clarity)
-    pub clarity: ::protobuf::EnumOrUnknown<Clarity>,
+    pub clarity: ::protobuf::EnumOrUnknown<Qn>,
     // special fields
     // @@protoc_insertion_point(special_field:data.ListMeta.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
@@ -419,7 +419,7 @@ impl ::protobuf::Message for ListMeta {
         if self.expired != false {
             my_size += 1 + 1;
         }
-        if self.clarity != ::protobuf::EnumOrUnknown::new(Clarity::FourK) {
+        if self.clarity != ::protobuf::EnumOrUnknown::new(Qn::Default) {
             my_size += ::protobuf::rt::int32_size(100, self.clarity.value());
         }
         my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
@@ -443,7 +443,7 @@ impl ::protobuf::Message for ListMeta {
         if self.expired != false {
             os.write_bool(5, self.expired)?;
         }
-        if self.clarity != ::protobuf::EnumOrUnknown::new(Clarity::FourK) {
+        if self.clarity != ::protobuf::EnumOrUnknown::new(Qn::Default) {
             os.write_enum(100, ::protobuf::EnumOrUnknown::value(&self.clarity))?;
         }
         os.write_unknown_fields(self.special_fields.unknown_fields())?;
@@ -468,7 +468,7 @@ impl ::protobuf::Message for ListMeta {
         self.media_count = 0;
         self.track = false;
         self.expired = false;
-        self.clarity = ::protobuf::EnumOrUnknown::new(Clarity::FourK);
+        self.clarity = ::protobuf::EnumOrUnknown::new(Qn::Default);
         self.special_fields.clear();
     }
 
@@ -530,7 +530,7 @@ pub struct VideoMeta {
     // @@protoc_insertion_point(field:data.VideoMeta.list_ids)
     pub list_ids: ::std::vec::Vec<i64>,
     // @@protoc_insertion_point(field:data.VideoMeta.clarity)
-    pub clarity: ::protobuf::EnumOrUnknown<Clarity>,
+    pub clarity: ::protobuf::EnumOrUnknown<Qn>,
     // special fields
     // @@protoc_insertion_point(special_field:data.VideoMeta.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
@@ -713,7 +713,7 @@ impl ::protobuf::Message for VideoMeta {
         for value in &self.list_ids {
             my_size += ::protobuf::rt::int64_size(99, *value);
         };
-        if self.clarity != ::protobuf::EnumOrUnknown::new(Clarity::FourK) {
+        if self.clarity != ::protobuf::EnumOrUnknown::new(Qn::Default) {
             my_size += ::protobuf::rt::int32_size(100, self.clarity.value());
         }
         my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
@@ -755,7 +755,7 @@ impl ::protobuf::Message for VideoMeta {
         for v in &self.list_ids {
             os.write_int64(99, *v)?;
         };
-        if self.clarity != ::protobuf::EnumOrUnknown::new(Clarity::FourK) {
+        if self.clarity != ::protobuf::EnumOrUnknown::new(Qn::Default) {
             os.write_enum(100, ::protobuf::EnumOrUnknown::value(&self.clarity))?;
         }
         os.write_unknown_fields(self.special_fields.unknown_fields())?;
@@ -786,7 +786,7 @@ impl ::protobuf::Message for VideoMeta {
         self.track = false;
         self.cid = 0;
         self.list_ids.clear();
-        self.clarity = ::protobuf::EnumOrUnknown::new(Clarity::FourK);
+        self.clarity = ::protobuf::EnumOrUnknown::new(Qn::Default);
         self.special_fields.clear();
     }
 
@@ -1109,67 +1109,60 @@ impl ::protobuf::reflect::ProtobufValue for Meta {
     type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
 }
 
-// @@protoc_insertion_point(message:data.PlayInfo)
+// @@protoc_insertion_point(message:data.Info)
 #[derive(PartialEq,Clone,Default,Debug)]
-pub struct PlayInfo {
+pub struct Info {
     // message fields
-    // @@protoc_insertion_point(field:data.PlayInfo.url)
-    pub url: ::std::string::String,
-    // @@protoc_insertion_point(field:data.PlayInfo.length)
-    pub length: i64,
-    // @@protoc_insertion_point(field:data.PlayInfo.size)
-    pub size: i64,
-    // @@protoc_insertion_point(field:data.PlayInfo.title)
-    pub title: ::std::string::String,
+    // @@protoc_insertion_point(field:data.Info.base_url)
+    pub base_url: ::std::string::String,
+    // @@protoc_insertion_point(field:data.Info.codecid)
+    pub codecid: i32,
+    // @@protoc_insertion_point(field:data.Info.id)
+    pub id: i32,
     // special fields
-    // @@protoc_insertion_point(special_field:data.PlayInfo.special_fields)
+    // @@protoc_insertion_point(special_field:data.Info.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
 }
 
-impl<'a> ::std::default::Default for &'a PlayInfo {
-    fn default() -> &'a PlayInfo {
-        <PlayInfo as ::protobuf::Message>::default_instance()
+impl<'a> ::std::default::Default for &'a Info {
+    fn default() -> &'a Info {
+        <Info as ::protobuf::Message>::default_instance()
     }
 }
 
-impl PlayInfo {
-    pub fn new() -> PlayInfo {
+impl Info {
+    pub fn new() -> Info {
         ::std::default::Default::default()
     }
 
     fn generated_message_descriptor_data() -> ::protobuf::reflect::GeneratedMessageDescriptorData {
-        let mut fields = ::std::vec::Vec::with_capacity(4);
+        let mut fields = ::std::vec::Vec::with_capacity(3);
         let mut oneofs = ::std::vec::Vec::with_capacity(0);
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
-            "url",
-            |m: &PlayInfo| { &m.url },
-            |m: &mut PlayInfo| { &mut m.url },
+            "base_url",
+            |m: &Info| { &m.base_url },
+            |m: &mut Info| { &mut m.base_url },
         ));
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
-            "length",
-            |m: &PlayInfo| { &m.length },
-            |m: &mut PlayInfo| { &mut m.length },
+            "codecid",
+            |m: &Info| { &m.codecid },
+            |m: &mut Info| { &mut m.codecid },
         ));
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
-            "size",
-            |m: &PlayInfo| { &m.size },
-            |m: &mut PlayInfo| { &mut m.size },
+            "id",
+            |m: &Info| { &m.id },
+            |m: &mut Info| { &mut m.id },
         ));
-        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
-            "title",
-            |m: &PlayInfo| { &m.title },
-            |m: &mut PlayInfo| { &mut m.title },
-        ));
-        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<PlayInfo>(
-            "PlayInfo",
+        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<Info>(
+            "Info",
             fields,
             oneofs,
         )
     }
 }
 
-impl ::protobuf::Message for PlayInfo {
-    const NAME: &'static str = "PlayInfo";
+impl ::protobuf::Message for Info {
+    const NAME: &'static str = "Info";
 
     fn is_initialized(&self) -> bool {
         true
@@ -1178,17 +1171,14 @@ impl ::protobuf::Message for PlayInfo {
     fn merge_from(&mut self, is: &mut ::protobuf::CodedInputStream<'_>) -> ::protobuf::Result<()> {
         while let Some(tag) = is.read_raw_tag_or_eof()? {
             match tag {
-                10 => {
-                    self.url = is.read_string()?;
+                26 => {
+                    self.base_url = is.read_string()?;
                 },
-                16 => {
-                    self.length = is.read_int64()?;
+                32 => {
+                    self.codecid = is.read_int32()?;
                 },
-                24 => {
-                    self.size = is.read_int64()?;
-                },
-                34 => {
-                    self.title = is.read_string()?;
+                40 => {
+                    self.id = is.read_int32()?;
                 },
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
@@ -1202,17 +1192,14 @@ impl ::protobuf::Message for PlayInfo {
     #[allow(unused_variables)]
     fn compute_size(&self) -> u64 {
         let mut my_size = 0;
-        if !self.url.is_empty() {
-            my_size += ::protobuf::rt::string_size(1, &self.url);
+        if !self.base_url.is_empty() {
+            my_size += ::protobuf::rt::string_size(3, &self.base_url);
         }
-        if self.length != 0 {
-            my_size += ::protobuf::rt::int64_size(2, self.length);
+        if self.codecid != 0 {
+            my_size += ::protobuf::rt::int32_size(4, self.codecid);
         }
-        if self.size != 0 {
-            my_size += ::protobuf::rt::int64_size(3, self.size);
-        }
-        if !self.title.is_empty() {
-            my_size += ::protobuf::rt::string_size(4, &self.title);
+        if self.id != 0 {
+            my_size += ::protobuf::rt::int32_size(5, self.id);
         }
         my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
         self.special_fields.cached_size().set(my_size as u32);
@@ -1220,17 +1207,14 @@ impl ::protobuf::Message for PlayInfo {
     }
 
     fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
-        if !self.url.is_empty() {
-            os.write_string(1, &self.url)?;
+        if !self.base_url.is_empty() {
+            os.write_string(3, &self.base_url)?;
         }
-        if self.length != 0 {
-            os.write_int64(2, self.length)?;
+        if self.codecid != 0 {
+            os.write_int32(4, self.codecid)?;
         }
-        if self.size != 0 {
-            os.write_int64(3, self.size)?;
-        }
-        if !self.title.is_empty() {
-            os.write_string(4, &self.title)?;
+        if self.id != 0 {
+            os.write_int32(5, self.id)?;
         }
         os.write_unknown_fields(self.special_fields.unknown_fields())?;
         ::std::result::Result::Ok(())
@@ -1244,141 +1228,315 @@ impl ::protobuf::Message for PlayInfo {
         &mut self.special_fields
     }
 
-    fn new() -> PlayInfo {
-        PlayInfo::new()
+    fn new() -> Info {
+        Info::new()
     }
 
     fn clear(&mut self) {
-        self.url.clear();
-        self.length = 0;
-        self.size = 0;
-        self.title.clear();
+        self.base_url.clear();
+        self.codecid = 0;
+        self.id = 0;
         self.special_fields.clear();
     }
 
-    fn default_instance() -> &'static PlayInfo {
-        static instance: PlayInfo = PlayInfo {
-            url: ::std::string::String::new(),
-            length: 0,
-            size: 0,
-            title: ::std::string::String::new(),
+    fn default_instance() -> &'static Info {
+        static instance: Info = Info {
+            base_url: ::std::string::String::new(),
+            codecid: 0,
+            id: 0,
             special_fields: ::protobuf::SpecialFields::new(),
         };
         &instance
     }
 }
 
-impl ::protobuf::MessageFull for PlayInfo {
+impl ::protobuf::MessageFull for Info {
     fn descriptor() -> ::protobuf::reflect::MessageDescriptor {
         static descriptor: ::protobuf::rt::Lazy<::protobuf::reflect::MessageDescriptor> = ::protobuf::rt::Lazy::new();
-        descriptor.get(|| file_descriptor().message_by_package_relative_name("PlayInfo").unwrap()).clone()
+        descriptor.get(|| file_descriptor().message_by_package_relative_name("Info").unwrap()).clone()
     }
 }
 
-impl ::std::fmt::Display for PlayInfo {
+impl ::std::fmt::Display for Info {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         ::protobuf::text_format::fmt(self, f)
     }
 }
 
-impl ::protobuf::reflect::ProtobufValue for PlayInfo {
+impl ::protobuf::reflect::ProtobufValue for Info {
+    type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
+}
+
+// @@protoc_insertion_point(message:data.Dash)
+#[derive(PartialEq,Clone,Default,Debug)]
+pub struct Dash {
+    // message fields
+    // @@protoc_insertion_point(field:data.Dash.video)
+    pub video: ::std::vec::Vec<Info>,
+    // @@protoc_insertion_point(field:data.Dash.audio)
+    pub audio: ::std::vec::Vec<Info>,
+    // special fields
+    // @@protoc_insertion_point(special_field:data.Dash.special_fields)
+    pub special_fields: ::protobuf::SpecialFields,
+}
+
+impl<'a> ::std::default::Default for &'a Dash {
+    fn default() -> &'a Dash {
+        <Dash as ::protobuf::Message>::default_instance()
+    }
+}
+
+impl Dash {
+    pub fn new() -> Dash {
+        ::std::default::Default::default()
+    }
+
+    fn generated_message_descriptor_data() -> ::protobuf::reflect::GeneratedMessageDescriptorData {
+        let mut fields = ::std::vec::Vec::with_capacity(2);
+        let mut oneofs = ::std::vec::Vec::with_capacity(0);
+        fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
+            "video",
+            |m: &Dash| { &m.video },
+            |m: &mut Dash| { &mut m.video },
+        ));
+        fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
+            "audio",
+            |m: &Dash| { &m.audio },
+            |m: &mut Dash| { &mut m.audio },
+        ));
+        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<Dash>(
+            "Dash",
+            fields,
+            oneofs,
+        )
+    }
+}
+
+impl ::protobuf::Message for Dash {
+    const NAME: &'static str = "Dash";
+
+    fn is_initialized(&self) -> bool {
+        true
+    }
+
+    fn merge_from(&mut self, is: &mut ::protobuf::CodedInputStream<'_>) -> ::protobuf::Result<()> {
+        while let Some(tag) = is.read_raw_tag_or_eof()? {
+            match tag {
+                10 => {
+                    self.video.push(is.read_message()?);
+                },
+                18 => {
+                    self.audio.push(is.read_message()?);
+                },
+                tag => {
+                    ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
+                },
+            };
+        }
+        ::std::result::Result::Ok(())
+    }
+
+    // Compute sizes of nested messages
+    #[allow(unused_variables)]
+    fn compute_size(&self) -> u64 {
+        let mut my_size = 0;
+        for value in &self.video {
+            let len = value.compute_size();
+            my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
+        };
+        for value in &self.audio {
+            let len = value.compute_size();
+            my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
+        };
+        my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
+        self.special_fields.cached_size().set(my_size as u32);
+        my_size
+    }
+
+    fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
+        for v in &self.video {
+            ::protobuf::rt::write_message_field_with_cached_size(1, v, os)?;
+        };
+        for v in &self.audio {
+            ::protobuf::rt::write_message_field_with_cached_size(2, v, os)?;
+        };
+        os.write_unknown_fields(self.special_fields.unknown_fields())?;
+        ::std::result::Result::Ok(())
+    }
+
+    fn special_fields(&self) -> &::protobuf::SpecialFields {
+        &self.special_fields
+    }
+
+    fn mut_special_fields(&mut self) -> &mut ::protobuf::SpecialFields {
+        &mut self.special_fields
+    }
+
+    fn new() -> Dash {
+        Dash::new()
+    }
+
+    fn clear(&mut self) {
+        self.video.clear();
+        self.audio.clear();
+        self.special_fields.clear();
+    }
+
+    fn default_instance() -> &'static Dash {
+        static instance: Dash = Dash {
+            video: ::std::vec::Vec::new(),
+            audio: ::std::vec::Vec::new(),
+            special_fields: ::protobuf::SpecialFields::new(),
+        };
+        &instance
+    }
+}
+
+impl ::protobuf::MessageFull for Dash {
+    fn descriptor() -> ::protobuf::reflect::MessageDescriptor {
+        static descriptor: ::protobuf::rt::Lazy<::protobuf::reflect::MessageDescriptor> = ::protobuf::rt::Lazy::new();
+        descriptor.get(|| file_descriptor().message_by_package_relative_name("Dash").unwrap()).clone()
+    }
+}
+
+impl ::std::fmt::Display for Dash {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        ::protobuf::text_format::fmt(self, f)
+    }
+}
+
+impl ::protobuf::reflect::ProtobufValue for Dash {
     type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
 }
 
 #[derive(Clone,Copy,PartialEq,Eq,Debug,Hash)]
-// @@protoc_insertion_point(enum:data.Clarity)
-pub enum Clarity {
-    // @@protoc_insertion_point(enum_value:data.Clarity.FourK)
-    FourK = 0,
-    // @@protoc_insertion_point(enum_value:data.Clarity.FullHDHighFrame)
-    FullHDHighFrame = 1,
-    // @@protoc_insertion_point(enum_value:data.Clarity.FullHDHighCode)
-    FullHDHighCode = 2,
-    // @@protoc_insertion_point(enum_value:data.Clarity.FullHD)
-    FullHD = 3,
-    // @@protoc_insertion_point(enum_value:data.Clarity.HDHighFrame)
-    HDHighFrame = 4,
-    // @@protoc_insertion_point(enum_value:data.Clarity.HD)
-    HD = 5,
-    // @@protoc_insertion_point(enum_value:data.Clarity.SD)
-    SD = 6,
-    // @@protoc_insertion_point(enum_value:data.Clarity.LD)
-    LD = 7,
-    // @@protoc_insertion_point(enum_value:data.Clarity.VLD)
-    VLD = 8,
+// @@protoc_insertion_point(enum:data.Qn)
+pub enum Qn {
+    // @@protoc_insertion_point(enum_value:data.Qn.Default)
+    Default = 0,
+    // @@protoc_insertion_point(enum_value:data.Qn.EightK)
+    EightK = 127,
+    // @@protoc_insertion_point(enum_value:data.Qn.Dolby)
+    Dolby = 126,
+    // @@protoc_insertion_point(enum_value:data.Qn.HDR)
+    HDR = 125,
+    // @@protoc_insertion_point(enum_value:data.Qn.FourK)
+    FourK = 120,
+    // @@protoc_insertion_point(enum_value:data.Qn.FullHDHighFrame)
+    FullHDHighFrame = 116,
+    // @@protoc_insertion_point(enum_value:data.Qn.FullHDHighCode)
+    FullHDHighCode = 112,
+    // @@protoc_insertion_point(enum_value:data.Qn.FullHD)
+    FullHD = 80,
+    // @@protoc_insertion_point(enum_value:data.Qn.HDHighFrame)
+    HDHighFrame = 74,
+    // @@protoc_insertion_point(enum_value:data.Qn.HD)
+    HD = 64,
+    // @@protoc_insertion_point(enum_value:data.Qn.SD)
+    SD = 32,
+    // @@protoc_insertion_point(enum_value:data.Qn.LD)
+    LD = 16,
+    // @@protoc_insertion_point(enum_value:data.Qn.VLD)
+    VLD = 6,
 }
 
-impl ::protobuf::Enum for Clarity {
-    const NAME: &'static str = "Clarity";
+impl ::protobuf::Enum for Qn {
+    const NAME: &'static str = "Qn";
 
     fn value(&self) -> i32 {
         *self as i32
     }
 
-    fn from_i32(value: i32) -> ::std::option::Option<Clarity> {
+    fn from_i32(value: i32) -> ::std::option::Option<Qn> {
         match value {
-            0 => ::std::option::Option::Some(Clarity::FourK),
-            1 => ::std::option::Option::Some(Clarity::FullHDHighFrame),
-            2 => ::std::option::Option::Some(Clarity::FullHDHighCode),
-            3 => ::std::option::Option::Some(Clarity::FullHD),
-            4 => ::std::option::Option::Some(Clarity::HDHighFrame),
-            5 => ::std::option::Option::Some(Clarity::HD),
-            6 => ::std::option::Option::Some(Clarity::SD),
-            7 => ::std::option::Option::Some(Clarity::LD),
-            8 => ::std::option::Option::Some(Clarity::VLD),
+            0 => ::std::option::Option::Some(Qn::Default),
+            127 => ::std::option::Option::Some(Qn::EightK),
+            126 => ::std::option::Option::Some(Qn::Dolby),
+            125 => ::std::option::Option::Some(Qn::HDR),
+            120 => ::std::option::Option::Some(Qn::FourK),
+            116 => ::std::option::Option::Some(Qn::FullHDHighFrame),
+            112 => ::std::option::Option::Some(Qn::FullHDHighCode),
+            80 => ::std::option::Option::Some(Qn::FullHD),
+            74 => ::std::option::Option::Some(Qn::HDHighFrame),
+            64 => ::std::option::Option::Some(Qn::HD),
+            32 => ::std::option::Option::Some(Qn::SD),
+            16 => ::std::option::Option::Some(Qn::LD),
+            6 => ::std::option::Option::Some(Qn::VLD),
             _ => ::std::option::Option::None
         }
     }
 
-    fn from_str(str: &str) -> ::std::option::Option<Clarity> {
+    fn from_str(str: &str) -> ::std::option::Option<Qn> {
         match str {
-            "FourK" => ::std::option::Option::Some(Clarity::FourK),
-            "FullHDHighFrame" => ::std::option::Option::Some(Clarity::FullHDHighFrame),
-            "FullHDHighCode" => ::std::option::Option::Some(Clarity::FullHDHighCode),
-            "FullHD" => ::std::option::Option::Some(Clarity::FullHD),
-            "HDHighFrame" => ::std::option::Option::Some(Clarity::HDHighFrame),
-            "HD" => ::std::option::Option::Some(Clarity::HD),
-            "SD" => ::std::option::Option::Some(Clarity::SD),
-            "LD" => ::std::option::Option::Some(Clarity::LD),
-            "VLD" => ::std::option::Option::Some(Clarity::VLD),
+            "Default" => ::std::option::Option::Some(Qn::Default),
+            "EightK" => ::std::option::Option::Some(Qn::EightK),
+            "Dolby" => ::std::option::Option::Some(Qn::Dolby),
+            "HDR" => ::std::option::Option::Some(Qn::HDR),
+            "FourK" => ::std::option::Option::Some(Qn::FourK),
+            "FullHDHighFrame" => ::std::option::Option::Some(Qn::FullHDHighFrame),
+            "FullHDHighCode" => ::std::option::Option::Some(Qn::FullHDHighCode),
+            "FullHD" => ::std::option::Option::Some(Qn::FullHD),
+            "HDHighFrame" => ::std::option::Option::Some(Qn::HDHighFrame),
+            "HD" => ::std::option::Option::Some(Qn::HD),
+            "SD" => ::std::option::Option::Some(Qn::SD),
+            "LD" => ::std::option::Option::Some(Qn::LD),
+            "VLD" => ::std::option::Option::Some(Qn::VLD),
             _ => ::std::option::Option::None
         }
     }
 
-    const VALUES: &'static [Clarity] = &[
-        Clarity::FourK,
-        Clarity::FullHDHighFrame,
-        Clarity::FullHDHighCode,
-        Clarity::FullHD,
-        Clarity::HDHighFrame,
-        Clarity::HD,
-        Clarity::SD,
-        Clarity::LD,
-        Clarity::VLD,
+    const VALUES: &'static [Qn] = &[
+        Qn::Default,
+        Qn::EightK,
+        Qn::Dolby,
+        Qn::HDR,
+        Qn::FourK,
+        Qn::FullHDHighFrame,
+        Qn::FullHDHighCode,
+        Qn::FullHD,
+        Qn::HDHighFrame,
+        Qn::HD,
+        Qn::SD,
+        Qn::LD,
+        Qn::VLD,
     ];
 }
 
-impl ::protobuf::EnumFull for Clarity {
+impl ::protobuf::EnumFull for Qn {
     fn enum_descriptor() -> ::protobuf::reflect::EnumDescriptor {
         static descriptor: ::protobuf::rt::Lazy<::protobuf::reflect::EnumDescriptor> = ::protobuf::rt::Lazy::new();
-        descriptor.get(|| file_descriptor().enum_by_package_relative_name("Clarity").unwrap()).clone()
+        descriptor.get(|| file_descriptor().enum_by_package_relative_name("Qn").unwrap()).clone()
     }
 
     fn descriptor(&self) -> ::protobuf::reflect::EnumValueDescriptor {
-        let index = *self as usize;
+        let index = match self {
+            Qn::Default => 0,
+            Qn::EightK => 1,
+            Qn::Dolby => 2,
+            Qn::HDR => 3,
+            Qn::FourK => 4,
+            Qn::FullHDHighFrame => 5,
+            Qn::FullHDHighCode => 6,
+            Qn::FullHD => 7,
+            Qn::HDHighFrame => 8,
+            Qn::HD => 9,
+            Qn::SD => 10,
+            Qn::LD => 11,
+            Qn::VLD => 12,
+        };
         Self::enum_descriptor().value_by_index(index)
     }
 }
 
-impl ::std::default::Default for Clarity {
+impl ::std::default::Default for Qn {
     fn default() -> Self {
-        Clarity::FourK
+        Qn::Default
     }
 }
 
-impl Clarity {
+impl Qn {
     fn generated_enum_descriptor_data() -> ::protobuf::reflect::GeneratedEnumDescriptorData {
-        ::protobuf::reflect::GeneratedEnumDescriptorData::new::<Clarity>("Clarity")
+        ::protobuf::reflect::GeneratedEnumDescriptorData::new::<Qn>("Qn")
     }
 }
 
@@ -1390,31 +1548,34 @@ static file_descriptor_proto_data: &'static [u8] = b"\
     \x16\n\x06buvid3\x18\x05\x20\x01(\tR\x06buvid3\x12\x16\n\x06buvid4\x18\
     \x06\x20\x01(\tR\x06buvid4\x12\x13\n\x05_uuid\x18\x07\x20\x01(\tR\x04Uui\
     d\x12\x19\n\x08buvid_fp\x18\x08\x20\x01(\tR\x07buvidFp\x12\x10\n\x03sid\
-    \x18\t\x20\x01(\tR\x03sid\"\xaa\x01\n\x08ListMeta\x12\x0e\n\x02id\x18\
+    \x18\t\x20\x01(\tR\x03sid\"\xa5\x01\n\x08ListMeta\x12\x0e\n\x02id\x18\
     \x01\x20\x01(\x03R\x02id\x12\x14\n\x05title\x18\x02\x20\x01(\tR\x05title\
     \x12\x1f\n\x0bmedia_count\x18\x03\x20\x01(\x05R\nmediaCount\x12\x14\n\
     \x05track\x18\x04\x20\x01(\x08R\x05track\x12\x18\n\x07expired\x18\x05\
-    \x20\x01(\x08R\x07expired\x12'\n\x07clarity\x18d\x20\x01(\x0e2\r.data.Cl\
-    arityR\x07clarity\"\xb1\x02\n\tVideoMeta\x12\x12\n\x04bvid\x18\x01\x20\
-    \x01(\tR\x04bvid\x12\x14\n\x05title\x18\x02\x20\x01(\tR\x05title\x12$\n\
-    \x05upper\x18\x03\x20\x01(\x0b2\x0e.data.UserMetaR\x05upper\x12\x12\n\
-    \x04type\x18\x04\x20\x01(\x03R\x04type\x12\x14\n\x05saved\x18\x05\x20\
-    \x01(\x08R\x05saved\x12\x10\n\x03fav\x18\x06\x20\x01(\x08R\x03fav\x12\
-    \x18\n\x07expired\x18\x07\x20\x01(\x08R\x07expired\x12\x12\n\x04attr\x18\
-    \x08\x20\x01(\x05R\x04attr\x12\x14\n\x05track\x18\t\x20\x01(\x08R\x05tra\
-    ck\x12\x10\n\x03cid\x18\n\x20\x01(\x03R\x03cid\x12\x19\n\x08list_ids\x18\
-    c\x20\x03(\x03R\x07listIds\x12'\n\x07clarity\x18d\x20\x01(\x0e2\r.data.C\
-    larityR\x07clarity\"0\n\x08UserMeta\x12\x10\n\x03mid\x18\x01\x20\x01(\
-    \x03R\x03mid\x12\x12\n\x04name\x18\x02\x20\x01(\tR\x04name\"U\n\x04Meta\
-    \x12'\n\x06videos\x18\x01\x20\x03(\x0b2\x0f.data.VideoMetaR\x06videos\
-    \x12$\n\x05lists\x18\x02\x20\x03(\x0b2\x0e.data.ListMetaR\x05lists\"^\n\
-    \x08PlayInfo\x12\x10\n\x03url\x18\x01\x20\x01(\tR\x03url\x12\x16\n\x06le\
-    ngth\x18\x02\x20\x01(\x03R\x06length\x12\x12\n\x04size\x18\x03\x20\x01(\
-    \x03R\x04size\x12\x14\n\x05title\x18\x04\x20\x01(\tR\x05title*{\n\x07Cla\
-    rity\x12\t\n\x05FourK\x10\0\x12\x13\n\x0fFullHDHighFrame\x10\x01\x12\x12\
-    \n\x0eFullHDHighCode\x10\x02\x12\n\n\x06FullHD\x10\x03\x12\x0f\n\x0bHDHi\
-    ghFrame\x10\x04\x12\x06\n\x02HD\x10\x05\x12\x06\n\x02SD\x10\x06\x12\x06\
-    \n\x02LD\x10\x07\x12\x07\n\x03VLD\x10\x08b\x06proto3\
+    \x20\x01(\x08R\x07expired\x12\"\n\x07clarity\x18d\x20\x01(\x0e2\x08.data\
+    .QnR\x07clarity\"\xac\x02\n\tVideoMeta\x12\x12\n\x04bvid\x18\x01\x20\x01\
+    (\tR\x04bvid\x12\x14\n\x05title\x18\x02\x20\x01(\tR\x05title\x12$\n\x05u\
+    pper\x18\x03\x20\x01(\x0b2\x0e.data.UserMetaR\x05upper\x12\x12\n\x04type\
+    \x18\x04\x20\x01(\x03R\x04type\x12\x14\n\x05saved\x18\x05\x20\x01(\x08R\
+    \x05saved\x12\x10\n\x03fav\x18\x06\x20\x01(\x08R\x03fav\x12\x18\n\x07exp\
+    ired\x18\x07\x20\x01(\x08R\x07expired\x12\x12\n\x04attr\x18\x08\x20\x01(\
+    \x05R\x04attr\x12\x14\n\x05track\x18\t\x20\x01(\x08R\x05track\x12\x10\n\
+    \x03cid\x18\n\x20\x01(\x03R\x03cid\x12\x19\n\x08list_ids\x18c\x20\x03(\
+    \x03R\x07listIds\x12\"\n\x07clarity\x18d\x20\x01(\x0e2\x08.data.QnR\x07c\
+    larity\"0\n\x08UserMeta\x12\x10\n\x03mid\x18\x01\x20\x01(\x03R\x03mid\
+    \x12\x12\n\x04name\x18\x02\x20\x01(\tR\x04name\"U\n\x04Meta\x12'\n\x06vi\
+    deos\x18\x01\x20\x03(\x0b2\x0f.data.VideoMetaR\x06videos\x12$\n\x05lists\
+    \x18\x02\x20\x03(\x0b2\x0e.data.ListMetaR\x05lists\"K\n\x04Info\x12\x19\
+    \n\x08base_url\x18\x03\x20\x01(\tR\x07baseUrl\x12\x18\n\x07codecid\x18\
+    \x04\x20\x01(\x05R\x07codecid\x12\x0e\n\x02id\x18\x05\x20\x01(\x05R\x02i\
+    d\"J\n\x04Dash\x12\x20\n\x05video\x18\x01\x20\x03(\x0b2\n.data.InfoR\x05\
+    video\x12\x20\n\x05audio\x18\x02\x20\x03(\x0b2\n.data.InfoR\x05audio*\
+    \xa3\x01\n\x02Qn\x12\x0b\n\x07Default\x10\0\x12\n\n\x06EightK\x10\x7f\
+    \x12\t\n\x05Dolby\x10~\x12\x07\n\x03HDR\x10}\x12\t\n\x05FourK\x10x\x12\
+    \x13\n\x0fFullHDHighFrame\x10t\x12\x12\n\x0eFullHDHighCode\x10p\x12\n\n\
+    \x06FullHD\x10P\x12\x0f\n\x0bHDHighFrame\x10J\x12\x06\n\x02HD\x10@\x12\
+    \x06\n\x02SD\x10\x20\x12\x06\n\x02LD\x10\x10\x12\x07\n\x03VLD\x10\x06b\
+    \x06proto3\
 ";
 
 /// `FileDescriptorProto` object which was a source for this generated file
@@ -1432,15 +1593,16 @@ pub fn file_descriptor() -> &'static ::protobuf::reflect::FileDescriptor {
     file_descriptor.get(|| {
         let generated_file_descriptor = generated_file_descriptor_lazy.get(|| {
             let mut deps = ::std::vec::Vec::with_capacity(0);
-            let mut messages = ::std::vec::Vec::with_capacity(6);
+            let mut messages = ::std::vec::Vec::with_capacity(7);
             messages.push(Cookie::generated_message_descriptor_data());
             messages.push(ListMeta::generated_message_descriptor_data());
             messages.push(VideoMeta::generated_message_descriptor_data());
             messages.push(UserMeta::generated_message_descriptor_data());
             messages.push(Meta::generated_message_descriptor_data());
-            messages.push(PlayInfo::generated_message_descriptor_data());
+            messages.push(Info::generated_message_descriptor_data());
+            messages.push(Dash::generated_message_descriptor_data());
             let mut enums = ::std::vec::Vec::with_capacity(1);
-            enums.push(Clarity::generated_enum_descriptor_data());
+            enums.push(Qn::generated_enum_descriptor_data());
             ::protobuf::reflect::GeneratedFileDescriptor::new_generated(
                 file_descriptor_proto(),
                 deps,

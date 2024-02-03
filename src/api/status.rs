@@ -1,6 +1,6 @@
 use crate::{
     cli::utils::show_table,
-    proto::data::{Clarity, Meta},
+    proto::data::{Meta, Qn},
 };
 
 impl Meta {
@@ -128,18 +128,22 @@ impl Meta {
     }
 }
 
-impl ToString for Clarity {
+impl ToString for Qn {
     fn to_string(&self) -> String {
         match self {
-            Clarity::FourK => "4k",
-            Clarity::FullHDHighFrame => "1080P60",
-            Clarity::FullHDHighCode => "1080P+",
-            Clarity::FullHD => "1080P",
-            Clarity::HDHighFrame => "720P60",
-            Clarity::HD => "720P",
-            Clarity::SD => "480P",
-            Clarity::LD => "360P",
-            Clarity::VLD => "240P",
+            Qn::Default => "Default",
+            Qn::EightK => "8k",
+            Qn::Dolby => "Dolby",
+            Qn::HDR => "HDR",
+            Qn::FourK => "4k",
+            Qn::FullHDHighFrame => "1080P60",
+            Qn::FullHDHighCode => "1080P+",
+            Qn::FullHD => "1080P",
+            Qn::HDHighFrame => "720P60",
+            Qn::HD => "720P",
+            Qn::SD => "480P",
+            Qn::LD => "360P",
+            Qn::VLD => "240P",
         }
         .to_string()
     }

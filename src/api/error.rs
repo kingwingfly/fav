@@ -13,6 +13,8 @@ pub enum ApiError {
     CreateTempFileFail { source: std::io::Error },
     #[snafu(display("Persist temp file fail"), context(false))]
     PersistFail { source: tempfile::PersistError },
+    #[snafu(display("{}", msg))]
+    MergeFail { msg: String },
 }
 
 pub type Result<T, E = ApiError> = std::result::Result<T, E>;

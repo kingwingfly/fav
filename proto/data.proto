@@ -20,7 +20,7 @@ message ListMeta {
 
     bool track = 4;
     bool expired = 5;
-    Clarity clarity = 100;
+    Qn clarity = 100;
 }
 
 message VideoMeta {
@@ -38,7 +38,7 @@ message VideoMeta {
     bool track = 9;
     int64 cid = 10;
     repeated int64 list_ids = 99;
-    Clarity clarity = 100;
+    Qn clarity = 100;
 }
 
 message UserMeta {
@@ -51,30 +51,41 @@ message Meta {
     repeated ListMeta lists = 2;
 }
 
-enum Clarity {
+enum Qn {
+    Default = 0;
+    // 8k
+    EightK = 127;
+    // Dolby Vision
+    Dolby = 126;
+    // HDR
+    HDR = 125;
     // 4K
-    FourK = 0;
+    FourK = 120;
     // 1080P60
-    FullHDHighFrame = 1;
+    FullHDHighFrame = 116;
     // 1080+
-    FullHDHighCode = 2;
+    FullHDHighCode = 112;
     // 1080P
-    FullHD = 3;
+    FullHD = 80;
     // 720P60
-    HDHighFrame = 4;
+    HDHighFrame = 74;
     // 720P
-    HD = 5;
+    HD = 64;
     // 480P
-    SD = 6;
+    SD = 32;
     // 360P
-    LD = 7;
+    LD = 16;
     // 240P
-    VLD = 8;
+    VLD = 6;
 }
 
-message PlayInfo {
-    string url = 1;
-    int64 length = 2;
-    int64 size = 3;
-    string title = 4;
+message Info {
+    string base_url = 3;
+    int32 codecid = 4;
+    int32 id = 5;
+}
+
+message Dash {
+    repeated Info video = 1;
+    repeated Info audio = 2;
 }
