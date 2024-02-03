@@ -13,6 +13,7 @@ pub(crate) mod pull;
 pub(crate) mod status;
 pub(crate) mod track;
 pub(crate) mod untrack;
+mod wbi;
 
 #[allow(unused)]
 pub(super) const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15";
@@ -49,4 +50,11 @@ pub(super) fn timestamp() -> u128 {
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap()
         .as_millis()
+}
+
+pub(super) fn timestamp_sc() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
 }
