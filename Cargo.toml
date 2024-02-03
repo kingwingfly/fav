@@ -42,3 +42,8 @@ protobuf-codegen = { version = "3" }
 [features]
 default = ["bili"]
 bili = []
+
+[profile.release]
+lto = true
+opt-level = 3
+codegen-units = 1
