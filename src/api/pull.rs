@@ -166,7 +166,7 @@ async fn merge(title: &str, path_v: &str, path_a: &str) -> Result<()> {
             "copy",
             "-f",
             "mp4",
-            &format!("{}.mp4", title),
+            &format!("{}.mp4", sanitize_filename::sanitize(title)),
         ])
         .stderr(std::process::Stdio::null())
         .status()
