@@ -1,4 +1,4 @@
-use tracing::warn;
+use tracing::{info, warn};
 
 use crate::proto::data::{Meta, Qn};
 
@@ -30,8 +30,16 @@ impl Meta {
                 .iter_mut()
                 .filter(|v| v.list_ids.contains(&target.id))
                 .for_each(|v| v.saved = saved);
+            info!(
+                "Mark videos in list id:{} title:{} as saved",
+                target.id, target.title
+            )
         } else if let Some(target) = self.videos.iter_mut().find(|v| v.bvid == id) {
             target.saved = saved;
+            info!(
+                "Mark video id:{} title:{} as saved",
+                target.bvid, target.title
+            );
         } else {
             warn!("id<{}> not found", id);
         }
@@ -43,9 +51,30 @@ impl Meta {
             self.videos
                 .iter_mut()
                 .filter(|v| v.list_ids.contains(&target.id))
-                .for_each(|v| v.clarity = clarity.into());
+                .for_each(|v| {
+                    if v.clarity.unwrap() != clarity {
+                        v.clarity = clarity.into();
+                        v.saved = false;
+                    }
+                });
+            info!(
+                "Mofified clarity of id:{} title:{}",
+                target.id, target.title,
+            );
         } else if let Some(target) = self.videos.iter_mut().find(|v| v.bvid == id) {
-            target.clarity = clarity.into();
+            if target.clarity.unwrap() == clarity {
+                info!(
+                    "Clarity of video id:{} title:{} is not changed",
+                    target.bvid, target.title,
+                );
+            } else {
+                target.clarity = clarity.into();
+                target.saved = false;
+                info!(
+                    "Mofified clarity of video id:{} title:{}",
+                    target.bvid, target.title,
+                );
+            }
         } else {
             warn!("id<{}> not found", id);
         }
