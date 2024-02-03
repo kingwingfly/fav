@@ -56,6 +56,8 @@ async fn do_pull(video: &VideoMeta) -> Result<String> {
             ("bvid", video.bvid.as_str()),
             ("cid", &video.cid.to_string()),
             ("qn", &video.clarity.unwrap().to_qn()),
+            ("fnval", "128"),
+            ("fourk", "1"),
         ],
     )
     .unwrap();
