@@ -33,7 +33,7 @@ async fn try_pull(videos: Vec<&'static VideoMeta>) {
     let mut meta = meta().clone();
     for batch in videos.chunks(10) {
         let jhs: Vec<_> = batch
-            .into_iter()
+            .iter()
             .filter(|v| v.track && !v.saved)
             .map(|&v| tokio::spawn(do_pull(v)))
             .collect();
@@ -181,9 +181,9 @@ async fn merge(title: &str, path_v: &str, path_a: &str) -> Result<()> {
     }
 }
 
-impl Into<String> for Qn {
-    fn into(self) -> String {
-        (self as usize).to_string()
+impl From<Qn> for String {
+    fn from(qn: Qn) -> String {
+        (qn as usize).to_string()
     }
 }
 

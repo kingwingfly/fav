@@ -4,21 +4,15 @@ use crate::proto::data::{Meta, Qn};
 
 pub(crate) fn modify(id: Vec<String>, save: Option<bool>, clarity: Option<Qn>) {
     let mut meta = Meta::read();
-    match save {
-        Some(save) => {
-            for i in id.iter() {
-                meta.mark_saved(i, save);
-            }
+    if let Some(save) = save {
+        for i in id.iter() {
+            meta.mark_saved(i, save);
         }
-        None => {}
     }
-    match clarity {
-        Some(clarity) => {
-            for i in id.iter() {
-                meta.modify_clarity(i, clarity);
-            }
+    if let Some(clarity) = clarity {
+        for i in id.iter() {
+            meta.modify_clarity(i, clarity);
         }
-        None => {}
     }
     meta.persist();
 }
