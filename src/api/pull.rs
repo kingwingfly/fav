@@ -207,4 +207,11 @@ mod tests {
         let json: serde_json::Value = resp.json().await.unwrap();
         println!("{:#?}", json);
     }
+
+    #[test]
+    fn qn_into() {
+        let qn = Qn::FourK;
+        let s: String = qn.into();
+        assert_eq!(s, "120");
+    }
 }
