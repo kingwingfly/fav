@@ -76,11 +76,11 @@ impl Meta {
 
     async fn fetch_videos(&mut self) -> Result<()> {
         info!("Fetching fave videos tracked");
-        for (list_id, count) in self
+        for (list_id, count, clarity) in self
             .lists
             .iter()
             .filter(|list| list.track)
-            .map(|list| (list.id, list.media_count))
+            .map(|list| (list.id, list.media_count, list.clarity.unwrap()))
         {
             for page in 0..=count.saturating_sub(1) / 20 {
                 let url = reqwest::Url::parse_with_params(
@@ -111,6 +111,7 @@ impl Meta {
                             video.fav = true;
                             video.expired = video.attr != 0;
                             video.track = true;
+                            video.clarity = clarity.into();
                             self.videos.push(video);
                         }
                     });
