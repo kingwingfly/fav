@@ -130,6 +130,7 @@ Commands:
   push     Push local data
   like     Like a video
   ffmpeg   Set the path of ffmpeg
+  daemon   Interval fetch and pull
   help     Print this message or the help of the given subcommand(s)
 
 Options:
@@ -170,6 +171,12 @@ $ fav ignore <list_id/bvid>
 $ fav untrack <list_id/bvid>
 # like
 $ fav like --all
+# daemon
+$ fav daemon 30
+# mark as saved
+$ fav modify <list_id/bvid> --saved true
+# modify clarity
+$ fav modify <list_id/bvid> --clarity 1080p
 ```
 
 

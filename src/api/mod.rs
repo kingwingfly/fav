@@ -9,6 +9,7 @@ mod error;
 pub(crate) mod fetch;
 pub(crate) mod init;
 pub(crate) mod like;
+pub(crate) mod modify;
 pub(crate) mod pull;
 pub(crate) mod status;
 pub(crate) mod track;

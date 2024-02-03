@@ -5,6 +5,7 @@
 mod api;
 mod cli;
 mod config;
+mod daemon;
 mod meta;
 mod proto;
 

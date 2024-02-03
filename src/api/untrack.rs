@@ -1,12 +1,9 @@
 use tracing::info;
 
-use crate::{
-    meta::meta,
-    proto::data::{ListMeta, Meta, VideoMeta},
-};
+use crate::proto::data::{ListMeta, Meta, VideoMeta};
 
 pub(crate) fn untrack(id: Vec<String>) {
-    let mut meta = meta().clone();
+    let mut meta = Meta::read();
     id.into_iter().for_each(|id| meta.untrack(id));
     meta.persist();
 }

@@ -1,6 +1,5 @@
 use super::error::Result;
 use super::{client, parse_message};
-use crate::meta::meta;
 use crate::proto::data::{ListMeta, Meta, UserMeta, VideoMeta};
 use crate::{cli::Kind, config::config};
 use tracing::{info, warn};
@@ -9,12 +8,19 @@ const LISTS_API: &str = "https://api.bilibili.com/x/v3/fav/folder/created/list-a
 const FAV_API: &str = "https://api.bilibili.com/x/v3/fav/resource/list";
 const VIDEO_API: &str = "https://api.bilibili.com/x/web-interface/view";
 
-pub(crate) async fn fetch(prune: bool) -> Result<()> {
-    let mut meta = meta().clone();
+pub(crate) async fn fetch(prune: bool, show_status: bool) -> Result<()> {
+    let mut meta = Meta::read();
     match config().kind {
         #[cfg(feature = "bili")]
-        Kind::Bili => meta.fetch_bili(prune).await?,
+        Kind::Bili => meta.fetch_bili().await?,
     };
+    if prune {
+        meta.tidy();
+    }
+    if show_status {
+        meta.after_fetch();
+    }
+    meta.persist();
     Ok(())
 }
 
@@ -30,17 +36,12 @@ impl Meta {
         });
     }
 
-    async fn fetch_bili(&mut self, prune: bool) -> Result<()> {
+    async fn fetch_bili(&mut self) -> Result<()> {
         info!("Fetching...");
         self.before_fetch();
         self.fetch_lists().await?;
         self.fetch_videos().await?;
         self.fetch_metas().await?;
-        if prune {
-            self.tidy();
-        }
-        self.after_fetch();
-        self.persist();
         Ok(())
     }
 
@@ -183,12 +184,12 @@ mod tests {
 
     #[tokio::test]
     async fn fetch_test() {
-        assert!(fetch(false).await.is_ok());
+        assert!(fetch(false, true).await.is_ok());
     }
 
     #[tokio::test]
     async fn fetch_prune_test() {
-        assert!(fetch(true).await.is_ok());
+        assert!(fetch(true, true).await.is_ok());
     }
 
     #[tokio::test]

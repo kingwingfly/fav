@@ -4,14 +4,11 @@
 //! and the track method of VideoMeta will only track the video itself.
 //! The same is untrack.
 
-use crate::{
-    meta::meta,
-    proto::data::{ListMeta, Meta, VideoMeta},
-};
+use crate::proto::data::{ListMeta, Meta, VideoMeta};
 use tracing::info;
 
 pub(crate) fn track(id: Vec<String>) {
-    let mut meta = meta().clone();
+    let mut meta = Meta::read();
     id.into_iter().for_each(|id| meta.track(id));
     meta.persist();
 }

@@ -1,4 +1,4 @@
-use crate::{api::client, config::config, meta::meta};
+use crate::{api::client, config::config, proto::data::Meta};
 use reqwest::header::COOKIE;
 use tracing::{info, warn};
 
@@ -14,7 +14,7 @@ pub(crate) async fn like(bvid: Vec<String>) {
 }
 
 pub(crate) async fn like_all() {
-    let videos = &meta().videos;
+    let videos = Meta::read().videos;
     for v in videos.iter().filter(|v| v.track).map(|v| &v.bvid) {
         try_like(v).await;
         std::thread::sleep(std::time::Duration::from_secs(LIKE_INTERVAL));
@@ -31,12 +31,13 @@ async fn try_like(bvid: &str) {
 #[allow(unused)]
 #[deprecated(note = "Fast operation will lead server rejection")]
 pub(crate) async fn like_all_fast() {
-    let meta = meta();
-    let jhs: Vec<_> = meta
-        .videos
-        .iter()
+    let videos = Meta::read().videos;
+    let jhs: Vec<_> = videos
+        .into_iter()
         .filter_map(|v| match v.track {
-            true => Some(tokio::spawn(try_like(&v.bvid))),
+            true => Some(tokio::spawn(async move {
+                try_like(&v.bvid).await;
+            })),
             false => None,
         })
         .collect();

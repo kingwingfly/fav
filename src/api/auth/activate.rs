@@ -10,7 +10,7 @@ use tracing::{info, warn};
 use super::utils::webgl_str;
 
 const BUVID_API: &str = "https://api.bilibili.com/x/frontend/finger/spi";
-const ACTIVE_API: &str = "https://api.bilibili.com/x/internal/gaia-gateway/ExClimbWuzhi";
+const ACTIVATE_API: &str = "https://api.bilibili.com/x/internal/gaia-gateway/ExClimbWuzhi";
 
 #[derive(serde::Deserialize)]
 struct Buvids {
@@ -58,7 +58,7 @@ pub(super) async fn activate_buvid(cookie: &mut Cookie) -> Result<()> {
     cookie.buvid_fp = buvid_fp(&payload.inner);
 
     let resp = client()
-        .post(ACTIVE_API)
+        .post(ACTIVATE_API)
         .header(
             COOKIE,
             format!(

@@ -9,12 +9,13 @@ use crate::{
         fetch::fetch,
         init::init,
         like::{like, like_all},
+        modify::modify,
         pull::{pull, pull_all},
         track::track,
         untrack::untrack,
     },
     config::set_ffmpeg_path,
-    meta::meta,
+    proto::data::{Meta, Qn},
 };
 
 /// The main CLI entry point.
@@ -90,6 +91,22 @@ enum Commands {
         /// Set the path of ffmpeg
         path: String,
     },
+    /// Interval fetch and pull
+    Daemon {
+        /// The interval to fetch and pull (in minutes, greater than 15)
+        interval: u64,
+    },
+    /// Modify resource status
+    Modify {
+        /// The id of the resources to modify
+        id: Vec<String>,
+        /// Mark saved true or false
+        #[arg(long, short)]
+        save: Option<bool>,
+        /// modify the clarity
+        #[arg(long, short, value_enum)]
+        clarity: Option<Qn>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -102,7 +119,7 @@ enum AuthCommands {
 
 #[derive(ValueEnum, Clone, Debug)]
 #[cfg_attr(test, derive(PartialEq))]
-pub enum Kind {
+pub(crate) enum Kind {
     #[cfg(feature = "bili")]
     Bili,
 }
@@ -117,22 +134,22 @@ impl Cli {
                 AuthCommands::Login => qr_login().await.unwrap(),
                 AuthCommands::Logout => logout().await,
             },
-            Commands::Fetch { prune } => fetch(prune).await.unwrap(),
+            Commands::Fetch { prune } => fetch(prune, true).await.unwrap(),
             Commands::Status {
                 id,
                 list,
                 video,
                 tracked,
             } => match (id, list, video) {
-                (Some(id), false, false) => meta().status_of(id),
-                (None, true, false) => meta().status_list(tracked),
+                (Some(id), false, false) => Meta::read().status_of(id),
+                (None, true, false) => Meta::read().status_list(tracked),
                 (Some(_), list, video) if (list | video) => Cli::command()
                     .error(
                         ErrorKind::ArgumentConflict,
                         "The -l, -v options to 'fav status' does not take a id.",
                     )
                     .exit(),
-                _ => meta().status_video(tracked),
+                _ => Meta::read().status_video(tracked),
             },
             Commands::Track { id } => track(id),
             Commands::Untrack { id } => untrack(id),
@@ -155,6 +172,8 @@ impl Cli {
                     .exit(),
             },
             Commands::Ffmpeg { path } => set_ffmpeg_path(path).await,
+            Commands::Daemon { interval } => crate::daemon::interval(interval).await,
+            Commands::Modify { id, save, clarity } => modify(id, save, clarity),
         }
     }
 }

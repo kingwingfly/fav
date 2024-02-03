@@ -1,6 +1,6 @@
 [package]
 name = "fav"
-version = "0.1.1"
+version = "0.1.2"
 authors = ["Louis <836250617@qq.com>"]
 description = "Back up your favorite online resources with CLI."
 license = "MIT"
@@ -29,6 +29,7 @@ rand = "0.8.5"
 base64 = "0.21.7"
 tempfile = "3.9.0"
 sanitize-filename = "0.5.0"
+md5 = "0.7.0"
 # Net
 reqwest = { version = "0.11.23", features = ["json", "cookies"] }
 # Runtime
@@ -36,7 +37,6 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "pro
 # Log
 tracing = { version = "0.1" }
 tracing-subscriber = { version = "0.3" }
-md5 = "0.7.0"
 
 [build-dependencies]
 protobuf-codegen = { version = "3" }
@@ -49,3 +49,5 @@ bili = []
 lto = true
 opt-level = 3
 codegen-units = 1
+strip = "debuginfo"
+panic = "abort"
