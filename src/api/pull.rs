@@ -79,7 +79,7 @@ async fn download(play_info: PlayInfo) -> Result<()> {
     let PlayInfo {
         url, title, size, ..
     } = play_info;
-    let pb = download_bar(size);
+    let pb = download_bar(size, title.clone());
     let mut resp = client().get(url).send().await?;
     let mut file = BufWriter::new(tempfile::NamedTempFile::new()?);
     loop {
