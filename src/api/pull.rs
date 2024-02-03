@@ -49,13 +49,13 @@ async fn try_pull(videos: Vec<&'static VideoMeta>) {
     meta.persist();
 }
 
-async fn do_pull(opt: &VideoMeta) -> Result<String> {
+async fn do_pull(video: &VideoMeta) -> Result<String> {
     let url = reqwest::Url::parse_with_params(
         API,
         [
-            ("bvid", opt.bvid.as_str()),
-            ("cid", &opt.cid.to_string()),
-            ("qn", &opt.clarity.unwrap().to_qn()),
+            ("bvid", video.bvid.as_str()),
+            ("cid", &video.cid.to_string()),
+            ("qn", &video.clarity.unwrap().to_qn()),
         ],
     )
     .unwrap();
@@ -64,12 +64,12 @@ async fn do_pull(opt: &VideoMeta) -> Result<String> {
     match json["code"].as_i64().unwrap() {
         0 => {
             let mut play_info: PlayInfo = parse_message(&json["data"]["durl"][0]);
-            play_info.title = opt.title.to_owned();
+            play_info.title = video.title.to_owned();
             download(play_info).await?;
-            Ok(opt.bvid.to_owned())
+            Ok(video.bvid.to_owned())
         }
         _ => PullFail {
-            msg: format!("Pull Fail bvid:{}; Expired or other reason.", opt.bvid),
+            msg: format!("Pull Fail bvid:{}; Expired or other reason.", video.bvid),
         }
         .fail(),
     }
@@ -79,7 +79,7 @@ async fn download(play_info: PlayInfo) -> Result<()> {
     let PlayInfo {
         url, title, size, ..
     } = play_info;
-    let pb = download_bar(size, title.clone());
+    let pb = download_bar(size, &title);
     let mut resp = client().get(url).send().await?;
     let mut file = BufWriter::new(tempfile::NamedTempFile::new()?);
     loop {
@@ -96,7 +96,7 @@ async fn download(play_info: PlayInfo) -> Result<()> {
             _ = tokio::signal::ctrl_c() => {
                 file.into_inner().unwrap().close()?;
                 return PullFail {
-                    msg: "Download Fail; Ctrl-C",
+                    msg: "Download Cancelled; Ctrl-C",
                 }.fail();
             }
 

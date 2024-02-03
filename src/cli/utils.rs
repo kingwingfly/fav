@@ -34,11 +34,11 @@ where
     println!("Count: {}\n", count);
 }
 
-pub(crate) fn download_bar(size: i64, msg: String) -> ProgressBar {
+pub(crate) fn download_bar(size: i64, msg: &str) -> ProgressBar {
     static PBS: OnceLock<MultiProgress> = OnceLock::new();
     let pbs = PBS.get_or_init(MultiProgress::new);
     let pb = pbs.add(ProgressBar::new(size as u64));
-    pb.set_message(msg);
+    pb.set_message(format!("{:>5}", msg.chars().take(5).collect::<String>()));
     pb.set_style(ProgressStyle::with_template("{msg} {spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
             .unwrap()
             .progress_chars("#>-"));
