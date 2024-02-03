@@ -111,6 +111,8 @@ Back up your favorite bilibili online resources with CLI.
 <!-- USAGE EXAMPLES -->
 ## Usage
 
+Need `ffmpeg` usable.
+
 ```
 $ fav -h
 Back up your favorite online resources with CLI.
@@ -156,6 +158,8 @@ $ fav status -l
 $ fav track <list_id/bvid>
 # fetch
 $ fav fetch
+# set ffmpeg path
+$ fav ffmpeg /usr/bin/ffmpeg
 # pull videos (support dry-run)
 $ fav pull
 # push videos (support dry-run)
