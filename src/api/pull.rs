@@ -3,6 +3,7 @@ use super::wbi::{encode_wbi, get_wbi_keys};
 use super::{client, error::Result, parse_message};
 use crate::api::error::PullFail;
 use crate::cli::utils::download_bar;
+use crate::config::config;
 use crate::meta::meta;
 use crate::proto::data::{Dash, Qn, VideoMeta};
 use reqwest::header::CONTENT_LENGTH;
@@ -154,7 +155,7 @@ async fn download(title: &str, v_url: &str, a_url: &str) -> Result<()> {
 }
 
 async fn merge(title: &str, path_v: &str, path_a: &str) -> Result<()> {
-    let status = tokio::process::Command::new("ffmpeg")
+    let status = tokio::process::Command::new(&config().ffmpeg_path)
         .args([
             "-y",
             "-i",

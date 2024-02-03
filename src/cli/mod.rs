@@ -13,6 +13,7 @@ use crate::{
         track::track,
         untrack::untrack,
     },
+    config::set_ffmpeg_path,
     meta::meta,
 };
 
@@ -84,6 +85,10 @@ enum Commands {
         #[arg(long, short)]
         all: bool,
     },
+    Ffmpeg {
+        /// Set the path of ffmpeg
+        path: String,
+    },
 }
 
 #[derive(Subcommand)]
@@ -148,6 +153,7 @@ impl Cli {
                     )
                     .exit(),
             },
+            Commands::Ffmpeg { path } => set_ffmpeg_path(path).await,
         }
     }
 }
