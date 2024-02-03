@@ -3,10 +3,10 @@ use protobuf::Message;
 use std::sync::OnceLock;
 use tracing::{info, warn};
 
-const ERR_HINT: &str = "run `backup init` and `backup auth login` first";
-const KIND_PATH: &str = ".backup/kind";
-const COOKIE_PATH: &str = ".backup/cookie";
-const FFMPEG_PATH: &str = ".backup/ffmpeg";
+const ERR_HINT: &str = "run `fav init` and `fav auth login` first";
+const KIND_PATH: &str = ".fav/kind";
+const COOKIE_PATH: &str = ".fav/cookie";
+const FFMPEG_PATH: &str = ".fav/ffmpeg";
 
 impl Cookie {
     pub(crate) fn persist(&self) {

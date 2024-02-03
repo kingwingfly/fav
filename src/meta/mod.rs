@@ -2,8 +2,8 @@ use crate::proto::data::Meta;
 use protobuf::Message;
 use std::sync::OnceLock;
 
-const META_PATH: &str = ".backup/meta";
-const ERR_HINT: &str = "run `backup init` first";
+const META_PATH: &str = ".fav/meta";
+const ERR_HINT: &str = "run `fav init` first";
 
 impl Meta {
     pub fn read() -> Self {

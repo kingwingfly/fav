@@ -27,11 +27,11 @@ pub struct Cli {
 
 #[derive(Subcommand)]
 enum Commands {
-    /// Initialize the folder for backup
+    /// Initialize the folder for fav
     Init {
         #[arg(value_enum)]
         kind: Kind,
-        /// The path to store the backup
+        /// The path to store the fav
         path: Option<std::path::PathBuf>,
     },
     /// Login your account
@@ -85,6 +85,7 @@ enum Commands {
         #[arg(long, short)]
         all: bool,
     },
+    /// Set the path of ffmpeg
     Ffmpeg {
         /// Set the path of ffmpeg
         path: String,
@@ -128,7 +129,7 @@ impl Cli {
                 (Some(_), list, video) if (list | video) => Cli::command()
                     .error(
                         ErrorKind::ArgumentConflict,
-                        "The -l, -v options to 'backup status' does not take a id.",
+                        "The -l, -v options to 'fav status' does not take a id.",
                     )
                     .exit(),
                 _ => meta().status_video(tracked),

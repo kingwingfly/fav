@@ -17,7 +17,7 @@
     <img src="images/logo.png" alt="Logo" width="80" height="80">
   </a>
 
-<h3 align="center">backup</h3>
+<h3 align="center">fav</h3>
 
   <p align="center">
     Back up your favorite online resources with CLI.
@@ -66,7 +66,7 @@
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-[![Product Name Screen Shot][product-screenshot]](https://github.com/kingwingfly/backup)
+[![Product Name Screen Shot][product-screenshot]](https://github.com/kingwingfly/fav)
 
 Back up your favorite online resources with CLI.
 
@@ -97,7 +97,7 @@ Back up your favorite online resources with CLI.
 
 1. Clone the repo
    ```sh
-   git clone https://github.com/kingwingfly/backup.git
+   git clone https://github.com/kingwingfly/fav.git
    ```
 2. Compilation
    ```sh
@@ -112,13 +112,13 @@ Back up your favorite online resources with CLI.
 ## Usage
 
 ```
-$ backup -h
+$ fav -h
 Back up your favorite online resources with CLI.
 
-Usage: backup <COMMAND>
+Usage: fav <COMMAND>
 
 Commands:
-  init     Initialize the folder for backup
+  init     Initialize the folder for fav
   auth     Login your account
   fetch    Fetch from remote
   status   Show status of local, default to show video status
@@ -127,6 +127,7 @@ Commands:
   pull     Pull remote data
   push     Push local data
   like     Like a video
+  ffmpeg   Set the path of ffmpeg
   help     Print this message or the help of the given subcommand(s)
 
 Options:
@@ -137,38 +138,38 @@ Options:
 
 1. Init and Login first
 2. Fetch the favorite list
-3. Track the bvid or list_id you want to backup. You can see them through `backup status -l/v`
+3. Track the bvid or list_id you want to fav. You can see them through `fav status -l/v`
 4. Fetch tracked resources
 5. Pull the resources (Now only tracked resource can be pulled, since c_id need for pulling while only tracked resource has c_id fetched)
 
 ### Example
 ```sh
 # init for bilibili
-$ backup init bili
+$ fav init bili
 # scan code to login
-$ backup auth login
+$ fav auth login
 # fetch favorite list
-$ backup fetch
+$ fav fetch
 # show status
-$ backup status -l
+$ fav status -l
 # track list (just like `git add`, by the way, commit is not needed)
-$ backup track <list_id/bvid>
+$ fav track <list_id/bvid>
 # fetch
-$ backup fetch
+$ fav fetch
 # pull videos (support dry-run)
-$ backup pull
+$ fav pull
 # push videos (support dry-run)
-$ backup push
+$ fav push
 # ignore list or video
-$ backup ignore <list_id/bvid>
+$ fav ignore <list_id/bvid>
 # untrack list or video (just like `git rm`)
-$ backup untrack <list_id/bvid>
+$ fav untrack <list_id/bvid>
 # like
-$ backup like --all
+$ fav like --all
 ```
 
 
-_For more examples, please refer to the [Documentation](https://github.com/kingwingfly/backup)_
+_For more examples, please refer to the [Documentation](https://github.com/kingwingfly/fav)_
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -191,7 +192,7 @@ _For more examples, please refer to the [Documentation](https://github.com/kingw
 - [ ] Serve
 - [ ] Tui
 
-See the [open issues](https://github.com/kingwingfly/backup/issues) for a full list of proposed features (and known issues).
+See the [open issues](https://github.com/kingwingfly/fav/issues) for a full list of proposed features (and known issues).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -223,7 +224,7 @@ Distributed under the MIT License. See `LICENSE.txt` for more information.
 
 Louis - 836250617@qq.com
 
-Project Link: [https://github.com/kingwingfly/backup](https://github.com/kingwingfly/backup)
+Project Link: [https://github.com/kingwingfly/fav](https://github.com/kingwingfly/fav)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -240,16 +241,16 @@ Project Link: [https://github.com/kingwingfly/backup](https://github.com/kingwin
 
 <!-- MARKDOWN LINKS & IMAGES -->
 <!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
-[contributors-shield]: https://img.shields.io/github/contributors/kingwingfly/backup.svg?style=for-the-badge
-[contributors-url]: https://github.com/kingwingfly/backup/graphs/contributors
-[forks-shield]: https://img.shields.io/github/forks/kingwingfly/backup.svg?style=for-the-badge
-[forks-url]: https://github.com/kingwingfly/backup/network/members
-[stars-shield]: https://img.shields.io/github/stars/kingwingfly/backup.svg?style=for-the-badge
-[stars-url]: https://github.com/kingwingfly/backup/stargazers
-[issues-shield]: https://img.shields.io/github/issues/kingwingfly/backup.svg?style=for-the-badge
-[issues-url]: https://github.com/kingwingfly/backup/issues
-[license-shield]: https://img.shields.io/github/license/kingwingfly/backup.svg?style=for-the-badge
-[license-url]: https://github.com/kingwingfly/backup/blob/master/LICENSE.txt
+[contributors-shield]: https://img.shields.io/github/contributors/kingwingfly/fav.svg?style=for-the-badge
+[contributors-url]: https://github.com/kingwingfly/fav/graphs/contributors
+[forks-shield]: https://img.shields.io/github/forks/kingwingfly/fav.svg?style=for-the-badge
+[forks-url]: https://github.com/kingwingfly/fav/network/members
+[stars-shield]: https://img.shields.io/github/stars/kingwingfly/fav.svg?style=for-the-badge
+[stars-url]: https://github.com/kingwingfly/fav/stargazers
+[issues-shield]: https://img.shields.io/github/issues/kingwingfly/fav.svg?style=for-the-badge
+[issues-url]: https://github.com/kingwingfly/fav/issues
+[license-shield]: https://img.shields.io/github/license/kingwingfly/fav.svg?style=for-the-badge
+[license-url]: https://github.com/kingwingfly/fav/blob/master/LICENSE.txt
 [product-screenshot]: images/screenshot.png
 [Rust]: https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=Rust&logoColor=orange
 [Rust-url]: https://www.rust-lang.org
