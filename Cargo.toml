@@ -1,6 +1,6 @@
 [package]
 name = "fav"
-version = "0.1.2"
+version = "0.1.3"
 authors = ["Louis <836250617@qq.com>"]
 description = "Back up your favorite online resources with CLI."
 license = "MIT"

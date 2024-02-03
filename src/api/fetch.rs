@@ -82,7 +82,7 @@ impl Meta {
             .filter(|list| list.track)
             .map(|list| (list.id, list.media_count))
         {
-            for page in 0..=count / 20 {
+            for page in 0..=count.saturating_sub(1) / 20 {
                 let url = reqwest::Url::parse_with_params(
                     FAV_API,
                     [
