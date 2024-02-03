@@ -13,23 +13,23 @@
 <!-- PROJECT LOGO -->
 <br />
 <div align="center">
-  <a href="https://github.com/kingwingfly/repo_name">
+  <a href="https://github.com/kingwingfly/fav">
     <img src="images/logo.png" alt="Logo" width="80" height="80">
   </a>
 
 <h3 align="center">fav</h3>
 
   <p align="center">
-    Back up your favorite online resources with CLI.
+    Back up your favorite bilibili resources with CLI.
     <br />
-    <a href="https://github.com/kingwingfly/repo_name"><strong>Explore the docs »</strong></a>
+    <a href="https://github.com/kingwingfly/fav"><strong>Explore the docs »</strong></a>
     <br />
     <br />
-    <a href="https://github.com/kingwingfly/repo_name">View Demo</a>
+    <a href="https://github.com/kingwingfly/fav">View Demo</a>
     ·
-    <a href="https://github.com/kingwingfly/repo_name/issues">Report Bug</a>
+    <a href="https://github.com/kingwingfly/fav/issues">Report Bug</a>
     ·
-    <a href="https://github.com/kingwingfly/repo_name/issues">Request Feature</a>
+    <a href="https://github.com/kingwingfly/fav/issues">Request Feature</a>
   </p>
 </div>
 
@@ -68,7 +68,7 @@
 
 [![Product Name Screen Shot][product-screenshot]](https://github.com/kingwingfly/fav)
 
-Back up your favorite online resources with CLI.
+Back up your favorite bilibili online resources with CLI.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
