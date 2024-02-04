@@ -1,11 +1,12 @@
 use crate::api::{fetch::fetch, pull::pull_all};
 use rand::Rng;
 use tokio::time::Duration;
-use tracing::info;
+use tracing::{info, warn};
 
 pub(crate) async fn interval(interval: u64) {
     if interval <= 15 {
-        panic!("Interval would better to be greater than 15 minutes.");
+        warn!("Interval would better to be greater than 15 minutes.");
+        return;
     }
     job().await;
     let mut rng = rand::thread_rng();

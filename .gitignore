@@ -1,5 +1,5 @@
 /target
 .DS_Store
 Cargo.lock
-.backup
+.fav
 temp.*

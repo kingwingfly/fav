@@ -4,8 +4,7 @@ use super::{client, error::Result, parse_message};
 use crate::api::error::PullFail;
 use crate::cli::utils::download_bar;
 use crate::config::config;
-use crate::meta::meta;
-use crate::proto::data::{Dash, Qn, VideoMeta};
+use crate::proto::data::{Dash, Meta, Qn, VideoMeta};
 use reqwest::header::CONTENT_LENGTH;
 use std::io::{BufWriter, Write as _};
 use tracing::warn;
@@ -13,44 +12,54 @@ use tracing::warn;
 const API: &str = "https://api.bilibili.com/x/player/wbi/playurl";
 
 pub(crate) async fn pull_all() {
-    let videos = meta().videos.iter().filter(|v| v.track).collect();
+    let mut meta = Meta::read();
+    // Safety: onlt `try_pull` modify `meta`
+    let videos = meta
+        .videos
+        .iter_mut()
+        .filter(|v| v.track && !v.saved && !v.expired)
+        .map(|v| v as *mut _)
+        .collect();
     try_pull(videos).await;
+    meta.persist();
 }
 
 pub(crate) async fn pull(id: Vec<String>) {
-    let videos = id
-        .into_iter()
-        .flat_map(|id| {
-            meta().videos.iter().filter(move |v| {
-                (v.track && v.list_ids.contains(&id.parse().unwrap_or_default())) || v.bvid == id
-            })
-        })
-        .collect();
+    let mut meta = Meta::read();
+    // Safety: onlt `try_pull` modify `meta`
+    let mut videos = vec![];
+    for id in id {
+        videos.extend(
+            meta.videos
+                .iter_mut()
+                .filter(move |v| {
+                    ((v.track && v.list_ids.contains(&id.parse().unwrap_or_default()))
+                        || v.bvid == id)
+                        && !v.saved
+                })
+                .map(|v| v as *mut _),
+        );
+    }
     try_pull(videos).await;
+    meta.persist();
 }
 
-async fn try_pull(videos: Vec<&'static VideoMeta>) {
-    let mut meta = meta().clone();
-    for batch in videos.chunks(10) {
-        let jhs: Vec<_> = batch
-            .iter()
-            .filter(|v| v.track && !v.saved)
-            .map(|&v| tokio::spawn(do_pull(v)))
-            .collect();
-        for jh in jhs {
-            match jh.await.unwrap() {
-                Ok(bvid) => {
-                    meta.videos
-                        .iter_mut()
-                        .find(|v| v.bvid == bvid)
-                        .unwrap()
-                        .saved = true;
+/// Safety: `videos` is a valid pointer to `VideoMeta`; The caller must ensure the `VideoMeta` is not moved or dropped during the lifetime of the pointer
+async fn try_pull(videos: Vec<*mut VideoMeta>) {
+    unsafe {
+        for batch in videos.chunks(10) {
+            let jhs: Vec<_> = batch.iter().map(|v| tokio::spawn(do_pull(&**v))).collect();
+            for jh in jhs {
+                match jh.await.unwrap() {
+                    Ok(bvid) => {
+                        let v = videos.iter().find(|v| (***v).bvid == bvid).unwrap();
+                        (**v).saved = true;
+                    }
+                    Err(e) => warn!("{}", e),
                 }
-                Err(e) => warn!("{}", e),
             }
         }
     }
-    meta.persist();
 }
 
 async fn do_pull(meta: &VideoMeta) -> Result<String> {
@@ -213,5 +222,14 @@ mod tests {
         let qn = Qn::FourK;
         let s: String = qn.into();
         assert_eq!(s, "120");
+    }
+
+    #[test]
+    fn pull_all_test() {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        rt.block_on(pull_all());
     }
 }

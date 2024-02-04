@@ -151,15 +151,15 @@ impl ToString for Qn {
 
 #[cfg(test)]
 mod tests {
-    use crate::meta::meta;
+    use crate::proto::data::Meta;
 
     #[test]
     fn status_test() {
-        meta().status_list(false);
+        Meta::read().status_list(false);
     }
 
     #[test]
     fn status_of_test() {
-        meta().status_of("822720888".to_string());
+        Meta::read().status_of("822720888".to_string());
     }
 }
