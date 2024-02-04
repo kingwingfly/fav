@@ -102,7 +102,7 @@ enum Commands {
         id: Vec<String>,
         /// Mark saved true or false
         #[arg(long, short)]
-        save: Option<bool>,
+        saved: Option<bool>,
         /// modify the clarity
         #[arg(long, short, value_enum)]
         clarity: Option<Qn>,
@@ -173,7 +173,7 @@ impl Cli {
             },
             Commands::Ffmpeg { path } => set_ffmpeg_path(path).await,
             Commands::Daemon { interval } => crate::daemon::interval(interval).await,
-            Commands::Modify { id, save, clarity } => modify(id, save, clarity),
+            Commands::Modify { id, saved, clarity } => modify(id, saved, clarity),
         }
     }
 }

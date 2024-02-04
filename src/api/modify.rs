@@ -2,9 +2,9 @@ use tracing::{info, warn};
 
 use crate::proto::data::{Meta, Qn};
 
-pub(crate) fn modify(id: Vec<String>, save: Option<bool>, clarity: Option<Qn>) {
+pub(crate) fn modify(id: Vec<String>, saved: Option<bool>, clarity: Option<Qn>) {
     let mut meta = Meta::read();
-    if let Some(save) = save {
+    if let Some(save) = saved {
         for i in id.iter() {
             meta.mark_saved(i, save);
         }
@@ -25,14 +25,24 @@ impl Meta {
                 .filter(|v| v.list_ids.contains(&target.id))
                 .for_each(|v| v.saved = saved);
             info!(
-                "Mark videos in list id:{} title:{} as saved",
-                target.id, target.title
+                "Mark videos in list id<{}> title<{}> as {}",
+                target.id,
+                target.title,
+                match saved {
+                    true => "saved",
+                    false => "unsaved",
+                }
             )
         } else if let Some(target) = self.videos.iter_mut().find(|v| v.bvid == id) {
             target.saved = saved;
             info!(
-                "Mark video id:{} title:{} as saved",
-                target.bvid, target.title
+                "Mark video id<{}> title<{}> as {}",
+                target.bvid,
+                target.title,
+                match saved {
+                    true => "saved",
+                    false => "unsaved",
+                }
             );
         } else {
             warn!("id<{}> not found", id);
@@ -52,20 +62,20 @@ impl Meta {
                     }
                 });
             info!(
-                "Mofified clarity of id:{} title:{}",
+                "Mofified clarity of id<{}> title<{}>",
                 target.id, target.title,
             );
         } else if let Some(target) = self.videos.iter_mut().find(|v| v.bvid == id) {
             if target.clarity.unwrap() == clarity {
                 info!(
-                    "Clarity of video id:{} title:{} is not changed",
+                    "Clarity of video id<{}> title<{}> is not changed",
                     target.bvid, target.title,
                 );
             } else {
                 target.clarity = clarity.into();
                 target.saved = false;
                 info!(
-                    "Mofified clarity of video id:{} title:{}",
+                    "Mofified clarity of video id<{}> title<{}>",
                     target.bvid, target.title,
                 );
             }
