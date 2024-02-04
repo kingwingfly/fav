@@ -175,7 +175,7 @@ async fn merge(title: &str, path_v: &str, path_a: &str) -> Result<()> {
             "copy",
             "-f",
             "mp4",
-            &format!("{}.mp4", sanitize_filename::sanitize(title)),
+            &format!("./{}.mp4", sanitize_filename::sanitize(title)),
         ])
         .stderr(std::process::Stdio::null())
         .status()
@@ -231,5 +231,13 @@ mod tests {
             .build()
             .unwrap();
         rt.block_on(pull_all());
+    }
+
+    #[test]
+    fn illegal_filename() {
+        let title = "-你也想要我的To签qian ming嘛";
+        let s = sanitize_filename::sanitize(title);
+        std::fs::write(format!("{}.txt", s), "test").unwrap();
+        println!("{s}");
     }
 }
