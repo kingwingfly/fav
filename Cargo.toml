@@ -48,8 +48,8 @@ default = ["bili"]
 bili = []
 
 [profile.release]
-# lto = true
-# opt-level = 3
-# codegen-units = 1
-# strip = "debuginfo"
-# panic = "abort"
+lto = true
+opt-level = 3
+codegen-units = 1
+strip = "debuginfo"
+panic = "abort"

@@ -11,7 +11,7 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 ## [Unreleased]
 
 ## [0.1.10] - 2024-02-06
-- `fav complete` now support `bash`, `elvish`, `fish`, `powershell`, `zsh`; Run `fav complete -h` for more information. (e.g. run `fav complete fish > ~/.config/fish/completions/fav.fish` to register the auto completion script for `fish`)
+-
 
 ## [0.1.9] - 2024-02-06
 
