@@ -7,8 +7,6 @@ on:
   push:
     tags:
       - v[0-9]+.*
-  release:
-    types: [created]
 
 env:
   CARGO_TERM_COLOR: always
