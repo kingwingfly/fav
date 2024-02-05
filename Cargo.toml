@@ -1,6 +1,6 @@
 [package]
 name = "fav"
-version = "0.1.8"
+version = "0.1.9"
 authors = ["Louis <836250617@qq.com>"]
 description = "Back up your favorite online resources with CLI."
 license = "MIT"
@@ -15,6 +15,7 @@ documentation = ""
 clap = { version = "4.4", features = ["derive"]}
 tabled = "0.15.0"
 indicatif = { version = "0.17.7", features = ["tokio"] }
+clap_complete = { version = "4", features = ["unstable-dynamic"] }
 # Error
 snafu = { version = "0.8" }
 # Serde
@@ -41,8 +42,6 @@ chrono = "0.4.33"
 
 [build-dependencies]
 protobuf-codegen = { version = "3" }
-clap_complete = "4"
-clap = { version = "4.4", features = ["derive"]}
 
 [features]
 default = ["bili"]
