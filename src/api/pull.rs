@@ -13,7 +13,7 @@ const API: &str = "https://api.bilibili.com/x/player/wbi/playurl";
 
 pub(crate) async fn pull_all() {
     let mut meta = Meta::read();
-    // Safety: onlt `try_pull` modify `meta`
+    // Safety: only `try_pull` modify `meta`
     let videos = meta
         .videos
         .iter_mut()
@@ -26,7 +26,7 @@ pub(crate) async fn pull_all() {
 
 pub(crate) async fn pull(id: Vec<String>) {
     let mut meta = Meta::read();
-    // Safety: onlt `try_pull` modify `meta`
+    // Safety: only `try_pull` modify `meta`
     let mut videos = vec![];
     for id in id {
         videos.extend(
