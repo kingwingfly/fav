@@ -46,17 +46,23 @@ pub(crate) async fn pull(id: Vec<String>) {
 
 /// Safety: `videos` is a valid pointer to `VideoMeta`; The caller must ensure the `VideoMeta` is not moved or dropped during the lifetime of the pointer
 async fn try_pull(videos: Vec<*mut VideoMeta>) {
-    unsafe {
-        for batch in videos.chunks(10) {
-            let jhs: Vec<_> = batch.iter().map(|v| tokio::spawn(do_pull(&**v))).collect();
-            for jh in jhs {
-                match jh.await.unwrap() {
-                    Ok(bvid) => {
-                        let v = videos.iter().find(|v| (***v).bvid == bvid).unwrap();
+    for batch in videos.chunks(10) {
+        let jhs: Vec<_> = batch
+            .iter()
+            .map(|v| tokio::spawn(do_pull(unsafe { &**v })))
+            .collect();
+        for jh in jhs {
+            match jh.await.unwrap() {
+                Ok(bvid) => {
+                    let v = videos
+                        .iter()
+                        .find(|v| unsafe { (***v).bvid == bvid })
+                        .unwrap();
+                    unsafe {
                         (**v).saved = true;
                     }
-                    Err(e) => warn!("{}", e),
                 }
+                Err(e) => warn!("{}", e),
             }
         }
     }
