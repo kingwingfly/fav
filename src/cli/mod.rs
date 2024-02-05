@@ -1,9 +1,9 @@
 //! The CLI module.
 pub(crate) mod utils;
 
-use clap::{
-    error::ErrorKind, Command, CommandFactory, FromArgMatches, Parser, Subcommand, ValueEnum,
-};
+use clap::{error::ErrorKind, CommandFactory, Parser, Subcommand, ValueEnum, ValueHint};
+#[cfg(feature = "unstable-dynamic")]
+use clap::{Command, FromArgMatches};
 
 use crate::{
     api::{
@@ -32,9 +32,10 @@ pub struct Cli {
 enum Commands {
     /// Initialize the folder for fav
     Init {
-        #[arg(value_enum)]
+        #[arg(value_enum, value_parser = ["bili"])]
         kind: Kind,
         /// The path to store the fav
+        #[arg(value_hint = ValueHint::DirPath)]
         path: Option<std::path::PathBuf>,
     },
     /// Login your account
@@ -52,6 +53,7 @@ enum Commands {
     /// Show status of local, default to show video status
     Status {
         /// Show resource status
+        #[arg(value_hint = ValueHint::Other)]
         id: Option<String>,
         /// Show all list status
         #[arg(long, short)]
@@ -66,16 +68,19 @@ enum Commands {
     /// Track a remote source
     Track {
         /// The id of the source to track
+        #[arg(value_hint = ValueHint::Other)]
         id: Vec<String>,
     },
     /// Untrack a remote source
     Untrack {
         /// The id of the source to untrack
+        #[arg(value_hint = ValueHint::Other)]
         id: Vec<String>,
     },
     /// Pull remote data
     Pull {
         /// The id of the source to pull
+        #[arg(value_hint = ValueHint::Other)]
         id: Option<Vec<String>>,
     },
     /// Push local data
@@ -83,6 +88,7 @@ enum Commands {
     /// Like a video
     Like {
         /// The id of the video to like
+        #[arg(value_hint = ValueHint::Other)]
         bvid: Option<Vec<String>>,
         /// Like all videos tracked
         #[arg(long, short)]
@@ -91,23 +97,32 @@ enum Commands {
     /// Set the path of ffmpeg
     Ffmpeg {
         /// Set the path of ffmpeg
+        #[arg(value_hint = ValueHint::FilePath)]
         path: String,
     },
     /// Interval fetch and pull
     Daemon {
         /// The interval to fetch and pull (in minutes, greater than 15)
+        #[arg(value_hint = ValueHint::Other)]
         interval: u64,
     },
     /// Modify resource status
     Modify {
         /// The id of the resources to modify
+        #[arg(value_hint = ValueHint::Other)]
         id: Vec<String>,
         /// Mark saved true or false
-        #[arg(long, short)]
+        #[arg(long, short, value_parser = ["true", "false"])]
         saved: Option<bool>,
         /// modify the clarity
         #[arg(long, short, value_enum)]
         clarity: Option<Qn>,
+    },
+    #[cfg(not(feature = "unstable-dynamic"))]
+    /// Complete the shell
+    Complete {
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
     },
 }
 
@@ -127,20 +142,24 @@ pub(crate) enum Kind {
 }
 
 impl Cli {
+    #[cfg(feature = "unstable-dynamic")]
     fn build_cli() -> Command {
         clap_complete::dynamic::shells::CompleteCommand::augment_subcommands(Self::command())
     }
 
     /// Run the CLI.
     pub async fn run() {
-        let cli = Self::build_cli();
-        let matches = cli.get_matches();
-        if let Ok(completions) =
-            clap_complete::dynamic::shells::CompleteCommand::from_arg_matches(&matches)
+        #[cfg(feature = "unstable-dynamic")]
         {
-            completions.complete(&mut Self::build_cli());
-            return;
-        };
+            let cli = Self::build_cli();
+            let matches = cli.get_matches();
+            if let Ok(completions) =
+                clap_complete::dynamic::shells::CompleteCommand::from_arg_matches(&matches)
+            {
+                completions.complete(&mut Self::build_cli());
+                return;
+            };
+        }
         let args = Self::parse();
         match args.subcmd {
             Commands::Init { path, kind } => init(path, kind).await.unwrap(),
@@ -188,6 +207,11 @@ impl Cli {
             Commands::Ffmpeg { path } => set_ffmpeg_path(path).await,
             Commands::Daemon { interval } => crate::daemon::interval(interval).await,
             Commands::Modify { id, saved, clarity } => modify(id, saved, clarity),
+            Commands::Complete { shell } => {
+                let mut cmd = Self::command();
+                let name = cmd.get_name().to_owned();
+                clap_complete::generate(shell, &mut cmd, name, &mut std::io::stdout());
+            }
         }
     }
 }
