@@ -10,7 +10,7 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 
 ## [Unreleased]
 
-### [0.1.9] - 2024-02-06
+## [0.1.9] - 2024-02-06
 
 - auto complete support for `zsh` and `fish`; Run `fav complete -h` for more information. (e.g. run `fav complete --shell fish --register ~/.config/fish/completions` to register the auto completion script for `fish`)
 - I'll also upload some other auto completion scripts for `bash` and `powershell` and so on.
