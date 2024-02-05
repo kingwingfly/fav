@@ -1,3 +1,4 @@
+use crate::proto::data::Qn;
 use clap::{builder::PossibleValue, ValueEnum};
 use indicatif::{MultiProgress, ProgressBar, ProgressStyle};
 use std::sync::OnceLock;
@@ -5,8 +6,6 @@ use tabled::{
     builder::Builder,
     settings::{object::Rows, Alignment, Style},
 };
-
-use crate::proto::data::Qn;
 
 pub(crate) fn show_table<H, R>(header: H, rows: R)
 where

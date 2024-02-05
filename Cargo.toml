@@ -41,6 +41,8 @@ chrono = "0.4.33"
 
 [build-dependencies]
 protobuf-codegen = { version = "3" }
+clap_complete = "4"
+clap = { version = "4.4", features = ["derive"]}
 
 [features]
 default = ["bili"]
