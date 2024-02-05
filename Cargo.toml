@@ -14,8 +14,8 @@ documentation = ""
 # CLI
 clap = { version = "4.4", features = ["derive"]}
 tabled = "0.15.0"
-indicatif = { version = "0.17.7", features = ["tokio"] }
-clap_complete = { version = "4" }
+indicatif = { version = "0.17", features = ["tokio"] }
+clap_complete = { version = "4", features = ["unstable-dynamic"] }
 # Error
 snafu = { version = "0.8" }
 # Serde
@@ -46,11 +46,10 @@ protobuf-codegen = { version = "3" }
 [features]
 default = ["bili"]
 bili = []
-unstable-dynamic = ["clap_complete/unstable-dynamic"]
 
 [profile.release]
-lto = true
-opt-level = 3
-codegen-units = 1
-strip = "debuginfo"
-panic = "abort"
+# lto = true
+# opt-level = 3
+# codegen-units = 1
+# strip = "debuginfo"
+# panic = "abort"

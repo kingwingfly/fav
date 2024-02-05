@@ -1,9 +1,10 @@
 //! The CLI module.
 pub(crate) mod utils;
 
-use clap::{error::ErrorKind, CommandFactory, Parser, Subcommand, ValueEnum, ValueHint};
-#[cfg(feature = "unstable-dynamic")]
-use clap::{Command, FromArgMatches};
+use clap::{
+    error::ErrorKind, Command, CommandFactory, FromArgMatches as _, Parser, Subcommand, ValueEnum,
+    ValueHint,
+};
 
 use crate::{
     api::{
@@ -118,12 +119,6 @@ enum Commands {
         #[arg(long, short, value_enum)]
         clarity: Option<Qn>,
     },
-    #[cfg(not(feature = "unstable-dynamic"))]
-    /// Complete the shell
-    Complete {
-        #[arg(value_enum)]
-        shell: clap_complete::Shell,
-    },
 }
 
 #[derive(Subcommand)]
@@ -142,24 +137,21 @@ pub(crate) enum Kind {
 }
 
 impl Cli {
-    #[cfg(feature = "unstable-dynamic")]
     fn build_cli() -> Command {
         clap_complete::dynamic::shells::CompleteCommand::augment_subcommands(Self::command())
     }
 
     /// Run the CLI.
     pub async fn run() {
-        #[cfg(feature = "unstable-dynamic")]
+        let cmd = Self::build_cli();
+        let matches = cmd.get_matches();
+        if let Ok(completions) =
+            clap_complete::dynamic::shells::CompleteCommand::from_arg_matches(&matches)
         {
-            let cli = Self::build_cli();
-            let matches = cli.get_matches();
-            if let Ok(completions) =
-                clap_complete::dynamic::shells::CompleteCommand::from_arg_matches(&matches)
-            {
-                completions.complete(&mut Self::build_cli());
-                return;
-            };
+            completions.try_complete(&mut Self::build_cli()).unwrap();
+            return;
         }
+
         let args = Self::parse();
         match args.subcmd {
             Commands::Init { path, kind } => init(path, kind).await.unwrap(),
@@ -207,11 +199,6 @@ impl Cli {
             Commands::Ffmpeg { path } => set_ffmpeg_path(path).await,
             Commands::Daemon { interval } => crate::daemon::interval(interval).await,
             Commands::Modify { id, saved, clarity } => modify(id, saved, clarity),
-            Commands::Complete { shell } => {
-                let mut cmd = Self::command();
-                let name = cmd.get_name().to_owned();
-                clap_complete::generate(shell, &mut cmd, name, &mut std::io::stdout());
-            }
         }
     }
 }
