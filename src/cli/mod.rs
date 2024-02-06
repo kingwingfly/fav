@@ -116,7 +116,9 @@ enum Commands {
         #[arg(long, short, value_enum)]
         clarity: Option<Qn>,
     },
+    /// Completions for the shell
     Completion {
+        /// The shell to generate completions for
         #[arg(value_enum)]
         shell: clap_complete::Shell,
     },

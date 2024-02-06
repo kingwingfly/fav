@@ -147,6 +147,8 @@ Options:
 
 ### Example
 ```sh
+# auto complete is supported; e.g:
+$ fav completion fish > ~/.config/fish/completions/fav.fish
 # init for bilibili
 $ fav init bili
 # scan code to login
@@ -202,6 +204,7 @@ _For more examples, please refer to the [Documentation](https://github.com/kingw
 - [ ] Sync
 - [ ] Serve
 - [ ] Tui
+- [ ] Dynamic completion
 
 See the [open issues](https://github.com/kingwingfly/fav/issues) for a full list of proposed features (and known issues).
 
