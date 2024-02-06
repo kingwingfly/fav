@@ -15,7 +15,7 @@ documentation = ""
 clap = { version = "4.4", features = ["derive"]}
 tabled = "0.15.0"
 indicatif = { version = "0.17", features = ["tokio"] }
-clap_complete = { version = "4", features = ["unstable-dynamic"] }
+clap_complete = { version = "4" }
 # Error
 snafu = { version = "0.8" }
 # Serde
