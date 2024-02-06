@@ -9,6 +9,8 @@ pub enum ApiError {
     LogoutFail { source: reqwest::Error, msg: String },
     #[snafu(display("{}", msg))]
     PullFail { msg: String },
+    #[snafu(display("Ctrl-C Cancelled"))]
+    Canclled,
     #[snafu(display("Create temp file fail"), context(false))]
     CreateTempFileFail { source: std::io::Error },
     #[snafu(display("Persist temp file fail"), context(false))]

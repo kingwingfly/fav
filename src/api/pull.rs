@@ -1,7 +1,7 @@
 use super::error::MergeFail;
 use super::wbi::{encode_wbi, get_wbi_keys};
 use super::{client, error::Result, parse_message};
-use crate::api::error::PullFail;
+use crate::api::error::{ApiError, Canclled, PullFail};
 use crate::cli::utils::download_bar;
 use crate::config::config;
 use crate::proto::data::{Dash, Meta, Qn, VideoMeta};
@@ -61,6 +61,10 @@ async fn try_pull(videos: Vec<*mut VideoMeta>) {
                     unsafe {
                         (**v).saved = true;
                     }
+                }
+                Err(ApiError::Canclled) => {
+                    warn!("Pulling is canclled");
+                    return;
                 }
                 Err(e) => warn!("{}", e),
             }
@@ -147,9 +151,7 @@ async fn download(title: &str, v_url: &str, a_url: &str) -> Result<()> {
             _ = tokio::signal::ctrl_c() => {
                 file_v.into_inner().unwrap().close()?;
                 file_a.into_inner().unwrap().close()?;
-                return PullFail {
-                    msg: "Download Cancelled; Ctrl-C",
-                }.fail();
+                return Canclled.fail();
             }
 
         }
