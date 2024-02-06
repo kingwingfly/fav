@@ -1,10 +1,7 @@
 //! The CLI module.
 pub(crate) mod utils;
 
-use clap::{
-    error::ErrorKind, Command, CommandFactory, FromArgMatches as _, Parser, Subcommand, ValueEnum,
-    ValueHint,
-};
+use clap::{error::ErrorKind, CommandFactory as _, Parser, Subcommand, ValueEnum, ValueHint};
 
 use crate::{
     api::{
@@ -119,6 +116,10 @@ enum Commands {
         #[arg(long, short, value_enum)]
         clarity: Option<Qn>,
     },
+    Completion {
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
 }
 
 #[derive(Subcommand)]
@@ -137,21 +138,8 @@ pub(crate) enum Kind {
 }
 
 impl Cli {
-    fn build_cli() -> Command {
-        clap_complete::dynamic::shells::CompleteCommand::augment_subcommands(Self::command())
-    }
-
     /// Run the CLI.
     pub async fn run() {
-        let cmd = Self::build_cli();
-        let matches = cmd.get_matches();
-        if let Ok(completions) =
-            clap_complete::dynamic::shells::CompleteCommand::from_arg_matches(&matches)
-        {
-            completions.try_complete(&mut Self::build_cli()).unwrap();
-            return;
-        }
-
         let args = Self::parse();
         match args.subcmd {
             Commands::Init { path, kind } => init(path, kind).await.unwrap(),
@@ -199,6 +187,11 @@ impl Cli {
             Commands::Ffmpeg { path } => set_ffmpeg_path(path).await,
             Commands::Daemon { interval } => crate::daemon::interval(interval).await,
             Commands::Modify { id, saved, clarity } => modify(id, saved, clarity),
+            Commands::Completion { shell } => {
+                let mut cmd = Cli::command();
+                let name = cmd.get_name().to_string();
+                clap_complete::generate(shell, &mut cmd, name, &mut std::io::stdout());
+            }
         }
     }
 }
