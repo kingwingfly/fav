@@ -10,6 +10,10 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 
 ## [Unreleased]
 
+## [0.1.11] - 2024-02-07
+- Fix: `Ctrl-C` only cancels current batch(10) of jobs, instead of exiting the whole program.
+- See discussions in #5 for more information about the next developping trends.
+
 ## [0.1.10] - 2024-02-06
 - add `fav completion` command to support auto completion for `bash`, `elvish`, `fish`, `powershell`, `zsh` shell; Run `fav completion -h` for more information. (e.g. run `fav completion fish > ~/.config/fish/completions/fav.fish` to register the auto completion script for `fish`; You can google `where to put completions for xxshell` to find the right place to put the completion script for your shell.)
 
