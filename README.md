@@ -120,18 +120,20 @@ Back up your favorite online resources with CLI.
 Usage: fav <COMMAND>
 
 Commands:
-  init     Initialize the folder for fav
-  auth     Login your account
-  fetch    Fetch from remote
-  status   Show status of local, default to show video status
-  track    Track a remote source
-  untrack  Untrack a remote source
-  pull     Pull remote data
-  push     Push local data
-  like     Like a video
-  ffmpeg   Set the path of ffmpeg
-  daemon   Interval fetch and pull
-  help     Print this message or the help of the given subcommand(s)
+  init        Initialize the folder for fav
+  auth        Login your account
+  fetch       Fetch from remote
+  status      Show status of local, default to show video status
+  track       Track a remote source
+  untrack     Untrack a remote source
+  pull        Pull remote data
+  push        Push local data
+  like        Like a video
+  ffmpeg      Set the path of ffmpeg
+  daemon      Interval fetch and pull
+  modify      Modify resource status
+  completion  Completions for the shell
+  help        Print this message or the help of the given subcommand(s)
 
 Options:
   -h, --help     Print help
