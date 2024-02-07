@@ -10,6 +10,7 @@ documentation.workspace = true
 
 [dependencies]
 fav_core.workspace = true
+fav_utils.workspace = true
 # runtime
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 # tracing

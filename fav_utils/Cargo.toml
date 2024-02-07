@@ -1,0 +1,9 @@
+[package]
+name = "fav_utils"
+version.workspace = true
+authors.workspace = true
+description.workspace = "Fav utils crate; A collection of utilities and data structure for the fav project"
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+documentation.workspace = true

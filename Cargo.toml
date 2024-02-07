@@ -1,5 +1,5 @@
 [workspace]
-members = ["fav", "fav_core"]
+members = ["fav", "fav_core", "fav_utils"]
 resolver = "2"
 
 [workspace.package]
@@ -13,6 +13,7 @@ documentation = ""
 
 [workspace.dependencies]
 fav_core = { path = "fav_core" }
+fav_utils = { path = "fav_utils" }
 
 [profile.release]
 lto = true
