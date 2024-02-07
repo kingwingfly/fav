@@ -1,0 +1,18 @@
+[package]
+name = "fav"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+documentation.workspace = true
+
+[dependencies]
+fav_core.workspace = true
+fav_utils.workspace = true
+# runtime
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+# tracing
+tracing = { version = "0.1" }
+tracing-subscriber = { version = "0.3" }
