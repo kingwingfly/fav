@@ -1,0 +1,48 @@
+[package]
+name = "fav_core"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+documentation.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+# CLI
+clap = { version = "4.4", features = ["derive"]}
+tabled = "0.15.0"
+indicatif = { version = "0.17", features = ["tokio"] }
+clap_complete = { version = "4" }
+# Error
+snafu = { version = "0.8" }
+# Serde
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1" }
+# ProtoBuf
+protobuf = { version = "3", features = ["with-bytes"] }
+protobuf-json-mapping = { version = "3" }
+# Net
+reqwest = { version = "0.11", features = ["json", "cookies"] }
+# Runtime
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "process"] }
+# tracing
+tracing = { version = "0.1" }
+tracing-subscriber = { version = "0.3" }
+# Tools
+qrcode = { version = "0.13", default-features = false }
+rand = "0.8.5"
+base64 = "0.21.7"
+tempfile = "3.9.0"
+sanitize-filename = "0.5.0"
+md5 = "0.7.0"
+chrono = "0.4.33"
+
+[build-dependencies]
+protobuf-codegen = { version = "3" }
+
+[features]
+default = ["bili"]
+bili = []
