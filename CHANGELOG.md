@@ -10,6 +10,9 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 
 ## [Unreleased]
 
+## [0.1.12] - 2024-02-07
+- Fix: args parsing error when using `fav modify` `fav init` command.
+
 ## [0.1.11] - 2024-02-07
 - Fix: `Ctrl-C` only cancels current batch(10) of jobs, instead of exiting the whole program.
 - See discussions in #5 for more information about the next developping trends.

@@ -29,7 +29,7 @@ pub struct Cli {
 enum Commands {
     /// Initialize the folder for fav
     Init {
-        #[arg(value_enum, value_parser = ["bili"])]
+        #[arg(value_enum)]
         kind: Kind,
         /// The path to store the fav
         #[arg(value_hint = ValueHint::DirPath)]
@@ -109,7 +109,7 @@ enum Commands {
         #[arg(value_hint = ValueHint::Other)]
         id: Vec<String>,
         /// Mark saved true or false
-        #[arg(long, short, value_parser = ["true", "false"])]
+        #[arg(long, short)]
         saved: Option<bool>,
         /// modify the clarity
         #[arg(long, short, value_enum)]
