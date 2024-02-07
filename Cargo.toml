@@ -2,6 +2,8 @@
 members = ["fav", "fav_core", "fav_utils"]
 resolver = "2"
 
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
 [workspace.package]
 version = "0.1.11"
 authors = ["Louis <836250617@qq.com>"]

@@ -2,8 +2,10 @@
 name = "fav_utils"
 version.workspace = true
 authors.workspace = true
-description.workspace = "Fav utils crate; A collection of utilities and data structure for the fav project"
+description.workspace = "Fav utils crate; A collection of utilities and data structures for the fav project"
 license.workspace = true
 edition.workspace = true
 repository.workspace = true
 documentation.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
