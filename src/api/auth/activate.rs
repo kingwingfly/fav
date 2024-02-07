@@ -1,3 +1,4 @@
+use super::utils::webgl_str;
 use crate::{
     api::{auth::utils::murmur3_x64_128, client, error::Result, timestamp},
     proto::data::Cookie,
@@ -6,8 +7,6 @@ use rand::Rng;
 use reqwest::header::COOKIE;
 use std::io::Cursor;
 use tracing::{info, warn};
-
-use super::utils::webgl_str;
 
 const BUVID_API: &str = "https://api.bilibili.com/x/frontend/finger/spi";
 const ACTIVATE_API: &str = "https://api.bilibili.com/x/internal/gaia-gateway/ExClimbWuzhi";

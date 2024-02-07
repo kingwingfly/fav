@@ -1,6 +1,5 @@
-use tracing::{info, warn};
-
 use crate::proto::data::{Meta, Qn};
+use tracing::{info, warn};
 
 pub(crate) fn modify(id: Vec<String>, saved: Option<bool>, clarity: Option<Qn>) {
     let mut meta = Meta::read();

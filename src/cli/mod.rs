@@ -1,8 +1,6 @@
 //! The CLI module.
 pub(crate) mod utils;
 
-use clap::{error::ErrorKind, CommandFactory as _, Parser, Subcommand, ValueEnum, ValueHint};
-
 use crate::{
     api::{
         auth::{logout, qr_login},
@@ -17,6 +15,7 @@ use crate::{
     config::set_ffmpeg_path,
     proto::data::{Meta, Qn},
 };
+use clap::{error::ErrorKind, CommandFactory as _, Parser, Subcommand, ValueEnum, ValueHint};
 
 /// The main CLI entry point.
 #[derive(Parser)]

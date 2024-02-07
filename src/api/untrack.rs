@@ -1,6 +1,5 @@
-use tracing::info;
-
 use crate::proto::data::{ListMeta, Meta, VideoMeta};
+use tracing::info;
 
 pub(crate) fn untrack(id: Vec<String>) {
     let mut meta = Meta::read();

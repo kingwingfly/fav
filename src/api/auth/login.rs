@@ -1,11 +1,10 @@
+use super::activate::activate_buvid;
 use crate::{
     api::{client, error::Result},
     proto::data::Cookie,
 };
 use qrcode::{render::unicode, QrCode};
 use tracing::{info, warn};
-
-use super::activate::activate_buvid;
 
 const QR_API: &str = "https://passport.bilibili.com/x/passport-login/web/qrcode/generate";
 const QR_RET_API: &str = "https://passport.bilibili.com/x/passport-login/web/qrcode/poll";
