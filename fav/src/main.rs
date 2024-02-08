@@ -5,7 +5,7 @@ use tracing_subscriber::{filter, prelude::*};
 #[tokio::main]
 async fn main() {
     let filter = filter::Targets::new()
-        // Enable the `INFO` level for anything in `my_crate`
+        // Enable the `INFO` level for anything in `fav`
         .with_target("fav", Level::INFO);
     tracing_subscriber::registry()
         .with(
