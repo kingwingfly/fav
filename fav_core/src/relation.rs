@@ -59,5 +59,9 @@ pub trait UpperRel {
     /// Whether the upper upped the resource.
     fn ups<R>(&self, resouce: R) -> bool
     where
-        R: ResAttr;
+        R: ResAttr,
+    {
+        let id = resouce.id();
+        self.resources::<R, Vec<R>>().iter().any(|r| r.id() == id)
+    }
 }
