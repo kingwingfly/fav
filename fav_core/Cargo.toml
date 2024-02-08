@@ -14,9 +14,15 @@ all-features = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+# net
 url = "2.5"
 http = "1"
+# protobuf
 protobuf = { version = "3", features = ["with-bytes"] }
+protobuf-json-mapping = { version = "3" }
+# serde
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1" }
 
 [build-dependencies]
 rustc_version = "0.4.0"

@@ -5,7 +5,7 @@ use crate::attr::{ResAttr, ResSetAttr};
 /// Relations owned by a resource.
 pub trait ResRel: ResAttr {
     /// Resource's upper.
-    fn upper<US>(&self) -> Option<US>
+    fn uppers<US>(&self) -> Option<US>
     where
         US: IntoIterator,
         US::Item: ResAttr;

@@ -1,27 +1,20 @@
 //! Attribute
-//! Contains the traits for resources's attributes.
+//! Contains the traits for resources' attributes.
 //! Helping to gain the `id`, `title` and so on for resource, resource set and upper.
 
-/// Attributes of a resource.
-pub trait ResAttr {
-    /// Resource id
+/// Attributes
+pub trait Attr {
+    /// id
     fn id(&self) -> &str;
-    /// Resouce name
+    /// name
     fn name(&self) -> &str;
 }
+
+/// Attributes of a resource.
+pub trait ResAttr: Attr {}
 
 /// Attributes of a resource set.
-pub trait ResSetAttr {
-    /// Resource set id
-    fn id(&self) -> &str;
-    /// Resource set name
-    fn name(&self) -> &str;
-}
+pub trait ResSetAttr: Attr {}
 
 /// Attributes of a upper.
-pub trait UpperAttr {
-    /// Upper id
-    fn id(&self) -> &str;
-    /// Upper name
-    fn name(&self) -> &str;
-}
+pub trait UpperAttr: Attr {}
