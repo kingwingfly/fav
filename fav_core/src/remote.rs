@@ -1,6 +1,11 @@
+//! Remote trait for remote operations.
+
 use crate::FavCoreResult;
 
-pub trait Remote {
+/// Remote Auth
+pub trait Auth {
+    /// Login
     fn login(&self) -> FavCoreResult<()>;
+    /// Logout
     fn logout(&self) -> FavCoreResult<()>;
 }

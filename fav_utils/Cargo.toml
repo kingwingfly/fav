@@ -1,12 +1,12 @@
 [package]
 name = "fav_utils"
-version.workspace = true
+version = "0.0.1-alpha1"
 authors.workspace = true
 description = "Fav utils crate; A collection of utilities and data structures for the fav project"
 license.workspace = true
 edition.workspace = true
 repository.workspace = true
-documentation.workspace = true
+documentation = "https://docs.rs/fav_utils"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

@@ -1,3 +1,5 @@
+//! Core error
+
 /// Fav Core's error enum.
 #[derive(Debug)]
 pub enum FavCoreError {

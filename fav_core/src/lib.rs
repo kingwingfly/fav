@@ -2,13 +2,14 @@
 
 #![deny(missing_docs)]
 
-mod api;
-mod attr;
-mod config;
-mod error;
-mod local;
-mod meta;
-mod remote;
-mod status;
+pub mod api;
+pub mod attr;
+pub mod config;
+pub mod error;
+pub mod local;
+pub mod meta;
+pub mod relation;
+pub mod remote;
+pub mod status;
 
 pub use error::*;

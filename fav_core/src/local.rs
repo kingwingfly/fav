@@ -1,9 +1,9 @@
-use crate::meta::Meta;
+//! Local
 
-trait Local<M>
-where
-    M: Meta,
-{
+/// Local utils to help read and write
+pub trait Local {
+    /// The path to the local
     fn path(&self) -> &str;
-    fn persist(meta: M);
+    /// Save the resource
+    fn save();
 }
