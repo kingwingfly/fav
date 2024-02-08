@@ -1,3 +1,5 @@
+use rustc_version::{version_meta, Channel};
+
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Set cfg flags depending on release channel
     let channel = match version_meta().unwrap().channel {

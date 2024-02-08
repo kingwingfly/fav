@@ -14,9 +14,9 @@ all-features = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-url = "2.5.0"
-http = "1.0.0"
+url = "2.5"
+http = "1"
 protobuf = { version = "3", features = ["with-bytes"] }
 
 [build-dependencies]
-rust-version = "0.4.0"
+rustc_version = "0.4.0"
