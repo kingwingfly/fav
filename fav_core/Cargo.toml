@@ -2,7 +2,7 @@
 name = "fav_core"
 version = "0.0.1-alpha1"
 authors.workspace = true
-description = "Fav core crate; A collection of traits."
+description = "Fav's core crate; A collection of traits."
 license.workspace = true
 edition.workspace = true
 repository.workspace = true
