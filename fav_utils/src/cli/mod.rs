@@ -190,8 +190,7 @@ impl Cli {
             Commands::Modify { id, saved, clarity } => modify(id, saved, clarity),
             Commands::Completion { shell } => {
                 let mut cmd = Cli::command();
-                let name = cmd.get_name().to_string();
-                clap_complete::generate(shell, &mut cmd, name, &mut std::io::stdout());
+                clap_complete::generate(shell, &mut cmd, "fav", &mut std::io::stdout());
             }
         }
     }
