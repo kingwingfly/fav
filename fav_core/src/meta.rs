@@ -26,7 +26,7 @@ pub trait Meta: MessageFull {
     }
 
     /// Parse from json
-    fn parse_from_json(json: serde_json::Value) -> Self {
-        parse_from_str_with_options(&json.to_string(), &PARSE_OPTIONS).unwrap()
+    fn parse_msg(json: &impl serde::Serialize) -> Self {
+        parse_from_str_with_options(&serde_json::to_string(json).unwrap(), &PARSE_OPTIONS).unwrap()
     }
 }
