@@ -10,6 +10,9 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 
 ## [Unreleased]
 
+## [0.1.13] - 2024-02-08
+- Fix: `fav completion` generate the wrong script.
+
 ## [0.1.12] - 2024-02-07
 - Fix: args parsing error when using `fav modify` `fav init` command.
 
