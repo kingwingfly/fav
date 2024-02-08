@@ -8,6 +8,9 @@ edition.workspace = true
 repository.workspace = true
 documentation = "https://docs.rs/fav_utils"
 
+[package.metadata.docs.rs]
+all-features = true
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
