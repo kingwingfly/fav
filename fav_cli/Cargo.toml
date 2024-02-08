@@ -1,0 +1,20 @@
+[package]
+name = "fav_cli"
+version = "0.0.1-alpha1"
+authors.workspace = true
+description = "Fav's CLI crate;"
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+documentation = "https://docs.rs/fav_cli"
+
+[package.metadata.docs.rs]
+all-features = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+fav_utils.workspace = true
+
+[build-dependencies]
+rustc_version = "0.4.0"
