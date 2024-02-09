@@ -8,7 +8,7 @@ use crate::{
 use protobuf::MessageFull;
 
 /// Local auth
-pub trait Auth: ApiProvider + LocalMeta {
+pub trait Auth: ApiProvider + MetaLocal {
     /// Login
     fn login(&self) -> FavCoreResult<()>;
     /// Logout
@@ -16,26 +16,26 @@ pub trait Auth: ApiProvider + LocalMeta {
 }
 
 /// Local fetch
-pub trait Fetch: ApiProvider + LocalMeta {
+pub trait Fetch: ApiProvider + MetaLocal {
     /// Fetch resources
-    fn fetch(&self, resources: impl ResSetAttr);
+    fn fetch(&self, resources: &mut impl ResSetAttr);
     /// Fetch one resource
-    fn fetch_one(&self, resource: impl ResAttr);
+    fn fetch_one(&self, resource: &mut impl ResAttr);
 }
 
 /// Local pull
-pub trait Pull: ApiProvider + LocalRes {
+pub trait Pull: ApiProvider + ResLocal {
     /// Pull the resources
-    fn pull(&self, resource: impl ResSetAttr) -> FavCoreResult<()>;
+    fn pull(&self, resource: &impl ResSetAttr) -> FavCoreResult<()>;
     /// Pull one resource
-    fn pull_one(&self, resource: impl ResAttr) -> FavCoreResult<()>;
+    fn pull_one(&self, resource: &impl ResAttr) -> FavCoreResult<()>;
 }
 
-/// This trait makes metadatas able to be locally managed
-pub trait LocalMeta: Local {}
+/// Making metadatas able to be locally managed
+pub trait MetaLocal: Local {}
 
-/// This trait makes resources able to be locally managed
-pub trait LocalRes: Local {}
+/// Making resources able to be locally managed
+pub trait ResLocal: Local {}
 
 /// Local utils to help read and write
 pub trait Local {

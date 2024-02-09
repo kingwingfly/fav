@@ -4,9 +4,9 @@
 
 /// Attributes
 pub trait Attr {
-    /// id
+    /// Return the id of the target
     fn id(&self) -> &str;
-    /// name
+    /// Return the name of the target
     fn name(&self) -> &str;
 }
 

@@ -4,7 +4,7 @@ use http::header::{self, HeaderMap, HeaderValue};
 use protobuf::MessageFull;
 
 /// A config
-pub trait Config: MessageFull {
+pub trait HttpConfig: MessageFull {
     /// The default headers
     fn default_headers(&self) -> &HeaderMap;
     /// The mut default headers
