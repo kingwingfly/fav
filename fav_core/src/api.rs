@@ -46,12 +46,12 @@ pub enum ApiKind {
 /// }
 ///
 /// # fn main() {
-///     let remote = Remote;
-///     let api = remote.api(ApiKind::Login);
-///     let params = api.params().into_iter().zip(["Jake", "123"]).collect();
-///     let url = api.url(params);
-///     let expected = Url::parse_with_params("http://abc.com", vec![("id", "Jake"), ("pwd", "123")]).unwrap();
-///     assert_eq!(url, expected);
+/// let remote = Remote;
+/// let api = remote.api(ApiKind::Login);
+/// let params = api.params().into_iter().zip(["Jake", "123"]).collect();
+/// let url = api.url(params);
+/// let expected = Url::parse_with_params("http://abc.com", vec![("id", "Jake"), ("pwd", "123")]).unwrap();
+/// assert_eq!(url, expected);
 /// # }
 pub trait ApiProvider {
     /// Return the Api which implemented [`Api`]

@@ -22,15 +22,15 @@
 ///     }
 /// }
 ///
-/// fn main() {
-///     let video = Video {
-///         id: "123123".to_string(),
-///         name: "name".to_string()
-///     };
+/// # fn main() {
+/// let video = Video {
+///     id: "123123".to_string(),
+///     name: "name".to_string()
+/// };
 ///
-///     assert_eq!(video.id().to_string(), "123123");
-///     assert_eq!(video.name(), "name");
-/// }
+/// assert_eq!(video.id().to_string(), "123123");
+/// assert_eq!(video.name(), "name");
+/// # }
 pub trait Attr {
     /// Return the id of the target
     fn id(&self) -> &str; // Todo some id may be usize

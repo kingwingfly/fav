@@ -370,6 +370,7 @@ version = "0.0.1-alpha1"
 dependencies = [
  "http 1.0.0",
  "protobuf",
+ "protobuf-codegen",
  "protobuf-json-mapping",
  "rustc_version",
  "serde",
