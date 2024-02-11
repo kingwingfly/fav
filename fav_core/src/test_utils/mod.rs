@@ -1,3 +1,5 @@
-// @generated
+#![allow(unused)]
 
-pub mod msg;
+mod proto;
+
+pub use proto::*;

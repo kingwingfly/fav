@@ -32,4 +32,3 @@ protobuf-codegen = { version = "3", optional = true }
 
 [features]
 default = []
-test_utils = ["dep:protobuf-codegen"]

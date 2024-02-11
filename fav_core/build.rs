@@ -9,12 +9,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Channel::Dev => "CHANNEL_DEV",
     };
     println!("cargo:rustc-cfg={}", channel);
-    #[cfg(feature = "test_utils")]
+    #[cfg(test)]
     protobuf_codegen::Codegen::new()
         .pure()
         .includes(["./proto"])
-        .inputs(["./proto/msg.proto"])
-        .out_dir("./src/test_utils")
+        .inputs(["./proto/data.proto"])
+        .out_dir("./src/test_utils/proto")
         .run()
         .unwrap();
     Ok(())

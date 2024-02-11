@@ -49,7 +49,7 @@ pub trait PathInfo {
 /// # Example
 /// ```
 /// # mod test_utils;
-/// # use test_utils::msg::Msg;
+/// # use test_utils::data::Msg;
 /// use fav_core::local::{ProtoLocal, PathInfo};
 ///
 /// // Require `Msg` to implemente `protobuf::MessageFull`
