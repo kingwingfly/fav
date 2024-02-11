@@ -55,7 +55,7 @@ pub enum ApiKind {
 /// # }
 pub trait ApiProvider {
     /// Return the Api which implemented [`Api`]
-    fn api(&self, api_name: ApiKind) -> Box<dyn Api>;
+    fn api(&self, api_kind: ApiKind) -> Box<dyn Api>;
 }
 
 /// The trait `Api` is the base trait for all API endpoints.
@@ -76,7 +76,7 @@ pub trait Api {
             let need = self.params();
             if params.len() != need.len() || params.iter().any(|p| !need.contains(&p.0)) {
                 let msg = format!("Need params: {:#?}; Got {:#?}", need, params);
-                Result::<(), FavCoreError>::Err(FavCoreError::ParamsError(msg)).unwrap();
+                panic!("{:?}", FavCoreError::ParamsError(msg));
             }
         }
         Url::parse_with_params(self.api(), params).unwrap()
