@@ -368,7 +368,6 @@ dependencies = [
 name = "fav_core"
 version = "0.0.1-alpha1"
 dependencies = [
- "fav_test_utils",
  "http 1.0.0",
  "protobuf",
  "protobuf-codegen",
@@ -377,15 +376,6 @@ dependencies = [
  "serde",
  "serde_json",
  "url",
-]
-
-[[package]]
-name = "fav_test_utils"
-version = "0.0.1-alpha1"
-dependencies = [
- "protobuf",
- "protobuf-codegen",
- "rustc_version",
 ]
 
 [[package]]

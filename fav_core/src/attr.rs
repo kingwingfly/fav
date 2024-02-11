@@ -46,9 +46,3 @@ pub trait ResSetAttr: Attr {}
 
 /// Attributes of a upper.
 pub trait UpperAttr: Attr {}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn attr_test() {}
-}

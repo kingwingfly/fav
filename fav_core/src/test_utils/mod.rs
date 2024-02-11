@@ -1,3 +1,3 @@
 // @generated
 
-pub mod meta;
+pub mod msg;

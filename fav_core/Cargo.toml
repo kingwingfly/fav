@@ -25,12 +25,11 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
 
 [dev-dependencies]
-fav_test_utils.workspace = true
 
 [build-dependencies]
 rustc_version = "0.4.0"
-protobuf-codegen = { version = "3" }
+protobuf-codegen = { version = "3", optional = true }
 
 [features]
 default = []
-test_utils = []
+test_utils = ["dep:protobuf-codegen"]

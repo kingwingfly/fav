@@ -1,5 +1,5 @@
 [workspace]
-members = ["fav", "fav_cli", "fav_core", "fav_test_utils", "fav_utils_ng", "fav_utils"]
+members = ["fav", "fav_cli", "fav_core", "fav_utils_ng", "fav_utils"]
 resolver = "2"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -17,7 +17,6 @@ documentation = ""
 fav_core = { path = "fav_core" }
 fav_utils = { path = "fav_utils" }
 fav_cli = { path = "fav_cli" }
-fav_test_utils = { path = "fav_test_utils" }
 fav_utils_ng = { path = "fav_utils_ng" }
 
 [profile.release]

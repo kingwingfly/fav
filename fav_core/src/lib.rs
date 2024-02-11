@@ -13,4 +13,8 @@ pub mod relation;
 pub mod remote;
 pub mod status;
 
+/// Data structures used for `fav_core`'s test
+#[cfg(feature = "test_utils")]
+pub mod test_utils;
+
 pub use error::*;
