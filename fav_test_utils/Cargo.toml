@@ -1,0 +1,18 @@
+[package]
+name = "fav_test_utils"
+version = "0.0.1-alpha1"
+authors.workspace = true
+description = "Fav's test utils; Provide some structs for testing."
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+documentation = "https://docs.rs/fav_test_utils"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+protobuf = { version = "3", features = ["with-bytes"] }
+
+[build-dependencies]
+rustc_version = "0.4.0"
+protobuf-codegen = { version = "3" }

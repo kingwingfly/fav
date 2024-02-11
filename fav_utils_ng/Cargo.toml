@@ -1,0 +1,14 @@
+[package]
+name = "fav_utils_ng"
+version = "0.0.1-alpha1"
+authors.workspace = true
+description.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+documentation = "https://docs.rs/fav_utils_ng"
+publish = false
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]

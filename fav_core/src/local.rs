@@ -8,7 +8,7 @@ use crate::{
 use protobuf::MessageFull;
 
 /// Local auth
-pub trait Auth: ApiProvider + MetaLocal {
+pub trait Auth: ApiProvider + ProtoLocal {
     /// Login
     fn login(&self) -> FavCoreResult<()>;
     /// Logout
@@ -16,7 +16,7 @@ pub trait Auth: ApiProvider + MetaLocal {
 }
 
 /// Local fetch
-pub trait Fetch: ApiProvider + MetaLocal {
+pub trait Fetch: ApiProvider + ProtoLocal {
     /// Fetch resources
     fn fetch(&self, resources: &mut impl ResSetAttr);
     /// Fetch one resource
@@ -31,22 +31,42 @@ pub trait Pull: ApiProvider + ResLocal {
     fn pull_one(&self, resource: &impl ResAttr) -> FavCoreResult<()>;
 }
 
-/// Making metadatas able to be locally managed
-pub trait MetaLocal: Local {}
-
-/// Making resources able to be locally managed
-pub trait ResLocal: Local {}
-
-/// Local utils to help read and write
-pub trait Local {
-    /// The path to the local
+/// Protobuf local/persist utils to read and write
+/// # Example
+/// ```
+/// # use fav_core::local::ProtoLocal;
+/// use fav_test_utils::VideoMeta;
+/// // The meta manager
+/// struct MetaLocal;
+///
+/// impl ProtoLocal for MetaLocal {
+///     const PATH: &'static str = ".fav";
+/// }
+///
+/// # fn main() {
+/// let v = VideoMeta::default();
+/// MetaLocal::write("video", &v);
+/// let read_v: VideoMeta = MetaLocal::read("video");
+/// assert_eq!(v, read_v);
+/// MetaLocal::remove("video");
+/// # }
+/// ```
+pub trait ProtoLocal {
+    /// The path to the local protobuf dir
     const PATH: &'static str;
 
-    /// Save the resource
-    fn save(name: &str, content: impl MessageFull) {
+    /// Write the protobuf
+    fn write<T: MessageFull>(name: &str, content: &T) {
         let path = std::path::PathBuf::from(Self::PATH).join(name);
         let mut file = std::fs::File::create(path).unwrap();
         content.write_to_writer(&mut file).unwrap();
+    }
+
+    /// Read the protobuf
+    fn read<T: MessageFull>(name: &str) -> T {
+        let path = std::path::PathBuf::from(Self::PATH).join(name);
+        let mut file = std::fs::File::open(path).unwrap();
+        T::parse_from_reader(&mut file).unwrap()
     }
 
     /// Remove the resource
@@ -55,3 +75,6 @@ pub trait Local {
         std::fs::remove_file(path).unwrap();
     }
 }
+
+/// Making resources able to be locally managed
+pub trait ResLocal {}

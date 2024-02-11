@@ -1,0 +1,7 @@
+syntax = "proto3";
+package meta;
+
+message VideoMeta {
+    string id = 1;
+    string name = 2;
+}

@@ -50,5 +50,5 @@ pub trait HttpConfig {
     }
 }
 
-/// Making it able to be a config, which concludes HttpConfig, and can be persisted into protobuf.
+/// Making it able to be a config, which concludes [`HttpConfig`], and can be persisted into protobuf.
 pub trait Config: HttpConfig + MessageFull {}
