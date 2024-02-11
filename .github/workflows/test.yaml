@@ -44,4 +44,4 @@ jobs:
           key: ${{ steps.cache-cargo-restore.outputs.cache-primary-key }}
 
       - name: run tests
-      - run: .github/scripts/test.sh
+        run: .github/scripts/test.sh
