@@ -48,6 +48,7 @@ pub trait PathInfo {
 /// Protobuf local/persist utils to read and write
 /// # Example
 /// ```
+/// # #[path = "test_utils/mod.rs"]
 /// # mod test_utils;
 /// # use test_utils::data::Msg;
 /// use fav_core::local::{ProtoLocal, PathInfo};

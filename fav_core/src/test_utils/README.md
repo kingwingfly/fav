@@ -29,8 +29,10 @@ impl PathInfo for Mag { ... }
 # fn main() {}    // <- This is essential, or an error will be raised
 ```
 
-Caution: You have to add `# fn main() {}` at the end of the test, or an error will be raised. The reason is ...(WIP).
+Caution: You have to add `# fn main() {}` at the end of the test, or an error will raised.
 
-Related [document](https://doc.rust-lang.org/book/ch11-03-test-organization.html#submodules-in-integration-tests)
+Or, you should use `#[path = "..."]` to manually refer to the file as said [here](https://doc.rust-lang.org/reference/items/modules.html) if without `main()`.
 
-[module-system](https://aloso.github.io/2021/03/28/module-system.html)
+# Related
+- [document](https://doc.rust-lang.org/book/ch11-03-test-organization.html#submodules-in-integration-tests)
+- [module-system](https://aloso.github.io/2021/03/28/module-system.html)

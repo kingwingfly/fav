@@ -7,6 +7,7 @@ use std::collections::HashMap;
 /// A HttpConfig
 /// # Example
 /// ```
+/// # #[path = "test_utils/mod.rs"]
 /// # mod test_utils;
 /// # use test_utils::data::Conf;
 /// # use fav_core::config::HttpConfig;
@@ -28,7 +29,6 @@ use std::collections::HashMap;
 ///         self.headers.as_mut().unwrap().cookies = cookies;
 ///     }
 /// }
-/// # fn main() {}
 /// ```
 pub trait HttpConfig {
     /// The headers
