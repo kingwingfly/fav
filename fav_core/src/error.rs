@@ -7,6 +7,8 @@ pub enum FavCoreError {
     AuthError,
     /// ParamsError: The params provided to API cannot meet the demand.
     ParamsError(String),
+    /// NetworkError: The network error.
+    NetworkError,
 }
 
 impl std::fmt::Display for FavCoreError {
@@ -14,7 +16,14 @@ impl std::fmt::Display for FavCoreError {
         match self {
             FavCoreError::AuthError => write!(f, "AuthError: failed to login or logout."),
             FavCoreError::ParamsError(msg) => write!(f, "{}", msg),
+            FavCoreError::NetworkError => write!(f, "NetworkError."),
         }
+    }
+}
+
+impl From<reqwest::Error> for FavCoreError {
+    fn from(_: reqwest::Error) -> Self {
+        FavCoreError::NetworkError
     }
 }
 

@@ -12,3 +12,5 @@ message Headers {
     string referer = 2;
     map<string, string> cookies = 3;
 }
+
+message App {}

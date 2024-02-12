@@ -1,17 +1,17 @@
 //! Config
 
 use crate::local::ProtoLocal;
-use http::header::HeaderMap;
+use reqwest::header::HeaderMap;
 use std::collections::HashMap;
 
-/// A HttpConfig
+/// A HttpConfig, including headers and cookies.
 /// # Example
 /// ```
 /// # #[path = "test_utils/mod.rs"]
 /// # mod test_utils;
 /// # use test_utils::data::Conf;
 /// # use fav_core::config::HttpConfig;
-/// # use http::{HeaderMap, header};
+/// # use reqwest::{header::HeaderMap, header};
 /// # use std::collections::HashMap;
 ///
 /// impl HttpConfig for Conf {

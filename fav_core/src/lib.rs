@@ -9,6 +9,7 @@ pub mod config;
 pub mod error;
 pub mod local;
 pub mod meta;
+pub mod ops;
 pub mod relation;
 pub mod remote;
 pub mod status;
@@ -18,3 +19,16 @@ pub mod status;
 mod test_utils;
 
 pub use error::*;
+
+/// Re-export the most important traits and types
+pub mod prelude {
+    pub use crate::api::{Api, ApiProvider, DefaultApiKind};
+    pub use crate::attr::{Attr, Id, ResAttr, ResSetAttr};
+    pub use crate::config::{Config, HttpConfig};
+    pub use crate::error::*;
+    pub use crate::local::{PathInfo, ProtoLocal, ResLocal};
+    pub use crate::meta::Meta;
+    pub use crate::ops::Operations;
+    pub use crate::relation::{ResRel, ResSetRel};
+    pub use crate::status::Status;
+}

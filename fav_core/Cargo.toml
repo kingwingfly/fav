@@ -17,18 +17,23 @@ all-features = true
 # net
 url = "2.5"
 http = "1"
+reqwest = { version = "0.11", features = ["json", "cookies"] }
 # protobuf
 protobuf = { version = "3", features = ["with-bytes"] }
 protobuf-json-mapping = { version = "3" }
 # serde
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
+# async
+trait-variant = "0.1"
+tokio = { version = "1", features = ["rt-multi-thread", "signal", "macros"] }
 
 [dev-dependencies]
+tokio = { version = "1", features = ["full"] }
 
 [build-dependencies]
 rustc_version = "0.4.0"
-protobuf-codegen = { version = "3", optional = true }
+protobuf-codegen = { version = "3" }
 
 [features]
 default = []

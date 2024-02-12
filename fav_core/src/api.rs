@@ -1,45 +1,42 @@
 //! API
 
-use http::Method;
+use reqwest::Method;
 use url::Url;
 
-/// The ApiKind
-pub enum ApiKind {
-    /// The login Api
+#[allow(missing_docs)]
+/// The DefaultApiKind
+pub enum DefaultApiKind {
     Login,
-    /// The logout Api
+    QrLogin,
+    QrCheck,
     Logout,
-    /// The resource set api, like fav lists, up's works
     FetchResSet,
-    /// The resource metadata api
     FetchRes,
-    /// The pull api
     PullRes,
 }
 
 /// The trait `ApiProvider` makes resources able to provide the releted Apis that implemented [`Api`] trait.
 /// # Example
 /// ```
-/// # use fav_core::api::{ApiProvider, Api, ApiKind};
+/// # use fav_core::api::{ApiProvider, Api, DefaultApiKind};
 /// # use url::Url;
 /// struct Remote;
 /// struct LoginApi;
 ///
 /// impl Api for LoginApi {
-///     fn api(&self) -> &'static str {
+///     fn raw_api(&self) -> &'static str {
 ///         "http://abc.com"
 ///     }
 ///
-///     fn params(&self) -> Vec<&'static str>
-///     {
+///     fn params(&self) -> Vec<&str> {
 ///         vec!["id", "pwd"]
 ///     }
 /// }
 ///
-/// impl ApiProvider for Remote {
-///     fn api(&self, api_name: ApiKind) -> Box<dyn Api> {
+/// impl ApiProvider<DefaultApiKind> for Remote {
+///     fn api(&self, api_name: DefaultApiKind) -> Box<dyn Api + Send> {
 ///         Box::new(match api_name {
-///             ApiKind::Login => LoginApi,
+///             DefaultApiKind::Login => LoginApi,
 ///             _ => unimplemented!()
 ///         })
 ///     }
@@ -47,28 +44,29 @@ pub enum ApiKind {
 ///
 /// # fn main() {
 /// let remote = Remote;
-/// let api = remote.api(ApiKind::Login);
+/// let api = remote.api(DefaultApiKind::Login);
 /// let params = api.params().into_iter().zip(["Jake", "123"]).collect();
 /// let url = api.url(params);
 /// let expected = Url::parse_with_params("http://abc.com", vec![("id", "Jake"), ("pwd", "123")]).unwrap();
 /// assert_eq!(url, expected);
 /// # }
-pub trait ApiProvider {
+pub trait ApiProvider<K> {
     /// Return the Api which implemented [`Api`]
-    fn api(&self, api_kind: ApiKind) -> Box<dyn Api>;
+    fn api(&self, api_kind: K) -> Box<dyn Api + Send>;
 }
 
 /// The trait `Api` is the base trait for all API endpoints.
+/// This trait should be object-safe.
 /// # Example
 /// See [`ApiProvider`]
 pub trait Api {
     /// Return the base api
-    fn api(&self) -> &'static str;
+    fn raw_api(&self) -> &'static str;
     /// Return empty params map needed
-    fn params(&self) -> Vec<&'static str>;
+    fn params(&self) -> Vec<&str>;
 
     /// Return a `Url` with the API endpoint and the given parameters.
-    fn url(&self, params: Vec<(&'static str, &'static str)>) -> Url {
+    fn url(&self, params: Vec<(&str, &str)>) -> Url {
         // Check params when testing
         #[cfg(test)]
         {
@@ -79,7 +77,7 @@ pub trait Api {
                 panic!("{:?}", FavCoreError::ParamsError(msg));
             }
         }
-        Url::parse_with_params(self.api(), params).unwrap()
+        Url::parse_with_params(self.raw_api(), params).unwrap()
     }
 
     /// Return `Method::GET` on default.
@@ -94,10 +92,10 @@ mod tests {
 
     struct Remote;
 
-    impl ApiProvider for Remote {
-        fn api(&self, api_name: ApiKind) -> Box<dyn Api> {
+    impl ApiProvider<DefaultApiKind> for Remote {
+        fn api(&self, api_name: DefaultApiKind) -> Box<dyn Api + Send> {
             match api_name {
-                ApiKind::Login => todo!(),
+                DefaultApiKind::Login => todo!(),
                 _ => todo!(),
             }
         }
@@ -106,11 +104,11 @@ mod tests {
     struct LoginApi;
 
     impl Api for LoginApi {
-        fn api(&self) -> &'static str {
+        fn raw_api(&self) -> &'static str {
             "http://abc.com"
         }
 
-        fn params(&self) -> Vec<&'static str> {
+        fn params(&self) -> Vec<&str> {
             vec!["id", "pwd"]
         }
     }
@@ -119,7 +117,7 @@ mod tests {
     #[should_panic]
     fn params_panic_test() {
         let remote = Remote;
-        let api = remote.api(ApiKind::Login);
+        let api = remote.api(DefaultApiKind::Login);
         let _ = api.url(vec![("wrong_key", "")]);
     }
 }

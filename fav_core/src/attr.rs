@@ -3,31 +3,33 @@
 //! Helping to gain the `id`, `title` and so on for resource, resource set and upper.
 
 #[allow(missing_docs)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Id {
     I64(i64),
     String(String),
 }
 
-impl PartialEq for Id {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Id::I64(a), Id::I64(b)) => a == b,
-            (Id::String(a), Id::String(b)) => a == b,
-            _ => false,
-        }
-    }
-}
-
 impl From<i64> for Id {
-    fn from(value: i64) -> Self {
-        Id::I64(value)
+    fn from(id: i64) -> Self {
+        Id::I64(id)
     }
 }
 
 impl From<String> for Id {
-    fn from(value: String) -> Self {
-        Id::String(value)
+    fn from(id: String) -> Self {
+        match id.parse::<i64>() {
+            Ok(id) => Id::I64(id),
+            Err(_) => Id::String(id),
+        }
+    }
+}
+
+impl From<Id> for String {
+    fn from(value: Id) -> Self {
+        match value {
+            Id::I64(id) => id.to_string(),
+            Id::String(id) => id,
+        }
     }
 }
 
@@ -43,7 +45,7 @@ impl From<String> for Id {
 ///
 /// impl Attr for Video {
 ///     fn id(&self) -> Id {
-///         self.id.into()
+///        Id::I64(self.id)
 ///     }
 ///
 ///     fn name(&self) -> &str {
@@ -57,12 +59,12 @@ impl From<String> for Id {
 ///     name: "name".to_string()
 /// };
 ///
-/// assert_eq!(video.id(), Id::I64(123123));
+/// assert_eq!(video.id(), 123123.into());
 /// assert_eq!(video.name(), "name");
 /// # }
 pub trait Attr {
     /// Return the id of the target
-    fn id(&self) -> Id; // Todo some id may be usize
+    fn id(&self) -> Id;
     /// Return the name of the target
     fn name(&self) -> &str;
 }
@@ -72,6 +74,3 @@ pub trait ResAttr: Attr {}
 
 /// Attributes of a resource set.
 pub trait ResSetAttr: Attr {}
-
-/// Attributes of a upper.
-pub trait UpperAttr: Attr {}

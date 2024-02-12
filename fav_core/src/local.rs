@@ -1,51 +1,14 @@
 //! Local
 
-use crate::{
-    api::ApiProvider,
-    attr::ResAttr,
-    relation::{ResRel, ResSetRel},
-    FavCoreResult,
-};
 use protobuf::MessageFull;
-
-/// Local auth
-pub trait Auth: ApiProvider + ProtoLocal {
-    /// Login
-    fn login(&self) -> FavCoreResult<()>;
-    /// Logout
-    fn logout(&self) -> FavCoreResult<()>;
-}
-
-/// Local fetch
-pub trait Fetch: ApiProvider + ProtoLocal {
-    /// Fetch one resource
-    fn fetch<R>(&self, resource: &mut impl ResRel);
-    /// Fetch resources
-    fn fetch_all<R>(&self, resources: &mut impl ResSetRel<R>)
-    where
-        R: ResAttr,
-    {
-        for _r in resources.resources() {}
-    }
-}
-
-/// Local pull
-pub trait Pull: ApiProvider + ResLocal {
-    /// Pull one resource
-    fn pull<R>(&self, resource: &impl ResRel) -> FavCoreResult<()>;
-    /// Pull the resources
-    fn pull_all<R>(&self, resource: &impl ResSetRel<R>) -> FavCoreResult<()>
-    where
-        R: ResAttr;
-}
 
 /// Has path on disk
 pub trait PathInfo {
-    /// The path
+    /// The path (it must exists, or it will panic at runtime)
     const PATH: &'static str;
 }
 
-/// Protobuf local/persist utils to read and write
+/// Protobuf local/persist utils for reading and writing
 /// # Example
 /// ```
 /// # #[path = "test_utils/mod.rs"]
@@ -55,35 +18,35 @@ pub trait PathInfo {
 ///
 /// // Require `Msg` to implemente `protobuf::MessageFull`
 /// impl PathInfo for Msg {
-///     const PATH: &'static str = "temp";
+///     const PATH: &'static str = "temp/msg";
 /// }
 /// // trait `ProtoLocal` will be auto implemented for `T: PathInfo + MessageFull`
 /// # fn main() {
 /// let msg = Msg::default();
-/// msg.clone().write("msg");   // The Msg will be write to `.fav/msg`
-/// let msg_read: Msg = Msg::read("msg");
+/// msg.clone().write();   // The Msg will be write to `.fav/msg`
+/// let msg_read: Msg = Msg::read();
 /// assert_eq!(msg, msg_read);
-/// Msg::remove("msg");
+/// Msg::remove();
 /// # }
 /// ```
 pub trait ProtoLocal: PathInfo + MessageFull {
-    /// Write the protobuf to file, which is at `PathInfo::PATH + name`
-    fn write(self, name: &str) {
-        let path = std::path::PathBuf::from(Self::PATH).join(name);
+    /// Write the protobuf to file, which is at `PathInfo::PATH`
+    fn write(self) {
+        let path = std::path::PathBuf::from(Self::PATH);
         let mut file = std::fs::File::create(path).unwrap();
         self.write_to_writer(&mut file).unwrap();
     }
 
-    /// Read the protobuf from file, which is at `PathInfo::PATH + name`
-    fn read(name: &str) -> Self {
-        let path = std::path::PathBuf::from(Self::PATH).join(name);
+    /// Read the protobuf from file, which is at `PathInfo::PATH`
+    fn read() -> Self {
+        let path = std::path::PathBuf::from(Self::PATH);
         let mut file = std::fs::File::open(path).unwrap();
         Self::parse_from_reader(&mut file).unwrap()
     }
 
-    /// Remove the resource, which is at `PathInfo::PATH + name`
-    fn remove(name: &str) {
-        let path = std::path::PathBuf::from(Self::PATH).join(name);
+    /// Remove the resource, which is at `PathInfo::PATH`
+    fn remove() {
+        let path = std::path::PathBuf::from(Self::PATH);
         std::fs::remove_file(path).ok(); // Just omit the result
     }
 }
