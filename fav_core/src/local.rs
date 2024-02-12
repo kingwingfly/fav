@@ -2,7 +2,8 @@
 
 use protobuf::MessageFull;
 
-/// Has path on disk
+/// Refer to a path on disk;
+/// impl `PathInfo` for `T: MessageFull` will auto implement [`ProtoLocal`].
 pub trait PathInfo {
     /// The path (it must exists, or it will panic at runtime)
     const PATH: &'static str;
@@ -52,19 +53,3 @@ pub trait ProtoLocal: PathInfo + MessageFull {
 }
 
 impl<T> ProtoLocal for T where T: PathInfo + MessageFull {}
-
-/// Making resources able to be locally managed
-pub trait ResLocal: PathInfo {
-    /// Write the protobuf
-    fn write(name: &str, contents: impl AsRef<[u8]>) {
-        let path = std::path::PathBuf::from(Self::PATH).join(name);
-        // Todo use std::io::copy instead
-        std::fs::write(path, contents).unwrap();
-    }
-
-    /// Remove the resource
-    fn remove(name: &str) {
-        let path = std::path::PathBuf::from(Self::PATH).join(name);
-        std::fs::remove_file(path).unwrap();
-    }
-}

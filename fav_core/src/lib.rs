@@ -26,7 +26,7 @@ pub mod prelude {
     pub use crate::attr::{Attr, Id, ResAttr, ResSetAttr};
     pub use crate::config::{Config, HttpConfig};
     pub use crate::error::*;
-    pub use crate::local::{PathInfo, ProtoLocal, ResLocal};
+    pub use crate::local::{PathInfo, ProtoLocal};
     pub use crate::meta::Meta;
     pub use crate::ops::{Operations, OperationsExt};
     pub use crate::relation::{ResRel, ResSetRel};
