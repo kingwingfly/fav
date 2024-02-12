@@ -2,6 +2,7 @@
 
 use crate::{
     api::ApiProvider,
+    attr::ResAttr,
     config::Config,
     relation::{ResRel, ResSetRel},
     FavCoreResult,
@@ -23,7 +24,7 @@ use reqwest::{Client, Response};
 /// use fav_core::ops::Operations;
 /// # #[tokio::main]
 /// # async fn main() {
-///     let app = App::default();
+///     let mut app = App::default();
 ///     app.login().await.unwrap();
 /// # }
 /// ```
@@ -33,15 +34,12 @@ pub trait LocalOperations<K>: ApiProvider<K> + Config
 where
     K: Send,
 {
-    /// Work with [`Self::request`] to implement login.
-    /// # Example
-    async fn login(&self) -> FavCoreResult<()>;
-    async fn logout(&self) -> FavCoreResult<()>;
+    async fn login(&mut self) -> FavCoreResult<()>;
+    async fn logout(&mut self) -> FavCoreResult<()>;
     /// Fetch one resource
-    async fn fetch(&self, resource: &mut impl ResRel) -> FavCoreResult<()>;
-
+    async fn fetch(&self, resource: &mut impl ResAttr) -> FavCoreResult<()>;
     /// Pull one resource
-    async fn pull(&self, resource: &impl ResRel) -> FavCoreResult<()>;
+    async fn pull(&self, resource: &mut impl ResAttr) -> FavCoreResult<()>;
 
     /// Return a `&'static reqwest::Client`, use it to perform operations during the lifetime of the client.
     /// # Example
@@ -62,6 +60,9 @@ where
         CLIENT.get_or_init(|| Client::builder().default_headers(headers).build().unwrap())
     }
 
+    /// Request the api, which is returned by `Api::api(api_kind)`,
+    /// and with the method, which is returned `Api::method()`.
+    /// Use the provided params, and client with default headers `Config::headers()`.
     fn request(
         &self,
         api_kind: K,
@@ -81,7 +82,14 @@ where
             Ok(resp)
         }
     }
+}
 
+/// `LocalOperationsExt`, including methods to batch fetch and pull, however,
+/// it is synchronize since methods in [`LocalOperations`] is not `Send`.
+pub trait LocalOperationsExt<K>: LocalOperations<K>
+where
+    K: Send,
+{
     /// Fetch resources
     fn fetch_all<R>(
         &self,
@@ -90,10 +98,9 @@ where
     where
         R: ResRel,
     {
-        // Todo sync
         async {
-            for resource in resources.iter_mut() {
-                self.fetch(resource).await?;
+            for r in resources.iter_mut() {
+                self.fetch(r).await?;
             }
             Ok(())
         }
@@ -102,16 +109,95 @@ where
     /// Pull the resources
     fn pull_all<R>(
         &self,
-        resources: &impl ResSetRel<R>,
+        resources: &mut impl ResSetRel<R>,
     ) -> impl core::future::Future<Output = FavCoreResult<()>>
     where
         R: ResRel,
     {
         async {
-            for resource in resources.iter() {
-                self.pull(resource).await?;
+            for r in resources.iter_mut() {
+                self.pull(r).await?;
             }
             Ok(())
         }
     }
+}
+
+impl<T, K> LocalOperationsExt<K> for T
+where
+    T: LocalOperations<K>,
+    K: Send,
+{
+}
+
+/// `LocalOperationsExt`, including methods to batch fetch and pull, however,
+/// it is synchronize since methods in [`LocalOperations`] is not `Send`.
+pub trait OperationsExt<K>: Operations<K>
+where
+    K: Send + 'static,
+{
+    /// Fetch resources
+    fn fetch_all<R>(
+        &'static self,
+        resources: &'static mut impl ResSetRel<R>,
+    ) -> impl core::future::Future<Output = FavCoreResult<()>>
+    where
+        R: ResRel + 'static,
+    {
+        async {
+            let mut rs = resources.iter_mut();
+            loop {
+                let batch: Vec<_> = rs.by_ref().take(10).collect();
+                if batch.is_empty() {
+                    break;
+                }
+                let jhs: Vec<_> = batch
+                    .into_iter()
+                    .map(|r| tokio::spawn(self.fetch(r)))
+                    .collect();
+                for jh in jhs {
+                    if let Err(e) = jh.await.unwrap() {
+                        println!("{e}");
+                    }
+                }
+            }
+            Ok(())
+        }
+    }
+
+    /// Pull the resources
+    fn pull_all<R>(
+        &'static self,
+        resources: &'static mut impl ResSetRel<R>,
+    ) -> impl core::future::Future<Output = FavCoreResult<()>>
+    where
+        R: ResRel + 'static,
+    {
+        async {
+            let mut rs = resources.iter_mut();
+            loop {
+                let batch: Vec<_> = rs.by_ref().take(10).collect();
+                if batch.is_empty() {
+                    break;
+                }
+                let jhs: Vec<_> = batch
+                    .into_iter()
+                    .map(|r| tokio::spawn(self.pull(r)))
+                    .collect();
+                for jh in jhs {
+                    if let Err(e) = jh.await.unwrap() {
+                        println!("{e}");
+                    }
+                }
+            }
+            Ok(())
+        }
+    }
+}
+
+impl<T, K> OperationsExt<K> for T
+where
+    T: Operations<K>,
+    K: Send + 'static,
+{
 }

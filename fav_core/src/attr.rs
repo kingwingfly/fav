@@ -62,7 +62,7 @@ impl From<Id> for String {
 /// assert_eq!(video.id(), 123123.into());
 /// assert_eq!(video.name(), "name");
 /// # }
-pub trait Attr {
+pub trait Attr: Send + Sync {
     /// Return the id of the target
     fn id(&self) -> Id;
     /// Return the name of the target

@@ -80,7 +80,7 @@ pub trait Api {
         Url::parse_with_params(self.raw_api(), params).unwrap()
     }
 
-    /// Return `Method::GET` on default.
+    /// Return `Method::GET` by default.
     fn method(&self) -> Method {
         Method::GET
     }

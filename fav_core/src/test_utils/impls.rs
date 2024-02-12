@@ -50,20 +50,20 @@ impl ApiProvider<DefaultApiKind> for App {
 }
 
 impl Operations<DefaultApiKind> for App {
-    async fn login(&self) -> FavCoreResult<()> {
+    async fn login(&mut self) -> FavCoreResult<()> {
         // let resp = self.request(DefaultApiKind::Login, vec![]).await?;
         Ok(())
     }
 
-    async fn logout(&self) -> FavCoreResult<()> {
+    async fn logout(&mut self) -> FavCoreResult<()> {
         todo!()
     }
 
-    async fn fetch(&self, resource: &mut impl ResRel) -> FavCoreResult<()> {
+    async fn fetch(&self, resource: &mut impl ResAttr) -> FavCoreResult<()> {
         todo!()
     }
 
-    async fn pull(&self, resource: &impl ResRel) -> FavCoreResult<()> {
+    async fn pull(&self, resource: &mut impl ResAttr) -> FavCoreResult<()> {
         todo!()
     }
 }

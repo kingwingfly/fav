@@ -1,5 +1,6 @@
 //! Meta
 
+use crate::local::PathInfo;
 use protobuf::MessageFull;
 use protobuf_json_mapping::{parse_from_str_with_options, ParseOptions};
 
@@ -9,10 +10,7 @@ static PARSE_OPTIONS: ParseOptions = ParseOptions {
 };
 
 /// Meta
-pub trait Meta: MessageFull {
-    /// The path to the meta
-    const PATH: &'static str;
-
+pub trait Meta: MessageFull + PathInfo {
     /// Read the meta
     fn read() -> Self {
         let mut file = std::fs::File::open(Self::PATH).unwrap();

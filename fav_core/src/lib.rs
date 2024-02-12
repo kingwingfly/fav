@@ -28,7 +28,7 @@ pub mod prelude {
     pub use crate::error::*;
     pub use crate::local::{PathInfo, ProtoLocal, ResLocal};
     pub use crate::meta::Meta;
-    pub use crate::ops::Operations;
+    pub use crate::ops::{Operations, OperationsExt};
     pub use crate::relation::{ResRel, ResSetRel};
     pub use crate::status::Status;
 }

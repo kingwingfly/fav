@@ -58,6 +58,7 @@ pub trait ResLocal: PathInfo {
     /// Write the protobuf
     fn write(name: &str, contents: impl AsRef<[u8]>) {
         let path = std::path::PathBuf::from(Self::PATH).join(name);
+        // Todo use std::io::copy instead
         std::fs::write(path, contents).unwrap();
     }
 
