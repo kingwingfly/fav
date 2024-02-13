@@ -16,7 +16,7 @@ pub trait Status {
     /// return &mut saved
     fn saved_mut(&mut self) -> &mut bool;
     /// return &mut fav
-    fn fav_mut(&self) -> &mut bool;
+    fn fav_mut(&mut self) -> &mut bool;
     /// return &mut expired
     fn expired_mut(&mut self) -> &mut bool;
 }

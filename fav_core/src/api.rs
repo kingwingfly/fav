@@ -28,8 +28,8 @@ pub enum DefaultApiKind {
 ///         "http://abc.com"
 ///     }
 ///
-///     fn params(&self) -> Vec<&str> {
-///         vec!["id", "pwd"]
+///     fn params(&self) -> &[&str] {
+///         &["id", "pwd"]
 ///     }
 /// }
 ///
@@ -45,7 +45,7 @@ pub enum DefaultApiKind {
 /// # fn main() {
 /// let remote = Remote;
 /// let api = remote.api(DefaultApiKind::Login);
-/// let params = api.params().into_iter().zip(["Jake", "123"]).collect();
+/// let params = api.params().iter().copied().zip(["Jake", "123"]).collect();
 /// let url = api.url(params);
 /// let expected = Url::parse_with_params("http://abc.com", vec![("id", "Jake"), ("pwd", "123")]).unwrap();
 /// assert_eq!(url, expected);
@@ -63,7 +63,7 @@ pub trait Api {
     /// Return the base api
     fn raw_api(&self) -> &'static str;
     /// Return empty params map needed
-    fn params(&self) -> Vec<&str>;
+    fn params(&self) -> &[&str];
 
     /// Return a `Url` with the API endpoint and the given parameters.
     fn url(&self, params: Vec<(&str, &str)>) -> Url {
@@ -108,8 +108,8 @@ mod tests {
             "http://abc.com"
         }
 
-        fn params(&self) -> Vec<&str> {
-            vec!["id", "pwd"]
+        fn params(&self) -> &[&str] {
+            &["id", "pwd"]
         }
     }
 

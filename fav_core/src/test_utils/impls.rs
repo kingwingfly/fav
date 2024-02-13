@@ -35,8 +35,8 @@ impl Api for LoginApi {
         "http://www.example.com"
     }
 
-    fn params(&self) -> Vec<&str> {
-        vec![]
+    fn params(&self) -> &[&str] {
+        &[]
     }
 }
 

@@ -39,12 +39,12 @@ where
     async fn logout(&mut self) -> FavCoreResult<()>;
     /// Fetch one resource
     /// # Caution
-    /// You need handle Ctrl-C with `tokio::signal::ctrl_c()` and `tokio::select!`,
+    /// One needs to handle Ctrl-C with `tokio::signal::ctrl_c` and `tokio::select!`,
     /// and return [`FavCoreError::Cancel`]
     async fn fetch(&self, resource: &mut impl ResAttr) -> FavCoreResult<()>;
     /// Pull one resource.
     /// # Caution
-    /// You need handle Ctrl-C with `tokio::signal::ctrl_c()` and `tokio::select!`,
+    /// One needs to handle Ctrl-C with `tokio::signal::ctrl_c` and `tokio::select!`,
     /// and return [`FavCoreError::Cancel`]
     async fn pull(&self, resource: &mut impl ResAttr) -> FavCoreResult<()>;
 
@@ -54,12 +54,12 @@ where
     /// use std::sync::OnceLock;
     /// use reqwest::Client;
     /// // In `Operations`'s implementation
-    /// fn client() {
-    ///     let headers = self.headers();
-    ///         static CLIENT: OnceLock<Client> = OnceLock::new();
-    ///         CLIENT.get_or_init(|| Client::builder().default_headers(headers).build().unwrap())
+    /// fn client() -> &'static Client {
+    ///     static CLIENT: OnceLock<Client> = OnceLock::new();
+    ///     CLIENT.get_or_init(Client::new)
     /// }
     /// ```
+    /// In practice, one should use [`Config`] to make a `Client` that meet the demand.
     fn client(&self) -> &'static Client {
         use std::sync::OnceLock;
         let headers = self.headers();
@@ -81,7 +81,7 @@ where
             let resp = client
                 .request(
                     api.method(),
-                    api.url(api.params().into_iter().zip(params).collect()),
+                    api.url(api.params().iter().copied().zip(params).collect()),
                 )
                 .send()
                 .await
