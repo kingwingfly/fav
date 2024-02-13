@@ -5,8 +5,9 @@ use crate::{
     attr::ResAttr,
     config::Config,
     relation::{ResRel, ResSetRel},
-    FavCoreResult,
+    {error::FavCoreError, FavCoreResult},
 };
+use core::future::Future;
 use reqwest::{Client, Response};
 
 /// Making a client able to perform operations.
@@ -37,8 +38,14 @@ where
     async fn login(&mut self) -> FavCoreResult<()>;
     async fn logout(&mut self) -> FavCoreResult<()>;
     /// Fetch one resource
+    /// # Caution
+    /// You need handle Ctrl-C with `tokio::signal::ctrl_c()` and `tokio::select!`,
+    /// and return [`FavCoreError::Cancel`]
     async fn fetch(&self, resource: &mut impl ResAttr) -> FavCoreResult<()>;
-    /// Pull one resource
+    /// Pull one resource.
+    /// # Caution
+    /// You need handle Ctrl-C with `tokio::signal::ctrl_c()` and `tokio::select!`,
+    /// and return [`FavCoreError::Cancel`]
     async fn pull(&self, resource: &mut impl ResAttr) -> FavCoreResult<()>;
 
     /// Return a `&'static reqwest::Client`, use it to perform operations during the lifetime of the client.
@@ -48,11 +55,11 @@ where
     /// use reqwest::Client;
     /// // In `Operations`'s implementation
     /// fn client() {
-    ///     static CLIENT: OnceLock<Client> = OnceLock::new();
-    ///     let client = CLIENT.get_or_init(Client::new);
+    ///     let headers = self.headers();
+    ///         static CLIENT: OnceLock<Client> = OnceLock::new();
+    ///         CLIENT.get_or_init(|| Client::builder().default_headers(headers).build().unwrap())
     /// }
     /// ```
-    /// In practice, you should make full use of `Config` trait to initialize the client to meet actual needs.
     fn client(&self) -> &'static Client {
         use std::sync::OnceLock;
         let headers = self.headers();
@@ -67,7 +74,7 @@ where
         &self,
         api_kind: K,
         params: impl IntoIterator<Item = &'static str> + Send,
-    ) -> impl core::future::Future<Output = FavCoreResult<Response>> {
+    ) -> impl Future<Output = FavCoreResult<Response>> {
         async {
             let client = self.client();
             let api = self.api(api_kind);
@@ -86,37 +93,50 @@ where
 
 /// `LocalOperationsExt`, including methods to batch fetch and pull, however,
 /// it is synchronize since methods in [`LocalOperations`] is not `Send`.
+/// See [`Operations`] and [`OperationsExt`] for asynchronous version.
 pub trait LocalOperationsExt<K>: LocalOperations<K>
 where
     K: Send,
 {
-    /// Fetch resources
+    /// **Synchronously** fetch all resources using [`LocalOperations::fetch`],
+    /// since `async trait` is not Send in rust by now.
     fn fetch_all<R>(
         &self,
         resources: &mut impl ResSetRel<R>,
-    ) -> impl core::future::Future<Output = FavCoreResult<()>>
+    ) -> impl Future<Output = FavCoreResult<()>>
     where
         R: ResRel,
     {
         async {
             for r in resources.iter_mut() {
-                self.fetch(r).await?;
+                if let Err(e) = self.fetch(r).await {
+                    match e {
+                        FavCoreError::Cancel => break,
+                        _ => println!("{e}"),
+                    }
+                }
             }
             Ok(())
         }
     }
 
-    /// Pull the resources
+    /// **Synchronously** pull all resources using [`LocalOperations::pull`],
+    /// since `async trait` is not Send in rust by now.
     fn pull_all<R>(
         &self,
         resources: &mut impl ResSetRel<R>,
-    ) -> impl core::future::Future<Output = FavCoreResult<()>>
+    ) -> impl Future<Output = FavCoreResult<()>>
     where
         R: ResRel,
     {
         async {
             for r in resources.iter_mut() {
-                self.pull(r).await?;
+                if let Err(e) = self.pull(r).await {
+                    match e {
+                        FavCoreError::Cancel => break,
+                        _ => println!("{e}"),
+                    }
+                }
             }
             Ok(())
         }
@@ -130,17 +150,16 @@ where
 {
 }
 
-/// `LocalOperationsExt`, including methods to batch fetch and pull, however,
-/// it is synchronize since methods in [`LocalOperations`] is not `Send`.
+/// `OperationsExt`, including methods to batch fetch and pull.
 pub trait OperationsExt<K>: Operations<K>
 where
     K: Send + 'static,
 {
-    /// Fetch resources
+    /// **Asynchronously** fetch resourses using [`Operations::fetch`].
     fn fetch_all<R>(
         &'static self,
         resources: &'static mut impl ResSetRel<R>,
-    ) -> impl core::future::Future<Output = FavCoreResult<()>>
+    ) -> impl Future<Output = FavCoreResult<()>>
     where
         R: ResRel + 'static,
     {
@@ -165,11 +184,11 @@ where
         }
     }
 
-    /// Pull the resources
+    /// **Asynchronously** pull resourses using [`Operations::pull`].
     fn pull_all<R>(
         &'static self,
         resources: &'static mut impl ResSetRel<R>,
-    ) -> impl core::future::Future<Output = FavCoreResult<()>>
+    ) -> impl Future<Output = FavCoreResult<()>>
     where
         R: ResRel + 'static,
     {
@@ -186,7 +205,13 @@ where
                     .collect();
                 for jh in jhs {
                     if let Err(e) = jh.await.unwrap() {
-                        println!("{e}");
+                        match e {
+                            FavCoreError::Cancel => {
+                                println!("{e}");
+                                break;
+                            }
+                            _ => println!("{e}"),
+                        }
                     }
                 }
             }

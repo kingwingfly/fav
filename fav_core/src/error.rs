@@ -9,6 +9,8 @@ pub enum FavCoreError {
     ParamsError(String),
     /// NetworkError: The network error.
     NetworkError,
+    /// Ctrl-C cancelled
+    Cancel,
 }
 
 impl std::fmt::Display for FavCoreError {
@@ -17,6 +19,7 @@ impl std::fmt::Display for FavCoreError {
             FavCoreError::AuthError => write!(f, "AuthError: failed to login or logout."),
             FavCoreError::ParamsError(msg) => write!(f, "{}", msg),
             FavCoreError::NetworkError => write!(f, "NetworkError."),
+            FavCoreError::Cancel => write!(f, "Ctrl-C cancelled"),
         }
     }
 }
