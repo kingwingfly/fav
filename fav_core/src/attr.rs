@@ -2,6 +2,8 @@
 //! Contains the traits for resources' attributes.
 //! Helping to gain the `id`, `title` and so on for resource, resource set and upper.
 
+use std::str::FromStr;
+
 #[allow(missing_docs)]
 #[derive(Debug, PartialEq)]
 pub enum Id {
@@ -15,11 +17,13 @@ impl From<i64> for Id {
     }
 }
 
-impl From<String> for Id {
-    fn from(id: String) -> Self {
-        match id.parse::<i64>() {
-            Ok(id) => Id::I64(id),
-            Err(_) => Id::String(id),
+impl FromStr for Id {
+    type Err = std::convert::Infallible;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.parse::<i64>() {
+            Ok(id) => Ok(Id::I64(id)),
+            Err(_) => Ok(Id::String(s.to_owned())),
         }
     }
 }
