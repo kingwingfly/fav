@@ -9,13 +9,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Channel::Dev => "CHANNEL_DEV",
     };
     println!("cargo:rustc-cfg={}", channel);
-    #[cfg(not(doc))]
-    protobuf_codegen::Codegen::new()
-        .pure()
-        .includes(["./proto"])
-        .inputs(["./proto/data.proto"])
-        .out_dir("./src/proto")
-        .run()
-        .unwrap();
+    if !std::fs::metadata(".").unwrap().permissions().readonly() {
+        protobuf_codegen::Codegen::new()
+            .pure()
+            .includes(["./proto"])
+            .inputs(["./proto/data.proto"])
+            .out_dir("./src/test_utils/proto")
+            .run()
+            .unwrap();
+    }
     Ok(())
 }
