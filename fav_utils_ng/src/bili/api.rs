@@ -6,6 +6,7 @@ impl ApiProvider<ApiKind> for Bili {
         match api_kind {
             ApiKind::Qr => &QrApi,
             ApiKind::QrPoll => &QrPollApi,
+            ApiKind::Logout => &LogoutApi,
         }
     }
 }
@@ -14,6 +15,7 @@ impl ApiProvider<ApiKind> for Bili {
 pub(super) enum ApiKind {
     Qr,
     QrPoll,
+    Logout,
 }
 
 /// The bilibili QR code generation API
@@ -25,3 +27,7 @@ struct QrApi;
 #[derive(Api)]
 #[api(endpoint("https://passport.bilibili.com/x/passport-login/web/qrcode/poll"), params(&["qrcode_key"]))]
 struct QrPollApi;
+
+#[derive(Api)]
+#[api(endpoint("https://passport.bilibili.com/login/exit/v2"), params(&["biliCSRF"]))]
+struct LogoutApi;

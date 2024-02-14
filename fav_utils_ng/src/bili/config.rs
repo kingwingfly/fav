@@ -1,4 +1,4 @@
-use crate::proto::bili::Bili;
+use crate::proto::bili::{Bili, Headers};
 use fav_core::prelude::*;
 use reqwest::{header, header::HeaderMap};
 use std::collections::HashMap;
@@ -16,6 +16,32 @@ impl HttpConfig for Bili {
     }
 
     fn set_cookies(&mut self, cookies: HashMap<String, String>) {
-        self.headers.as_mut().unwrap().cookies = cookies;
+        let headers_ptr: *mut Option<Box<Headers>> = &mut self.headers.0 as *mut _;
+        unsafe {
+            match *headers_ptr {
+                Some(ref mut headers) => {
+                    headers.cookies = cookies;
+                }
+                None => {
+                    *headers_ptr = Some(Box::new(Headers {
+                        cookies,
+                        ..Default::default()
+                    }));
+                }
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn set_cookie_test() {
+        let mut bili = Bili::default();
+        let mut cookies = HashMap::new();
+        cookies.insert("test".to_string(), "test".to_string());
+        bili.set_cookies(cookies);
     }
 }

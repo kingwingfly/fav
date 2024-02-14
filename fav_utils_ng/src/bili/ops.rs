@@ -30,7 +30,9 @@ impl Operations<ApiKind> for Bili {
     }
 
     async fn logout(&mut self) -> FavCoreResult<()> {
-        todo!()
+        let params = [self.cookies().get("bili_jct").unwrap().as_str()];
+        let resp = self.request(ApiKind::Logout, params).await?;
+        Ok(())
     }
 
     async fn fetch(&self, resource: &mut impl Meta) -> FavCoreResult<()> {
@@ -64,7 +66,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
-    async fn test_login() {
+    async fn login_test() {
         let mut bili = Bili::default();
         bili.login().await.unwrap();
     }
