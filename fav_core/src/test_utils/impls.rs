@@ -42,12 +42,25 @@ impl Api for LoginApi {
     }
 }
 
+struct LogoutApi;
+
+impl Api for LogoutApi {
+    fn endpoint(&self) -> &'static str {
+        "http://www.example.com"
+    }
+
+    fn params(&self) -> &[&str] {
+        &[]
+    }
+}
+
 impl ApiProvider<DefaultApiKind> for App {
-    fn api(&self, api_kind: DefaultApiKind) -> Box<dyn Api + Send> {
-        Box::new(match api_kind {
-            DefaultApiKind::Login => LoginApi,
+    fn api(&self, api_kind: DefaultApiKind) -> &dyn Api {
+        match api_kind {
+            DefaultApiKind::Login => &LoginApi,
+            DefaultApiKind::Logout => &LogoutApi,
             _ => unimplemented!(),
-        })
+        }
     }
 }
 

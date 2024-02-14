@@ -19,6 +19,8 @@ pub mod status;
 mod test_utils;
 
 pub use error::*;
+#[cfg(feature = "derive")]
+pub use fav_derive as derive;
 
 /// Re-export the most important traits and types
 pub mod prelude {

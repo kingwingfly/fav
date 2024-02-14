@@ -24,14 +24,12 @@ pub(crate) fn derive_api(input: TokenStream) -> TokenStream {
                     "params" => {
                         params = content.parse()?;
                     }
-                    attr => {
-                        panic!("This macro only supports the `endpoint` and `params` attributes, but got {}", attr);
-                    }
+                    attr => return Err(meta.error(format!("unknown attribute {attr}"))),
                 }
             }
             Ok(())
         })
-        .expect("");
+        .unwrap();
     };
 
     let expanded = quote! {

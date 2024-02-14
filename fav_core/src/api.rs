@@ -37,12 +37,17 @@ pub enum DefaultApiKind {
 ///     }
 /// }
 ///
+/// #[derive(Api)]
+/// #[api(endpoint("http://abc.com"), params(&["id", "pwd"]))]
+/// struct LogoutApi;
+///
 /// impl ApiProvider<DefaultApiKind> for Remote {
-///     fn api(&self, api_name: DefaultApiKind) -> Box<dyn Api + Send> {
-///         Box::new(match api_name {
-///             DefaultApiKind::Login => LoginApi,
+///     fn api(&self, api_name: DefaultApiKind) -> &dyn Api {
+///         match api_name {
+///             DefaultApiKind::Login => &LoginApi,
+///             DefaultApiKind::Logout => &LogoutApi,
 ///             _ => unimplemented!()
-///         })
+///         }
 ///     }
 /// }
 ///
@@ -56,7 +61,7 @@ pub enum DefaultApiKind {
 /// # }
 pub trait ApiProvider<K> {
     /// Return the Api which implemented [`Api`]
-    fn api(&self, api_kind: K) -> Box<dyn Api + Send>;
+    fn api(&self, api_kind: K) -> &dyn Api;
 }
 
 /// The trait `Api` is the base trait for all API endpoints.
@@ -97,7 +102,7 @@ mod tests {
     struct Remote;
 
     impl ApiProvider<DefaultApiKind> for Remote {
-        fn api(&self, api_name: DefaultApiKind) -> Box<dyn Api + Send> {
+        fn api(&self, api_name: DefaultApiKind) -> &dyn Api {
             match api_name {
                 DefaultApiKind::Login => todo!(),
                 _ => todo!(),
