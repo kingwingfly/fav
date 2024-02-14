@@ -1,6 +1,8 @@
 #! /bin/bash
 set -e
 
+export TERM=xterm-256color
+
 # Statements waiting to be executed
 statements=(
     "cargo fetch --locked"
