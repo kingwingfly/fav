@@ -3,6 +3,9 @@
 
 use std::str::FromStr;
 
+#[cfg(feature = "derive")]
+pub use fav_derive::Attr;
+
 #[allow(missing_docs)]
 #[derive(Debug, PartialEq)]
 pub enum Id {

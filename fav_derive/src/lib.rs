@@ -6,6 +6,7 @@
 use proc_macro::TokenStream;
 
 mod api;
+mod attr;
 
 /// A derive macro helping implemente `Api` trait.
 /// # Example
@@ -25,4 +26,27 @@ mod api;
 #[proc_macro_derive(Api, attributes(api))]
 pub fn derive_api(input: TokenStream) -> TokenStream {
     api::derive_api(input)
+}
+
+/// A derive macro helping implemente `Api` trait.
+/// # Example
+/// ```
+/// use fav_core::attr::Attr;
+///
+/// #[derive(Attr)]
+/// struct Res {
+///    id: i32,
+///    name: String,
+/// }
+///
+/// #[derive(Attr)]
+/// #[attr(id(res_id), name(res_name))]
+/// struct Res_ {
+///    res_id: i32,
+///    res_name: String,
+/// }
+/// ```
+#[proc_macro_derive(Attr, attributes(attr))]
+pub fn derive_attr(input: TokenStream) -> TokenStream {
+    attr::derive_attr(input)
 }
