@@ -1,6 +1,6 @@
 [package]
 name = "fav_utils"
-version = "0.0.1-alpha4"
+version = "0.0.1-alpha5"
 authors.workspace = true
 description = "Fav's utils crate; A collection of utilities and data structures for the fav project"
 license.workspace = true
@@ -15,7 +15,7 @@ all-features = true
 
 [dependencies]
 # CLI
-clap = { version = "4.4", features = ["derive"]}
+clap = { version = "4.4", features = ["derive"] }
 tabled = "0.15.0"
 indicatif = { version = "0.17", features = ["tokio"] }
 clap_complete = { version = "4" }
@@ -30,7 +30,12 @@ protobuf-json-mapping = { version = "3" }
 # Net
 reqwest = { version = "0.11", features = ["json", "cookies"] }
 # Runtime
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "process"] }
+tokio = { version = "1", features = [
+    "macros",
+    "rt-multi-thread",
+    "signal",
+    "process",
+] }
 # tracing
 tracing = { version = "0.1" }
 tracing-subscriber = { version = "0.3" }
