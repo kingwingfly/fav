@@ -8,25 +8,46 @@ pub enum FavCoreError {
     /// ParamsError: The params provided to API cannot meet the demand.
     ParamsError(String),
     /// NetworkError: The network error.
-    NetworkError,
+    NetworkError(reqwest::Error),
     /// Ctrl-C cancelled
     Cancel,
+    /// UtilError: The error from util.
+    UtilsError(Box<dyn std::error::Error + Send>),
+    /// The error from serde_json
+    SerdeError(serde_json::Error),
+    /// The error from protobuf
+    ProtobufError(protobuf_json_mapping::ParseError),
 }
 
 impl std::fmt::Display for FavCoreError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FavCoreError::AuthError => write!(f, "AuthError: failed to login or logout."),
+            FavCoreError::AuthError => write!(f, "AuthErr: failed to login or logout."),
             FavCoreError::ParamsError(msg) => write!(f, "{}", msg),
-            FavCoreError::NetworkError => write!(f, "NetworkError."),
+            FavCoreError::NetworkError(source) => write!(f, "NetworkErr:: {}", source),
             FavCoreError::Cancel => write!(f, "Ctrl-C cancelled"),
+            FavCoreError::UtilsError(source) => write!(f, "UtilsErr: {}", source),
+            FavCoreError::SerdeError(source) => write!(f, "SerdeErr:: {}", source),
+            FavCoreError::ProtobufError(source) => write!(f, "ProtobufParseErr: {}", source),
         }
     }
 }
 
 impl From<reqwest::Error> for FavCoreError {
-    fn from(_: reqwest::Error) -> Self {
-        FavCoreError::NetworkError
+    fn from(err: reqwest::Error) -> Self {
+        FavCoreError::NetworkError(err)
+    }
+}
+
+impl From<serde_json::Error> for FavCoreError {
+    fn from(err: serde_json::Error) -> Self {
+        FavCoreError::SerdeError(err)
+    }
+}
+
+impl From<protobuf_json_mapping::ParseError> for FavCoreError {
+    fn from(err: protobuf_json_mapping::ParseError) -> Self {
+        FavCoreError::ProtobufError(err)
     }
 }
 

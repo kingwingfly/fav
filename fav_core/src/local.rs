@@ -33,7 +33,9 @@ pub trait PathInfo {
 /// ```
 pub trait ProtoLocal: PathInfo + MessageFull {
     /// Write the protobuf to file, which is at `PathInfo::PATH`
-    fn write(self) {
+    /// # Why &mut?
+    /// For implementing `Drop` trait.
+    fn write(&mut self) {
         let path = std::path::PathBuf::from(Self::PATH);
         let mut file = std::fs::File::create(path).unwrap();
         self.write_to_writer(&mut file).unwrap();
