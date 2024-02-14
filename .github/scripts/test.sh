@@ -8,6 +8,7 @@ statements=(
     # fav_core
     "cargo test -p fav_core"
     "cargo doc --no-deps -p fav_core"
+    "cargo test -p fav_derive"
 )
 
 # loop echo and executing statements

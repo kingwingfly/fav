@@ -369,6 +369,7 @@ name = "fav_core"
 version = "0.0.1-alpha1"
 dependencies = [
  "bitflags 2.4.2",
+ "fav_derive",
  "http 1.0.0",
  "protobuf",
  "protobuf-codegen",
@@ -384,7 +385,13 @@ dependencies = [
 
 [[package]]
 name = "fav_derive"
-version = "0.1.13"
+version = "0.0.1-alpha1"
+dependencies = [
+ "fav_core",
+ "quote",
+ "rustc_version",
+ "syn 2.0.48",
+]
 
 [[package]]
 name = "fav_utils"

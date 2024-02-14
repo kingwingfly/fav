@@ -4,6 +4,9 @@
 use reqwest::Method;
 use url::Url;
 
+#[cfg(feature = "derive")]
+pub use fav_derive::Api;
+
 #[allow(missing_docs)]
 /// The DefaultApiKind
 pub enum DefaultApiKind {
@@ -25,7 +28,7 @@ pub enum DefaultApiKind {
 /// struct LoginApi;
 ///
 /// impl Api for LoginApi {
-///     fn raw_api(&self) -> &'static str {
+///     fn endpoint(&self) -> &'static str {
 ///         "http://abc.com"
 ///     }
 ///
@@ -61,8 +64,8 @@ pub trait ApiProvider<K> {
 /// # Example
 /// See [`ApiProvider`]
 pub trait Api {
-    /// Return the base api
-    fn raw_api(&self) -> &'static str;
+    /// Return the endpoint
+    fn endpoint(&self) -> &'static str;
     /// Return empty params map needed
     fn params(&self) -> &[&str];
 
@@ -78,7 +81,7 @@ pub trait Api {
                 panic!("{:?}", FavCoreError::ParamsError(msg));
             }
         }
-        Url::parse_with_params(self.raw_api(), params).unwrap()
+        Url::parse_with_params(self.endpoint(), params).unwrap()
     }
 
     /// Return `Method::GET` by default.
@@ -105,7 +108,7 @@ mod tests {
     struct LoginApi;
 
     impl Api for LoginApi {
-        fn raw_api(&self) -> &'static str {
+        fn endpoint(&self) -> &'static str {
             "http://abc.com"
         }
 

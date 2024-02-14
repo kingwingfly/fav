@@ -33,7 +33,7 @@ impl PathInfo for App {
 struct LoginApi;
 
 impl Api for LoginApi {
-    fn raw_api(&self) -> &'static str {
+    fn endpoint(&self) -> &'static str {
         "http://www.example.com"
     }
 
