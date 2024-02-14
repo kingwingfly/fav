@@ -424,6 +424,31 @@ dependencies = [
 [[package]]
 name = "fav_utils_ng"
 version = "0.0.1-alpha1"
+dependencies = [
+ "base64",
+ "chrono",
+ "clap",
+ "clap_complete",
+ "fav_core",
+ "indicatif",
+ "md5",
+ "protobuf",
+ "protobuf-codegen",
+ "protobuf-json-mapping",
+ "qrcode",
+ "rand",
+ "reqwest",
+ "rustc_version",
+ "sanitize-filename",
+ "serde",
+ "serde_json",
+ "snafu",
+ "tabled",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "fnv"
