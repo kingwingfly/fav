@@ -2,7 +2,7 @@
 
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{parenthesized, parse_macro_input, DeriveInput, Expr, LitStr};
+use syn::{parenthesized, parse_macro_input, DeriveInput, Expr, Ident, LitStr};
 
 pub(crate) fn derive_api(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
@@ -11,6 +11,8 @@ pub(crate) fn derive_api(input: TokenStream) -> TokenStream {
 
     let mut endpoint: LitStr = syn::parse_str("\"\"").unwrap();
     let mut params: Expr = syn::parse_str("&[]").unwrap();
+    let mut method: Ident = syn::parse_str("GET").unwrap();
+    let mut cookies: Expr = syn::parse_str("&[]").unwrap();
 
     if let Some(attr) = input.attrs.iter().find(|&attr| attr.path().is_ident("api")) {
         attr.parse_nested_meta(|meta| {
@@ -23,6 +25,12 @@ pub(crate) fn derive_api(input: TokenStream) -> TokenStream {
                     }
                     "params" => {
                         params = content.parse()?;
+                    }
+                    "method" => {
+                        method = content.parse()?;
+                    }
+                    "cookies" => {
+                        cookies = content.parse()?;
                     }
                     attr => return Err(meta.error(format!("unknown attribute {attr}"))),
                 }
@@ -41,6 +49,14 @@ pub(crate) fn derive_api(input: TokenStream) -> TokenStream {
             #[inline]
             fn params(&self) -> &[&str] {
                 #params
+            }
+            #[inline]
+            fn cookie_keys(&self) -> &[&str] {
+                #cookies
+            }
+            #[inline]
+            fn method(&self) -> reqwest::Method {
+                reqwest::Method::#method
             }
         }
     };

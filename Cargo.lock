@@ -389,6 +389,7 @@ version = "0.0.1-alpha2"
 dependencies = [
  "fav_core",
  "quote",
+ "reqwest",
  "rustc_version",
  "syn 2.0.48",
 ]

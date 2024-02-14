@@ -4,7 +4,7 @@
 use std::collections::HashMap;
 
 use crate::local::ProtoLocal;
-use reqwest::header::HeaderMap;
+use reqwest::header::{HeaderMap, HeaderValue};
 
 /// A HttpConfig, including headers and cookies.
 /// # Example
@@ -19,16 +19,16 @@ use reqwest::header::HeaderMap;
 /// impl HttpConfig for Conf {
 ///     fn headers(&self) -> HeaderMap {
 ///         let mut hp = HeaderMap::new();
-///         hp.insert(header::USER_AGENT, self.headers.user_agent.parse().unwrap());
+///         hp.insert(header::USER_AGENT, "Mozilla/5.0".parse().unwrap());
 ///         hp
 ///     }
 ///
 ///     fn cookies(&self) -> &HashMap<String, String> {
-///         &self.headers.cookies
+///         &self.cookies
 ///     }
 ///
-///     fn set_cookies(&mut self, cookies: HashMap<String, String>) {
-///         self.headers.as_mut().unwrap().cookies = cookies;
+///     fn extend_cookies(&mut self, cookies: HashMap<String, String>) {
+///         self.cookies.extend(cookies);
 ///     }
 /// }
 /// ```
@@ -38,7 +38,19 @@ pub trait HttpConfig {
     /// The cookies
     fn cookies(&self) -> &HashMap<String, String>;
     /// Set the cookies
-    fn set_cookies(&mut self, cookies: HashMap<String, String>);
+    fn extend_cookies(&mut self, cookies: HashMap<String, String>);
+    /// Acquire the cookie value by keys
+    fn cookie_value(&self, keys: impl IntoIterator<Item = impl AsRef<str>>) -> HeaderValue {
+        let cookies = self.cookies();
+        keys.into_iter()
+            .filter_map(|k| {
+                let k = k.as_ref();
+                cookies.get(k).map(|v| format!("{k}={v}; "))
+            })
+            .collect::<String>()
+            .parse()
+            .unwrap()
+    }
 }
 
 /// Mark it able to be a config, which concludes [`HttpConfig`], and can be persisted as protobuf through [`ProtoLocal`].

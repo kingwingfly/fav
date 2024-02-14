@@ -1,35 +1,25 @@
-use crate::proto::bili::{Bili, Headers};
+use crate::proto::bili::Bili;
 use fav_core::prelude::*;
 use reqwest::{header, header::HeaderMap};
 use std::collections::HashMap;
 
+pub(super) const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.3 Safari/605.1.15";
+pub(super) const REFERER: &str = "https://www.bilibili.com/";
+
 impl HttpConfig for Bili {
     fn headers(&self) -> HeaderMap {
         let mut headers = HeaderMap::new();
-        headers.insert(header::USER_AGENT, self.headers.user_agent.parse().unwrap());
-        headers.insert(header::REFERER, self.headers.referer.parse().unwrap());
+        headers.insert(header::USER_AGENT, USER_AGENT.parse().unwrap());
+        headers.insert(header::REFERER, REFERER.parse().unwrap());
         headers
     }
 
     fn cookies(&self) -> &HashMap<String, String> {
-        &self.headers.cookies
+        &self.cookies
     }
 
-    fn set_cookies(&mut self, cookies: HashMap<String, String>) {
-        let headers_ptr: *mut Option<Box<Headers>> = &mut self.headers.0 as *mut _;
-        unsafe {
-            match *headers_ptr {
-                Some(ref mut headers) => {
-                    headers.cookies = cookies;
-                }
-                None => {
-                    *headers_ptr = Some(Box::new(Headers {
-                        cookies,
-                        ..Default::default()
-                    }));
-                }
-            }
-        }
+    fn extend_cookies(&mut self, cookies: HashMap<String, String>) {
+        self.cookies.extend(cookies);
     }
 }
 
@@ -39,9 +29,23 @@ mod tests {
 
     #[test]
     fn set_cookie_test() {
-        let mut bili = Bili::default();
+        {
+            let mut bili = Bili::default();
+            let mut cookies = HashMap::new();
+            cookies.insert("1".to_string(), "1".to_string());
+            bili.extend_cookies(cookies);
+            assert_eq!(bili.cookies().len(), 1);
+            assert_eq!(bili.cookies().get("1").unwrap(), "1");
+        }
+        let mut bili = Bili::read();
+        assert_eq!(bili.cookies().len(), 1);
+        assert_eq!(bili.cookies().get("1").unwrap(), "1");
         let mut cookies = HashMap::new();
-        cookies.insert("test".to_string(), "test".to_string());
-        bili.set_cookies(cookies);
+        cookies.insert("1".to_string(), "one".to_string());
+        cookies.insert("2".to_string(), "two".to_string());
+        bili.extend_cookies(cookies);
+        assert_eq!(bili.cookies().len(), 2);
+        assert_eq!(bili.cookies().get("1").unwrap(), "one");
+        assert_eq!(bili.cookies().get("2").unwrap(), "two");
     }
 }

@@ -29,5 +29,5 @@ struct QrApi;
 struct QrPollApi;
 
 #[derive(Api)]
-#[api(endpoint("https://passport.bilibili.com/login/exit/v2"), params(&["biliCSRF"]))]
+#[api(endpoint("https://passport.bilibili.com/login/exit/v2"), params(&["biliCSRF"]), cookies(&["DedeUserID", "bili_jct", "SESSDATA"]), method(POST))]
 struct LogoutApi;

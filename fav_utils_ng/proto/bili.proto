@@ -2,11 +2,5 @@ syntax = "proto3";
 package bili;
 
 message Bili {
-    Headers headers = 1;
-}
-
-message Headers {
-    string user_agent = 1;
-    string referer = 2;
-    map<string, string> cookies = 3;
+    map<string, string> cookies = 1;
 }

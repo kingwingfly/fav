@@ -132,8 +132,8 @@ impl ::protobuf::reflect::ProtobufValue for Msg {
 #[derive(PartialEq,Clone,Default,Debug)]
 pub struct Conf {
     // message fields
-    // @@protoc_insertion_point(field:data.Conf.headers)
-    pub headers: ::protobuf::MessageField<Headers>,
+    // @@protoc_insertion_point(field:data.Conf.cookies)
+    pub cookies: ::std::collections::HashMap<::std::string::String, ::std::string::String>,
     // special fields
     // @@protoc_insertion_point(special_field:data.Conf.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
@@ -153,10 +153,10 @@ impl Conf {
     fn generated_message_descriptor_data() -> ::protobuf::reflect::GeneratedMessageDescriptorData {
         let mut fields = ::std::vec::Vec::with_capacity(1);
         let mut oneofs = ::std::vec::Vec::with_capacity(0);
-        fields.push(::protobuf::reflect::rt::v2::make_message_field_accessor::<_, Headers>(
-            "headers",
-            |m: &Conf| { &m.headers },
-            |m: &mut Conf| { &mut m.headers },
+        fields.push(::protobuf::reflect::rt::v2::make_map_simpler_accessor::<_, _, _>(
+            "cookies",
+            |m: &Conf| { &m.cookies },
+            |m: &mut Conf| { &mut m.cookies },
         ));
         ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<Conf>(
             "Conf",
@@ -177,149 +177,6 @@ impl ::protobuf::Message for Conf {
         while let Some(tag) = is.read_raw_tag_or_eof()? {
             match tag {
                 10 => {
-                    ::protobuf::rt::read_singular_message_into_field(is, &mut self.headers)?;
-                },
-                tag => {
-                    ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
-                },
-            };
-        }
-        ::std::result::Result::Ok(())
-    }
-
-    // Compute sizes of nested messages
-    #[allow(unused_variables)]
-    fn compute_size(&self) -> u64 {
-        let mut my_size = 0;
-        if let Some(v) = self.headers.as_ref() {
-            let len = v.compute_size();
-            my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
-        }
-        my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
-        self.special_fields.cached_size().set(my_size as u32);
-        my_size
-    }
-
-    fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
-        if let Some(v) = self.headers.as_ref() {
-            ::protobuf::rt::write_message_field_with_cached_size(1, v, os)?;
-        }
-        os.write_unknown_fields(self.special_fields.unknown_fields())?;
-        ::std::result::Result::Ok(())
-    }
-
-    fn special_fields(&self) -> &::protobuf::SpecialFields {
-        &self.special_fields
-    }
-
-    fn mut_special_fields(&mut self) -> &mut ::protobuf::SpecialFields {
-        &mut self.special_fields
-    }
-
-    fn new() -> Conf {
-        Conf::new()
-    }
-
-    fn clear(&mut self) {
-        self.headers.clear();
-        self.special_fields.clear();
-    }
-
-    fn default_instance() -> &'static Conf {
-        static instance: Conf = Conf {
-            headers: ::protobuf::MessageField::none(),
-            special_fields: ::protobuf::SpecialFields::new(),
-        };
-        &instance
-    }
-}
-
-impl ::protobuf::MessageFull for Conf {
-    fn descriptor() -> ::protobuf::reflect::MessageDescriptor {
-        static descriptor: ::protobuf::rt::Lazy<::protobuf::reflect::MessageDescriptor> = ::protobuf::rt::Lazy::new();
-        descriptor.get(|| file_descriptor().message_by_package_relative_name("Conf").unwrap()).clone()
-    }
-}
-
-impl ::std::fmt::Display for Conf {
-    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
-        ::protobuf::text_format::fmt(self, f)
-    }
-}
-
-impl ::protobuf::reflect::ProtobufValue for Conf {
-    type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
-}
-
-// @@protoc_insertion_point(message:data.Headers)
-#[derive(PartialEq,Clone,Default,Debug)]
-pub struct Headers {
-    // message fields
-    // @@protoc_insertion_point(field:data.Headers.user_agent)
-    pub user_agent: ::std::string::String,
-    // @@protoc_insertion_point(field:data.Headers.referer)
-    pub referer: ::std::string::String,
-    // @@protoc_insertion_point(field:data.Headers.cookies)
-    pub cookies: ::std::collections::HashMap<::std::string::String, ::std::string::String>,
-    // special fields
-    // @@protoc_insertion_point(special_field:data.Headers.special_fields)
-    pub special_fields: ::protobuf::SpecialFields,
-}
-
-impl<'a> ::std::default::Default for &'a Headers {
-    fn default() -> &'a Headers {
-        <Headers as ::protobuf::Message>::default_instance()
-    }
-}
-
-impl Headers {
-    pub fn new() -> Headers {
-        ::std::default::Default::default()
-    }
-
-    fn generated_message_descriptor_data() -> ::protobuf::reflect::GeneratedMessageDescriptorData {
-        let mut fields = ::std::vec::Vec::with_capacity(3);
-        let mut oneofs = ::std::vec::Vec::with_capacity(0);
-        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
-            "user_agent",
-            |m: &Headers| { &m.user_agent },
-            |m: &mut Headers| { &mut m.user_agent },
-        ));
-        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
-            "referer",
-            |m: &Headers| { &m.referer },
-            |m: &mut Headers| { &mut m.referer },
-        ));
-        fields.push(::protobuf::reflect::rt::v2::make_map_simpler_accessor::<_, _, _>(
-            "cookies",
-            |m: &Headers| { &m.cookies },
-            |m: &mut Headers| { &mut m.cookies },
-        ));
-        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<Headers>(
-            "Headers",
-            fields,
-            oneofs,
-        )
-    }
-}
-
-impl ::protobuf::Message for Headers {
-    const NAME: &'static str = "Headers";
-
-    fn is_initialized(&self) -> bool {
-        true
-    }
-
-    fn merge_from(&mut self, is: &mut ::protobuf::CodedInputStream<'_>) -> ::protobuf::Result<()> {
-        while let Some(tag) = is.read_raw_tag_or_eof()? {
-            match tag {
-                10 => {
-                    self.user_agent = is.read_string()?;
-                },
-                18 => {
-                    self.referer = is.read_string()?;
-                },
-                26 => {
                     let len = is.read_raw_varint32()?;
                     let old_limit = is.push_limit(len as u64)?;
                     let mut key = ::std::default::Default::default();
@@ -346,12 +203,6 @@ impl ::protobuf::Message for Headers {
     #[allow(unused_variables)]
     fn compute_size(&self) -> u64 {
         let mut my_size = 0;
-        if !self.user_agent.is_empty() {
-            my_size += ::protobuf::rt::string_size(1, &self.user_agent);
-        }
-        if !self.referer.is_empty() {
-            my_size += ::protobuf::rt::string_size(2, &self.referer);
-        }
         for (k, v) in &self.cookies {
             let mut entry_size = 0;
             entry_size += ::protobuf::rt::string_size(1, &k);
@@ -364,17 +215,11 @@ impl ::protobuf::Message for Headers {
     }
 
     fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
-        if !self.user_agent.is_empty() {
-            os.write_string(1, &self.user_agent)?;
-        }
-        if !self.referer.is_empty() {
-            os.write_string(2, &self.referer)?;
-        }
         for (k, v) in &self.cookies {
             let mut entry_size = 0;
             entry_size += ::protobuf::rt::string_size(1, &k);
             entry_size += ::protobuf::rt::string_size(2, &v);
-            os.write_raw_varint32(26)?; // Tag.
+            os.write_raw_varint32(10)?; // Tag.
             os.write_raw_varint32(entry_size as u32)?;
             os.write_string(1, &k)?;
             os.write_string(2, &v)?;
@@ -391,37 +236,35 @@ impl ::protobuf::Message for Headers {
         &mut self.special_fields
     }
 
-    fn new() -> Headers {
-        Headers::new()
+    fn new() -> Conf {
+        Conf::new()
     }
 
     fn clear(&mut self) {
-        self.user_agent.clear();
-        self.referer.clear();
         self.cookies.clear();
         self.special_fields.clear();
     }
 
-    fn default_instance() -> &'static Headers {
-        static instance: ::protobuf::rt::Lazy<Headers> = ::protobuf::rt::Lazy::new();
-        instance.get(Headers::new)
+    fn default_instance() -> &'static Conf {
+        static instance: ::protobuf::rt::Lazy<Conf> = ::protobuf::rt::Lazy::new();
+        instance.get(Conf::new)
     }
 }
 
-impl ::protobuf::MessageFull for Headers {
+impl ::protobuf::MessageFull for Conf {
     fn descriptor() -> ::protobuf::reflect::MessageDescriptor {
         static descriptor: ::protobuf::rt::Lazy<::protobuf::reflect::MessageDescriptor> = ::protobuf::rt::Lazy::new();
-        descriptor.get(|| file_descriptor().message_by_package_relative_name("Headers").unwrap()).clone()
+        descriptor.get(|| file_descriptor().message_by_package_relative_name("Conf").unwrap()).clone()
     }
 }
 
-impl ::std::fmt::Display for Headers {
+impl ::std::fmt::Display for Conf {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         ::protobuf::text_format::fmt(self, f)
     }
 }
 
-impl ::protobuf::reflect::ProtobufValue for Headers {
+impl ::protobuf::reflect::ProtobufValue for Conf {
     type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
 }
 
@@ -1361,27 +1204,24 @@ impl ::protobuf::reflect::ProtobufValue for AttrTest {
 }
 
 static file_descriptor_proto_data: &'static [u8] = b"\
-    \n\ndata.proto\x12\x04data\"\x05\n\x03Msg\"/\n\x04Conf\x12'\n\x07headers\
-    \x18\x01\x20\x01(\x0b2\r.data.HeadersR\x07headers\"\xb4\x01\n\x07Headers\
-    \x12\x1d\n\nuser_agent\x18\x01\x20\x01(\tR\tuserAgent\x12\x18\n\x07refer\
-    er\x18\x02\x20\x01(\tR\x07referer\x124\n\x07cookies\x18\x03\x20\x03(\x0b\
-    2\x1a.data.Headers.CookiesEntryR\x07cookies\x1a:\n\x0cCookiesEntry\x12\
-    \x10\n\x03key\x18\x01\x20\x01(\tR\x03key\x12\x14\n\x05value\x18\x02\x20\
-    \x01(\tR\x05value:\x028\x01\"+\n\x03App\x12$\n\x04sets\x18\x01\x20\x03(\
-    \x0b2\x10.data.TestResSetR\x04sets\"|\n\nTestResSet\x12\x0e\n\x02id\x18\
-    \x01\x20\x01(\x05R\x02id\x12\x12\n\x04name\x18\x02\x20\x01(\tR\x04name\
-    \x12!\n\x04sets\x18\x03\x20\x03(\x0b2\r.data.TestResR\x04sets\x12'\n\x06\
-    uppers\x18\x04\x20\x03(\x0b2\x0f.data.TestUpperR\x06uppers\"n\n\x07TestR\
-    es\x12\x0e\n\x02id\x18\x01\x20\x01(\x05R\x02id\x12\x12\n\x04name\x18\x02\
-    \x20\x01(\tR\x04name\x12\x16\n\x06status\x18\x03\x20\x01(\x05R\x06status\
-    \x12'\n\x06uppers\x18\x04\x20\x03(\x0b2\x0f.data.TestUpperR\x06uppers\"/\
-    \n\tTestUpper\x12\x0e\n\x02id\x18\x01\x20\x01(\x05R\x02id\x12\x12\n\x04n\
-    ame\x18\x02\x20\x01(\tR\x04name\"q\n\nStatusTest\x12\x0e\n\x02id\x18\x01\
-    \x20\x01(\x05R\x02id\x12\x12\n\x04name\x18\x02\x20\x01(\tR\x04name\x12\
-    \x16\n\x06status\x18\x03\x20\x01(\x05R\x06status\x12'\n\x06uppers\x18\
-    \x04\x20\x03(\x0b2\x0f.data.TestUpperR\x06uppers\".\n\x08AttrTest\x12\
+    \n\ndata.proto\x12\x04data\"\x05\n\x03Msg\"u\n\x04Conf\x121\n\x07cookies\
+    \x18\x01\x20\x03(\x0b2\x17.data.Conf.CookiesEntryR\x07cookies\x1a:\n\x0c\
+    CookiesEntry\x12\x10\n\x03key\x18\x01\x20\x01(\tR\x03key\x12\x14\n\x05va\
+    lue\x18\x02\x20\x01(\tR\x05value:\x028\x01\"+\n\x03App\x12$\n\x04sets\
+    \x18\x01\x20\x03(\x0b2\x10.data.TestResSetR\x04sets\"|\n\nTestResSet\x12\
     \x0e\n\x02id\x18\x01\x20\x01(\x05R\x02id\x12\x12\n\x04name\x18\x02\x20\
-    \x01(\tR\x04nameb\x06proto3\
+    \x01(\tR\x04name\x12!\n\x04sets\x18\x03\x20\x03(\x0b2\r.data.TestResR\
+    \x04sets\x12'\n\x06uppers\x18\x04\x20\x03(\x0b2\x0f.data.TestUpperR\x06u\
+    ppers\"n\n\x07TestRes\x12\x0e\n\x02id\x18\x01\x20\x01(\x05R\x02id\x12\
+    \x12\n\x04name\x18\x02\x20\x01(\tR\x04name\x12\x16\n\x06status\x18\x03\
+    \x20\x01(\x05R\x06status\x12'\n\x06uppers\x18\x04\x20\x03(\x0b2\x0f.data\
+    .TestUpperR\x06uppers\"/\n\tTestUpper\x12\x0e\n\x02id\x18\x01\x20\x01(\
+    \x05R\x02id\x12\x12\n\x04name\x18\x02\x20\x01(\tR\x04name\"q\n\nStatusTe\
+    st\x12\x0e\n\x02id\x18\x01\x20\x01(\x05R\x02id\x12\x12\n\x04name\x18\x02\
+    \x20\x01(\tR\x04name\x12\x16\n\x06status\x18\x03\x20\x01(\x05R\x06status\
+    \x12'\n\x06uppers\x18\x04\x20\x03(\x0b2\x0f.data.TestUpperR\x06uppers\".\
+    \n\x08AttrTest\x12\x0e\n\x02id\x18\x01\x20\x01(\x05R\x02id\x12\x12\n\x04\
+    name\x18\x02\x20\x01(\tR\x04nameb\x06proto3\
 ";
 
 /// `FileDescriptorProto` object which was a source for this generated file
@@ -1399,10 +1239,9 @@ pub fn file_descriptor() -> &'static ::protobuf::reflect::FileDescriptor {
     file_descriptor.get(|| {
         let generated_file_descriptor = generated_file_descriptor_lazy.get(|| {
             let mut deps = ::std::vec::Vec::with_capacity(0);
-            let mut messages = ::std::vec::Vec::with_capacity(9);
+            let mut messages = ::std::vec::Vec::with_capacity(8);
             messages.push(Msg::generated_message_descriptor_data());
             messages.push(Conf::generated_message_descriptor_data());
-            messages.push(Headers::generated_message_descriptor_data());
             messages.push(App::generated_message_descriptor_data());
             messages.push(TestResSet::generated_message_descriptor_data());
             messages.push(TestRes::generated_message_descriptor_data());

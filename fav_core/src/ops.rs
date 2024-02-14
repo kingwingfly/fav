@@ -5,7 +5,7 @@ use crate::{
     api::ApiProvider, config::Config, error::FavCoreError, meta::Meta, res::ResSet, FavCoreResult,
 };
 use core::future::Future;
-use reqwest::{Client, Response};
+use reqwest::{header, Client, Response};
 
 /// Making a client able to perform operations.
 ///
@@ -83,11 +83,13 @@ where
         async {
             let client = self.client();
             let api = self.api(api_kind);
+            let cookie = self.cookie_value(api.cookie_keys());
             let resp = client
                 .request(
                     api.method(),
                     api.url(api.params().iter().copied().zip(params).collect()),
                 )
+                .header(header::COOKIE, cookie)
                 .send()
                 .await?;
             Ok(resp)

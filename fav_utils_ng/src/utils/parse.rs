@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use fav_core::FavCoreResult;
 use protobuf::MessageFull;
 use protobuf_json_mapping::{parse_from_str_with_options, ParseOptions};

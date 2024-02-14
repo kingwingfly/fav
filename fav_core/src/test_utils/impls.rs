@@ -21,7 +21,7 @@ impl HttpConfig for App {
         todo!()
     }
 
-    fn set_cookies(&mut self, cookies: HashMap<String, String>) {
+    fn extend_cookies(&mut self, cookies: HashMap<String, String>) {
         todo!()
     }
 }

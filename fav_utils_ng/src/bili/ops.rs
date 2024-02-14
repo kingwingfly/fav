@@ -11,6 +11,10 @@ use reqwest::Response;
 use tokio::time::{sleep, Duration};
 
 const POLL_INTERVAL: u64 = 3;
+#[cfg(not(test))]
+const EXPIRED_DURATION: u64 = 120;
+#[cfg(test)]
+const EXPIRED_DURATION: u64 = 3;
 
 impl Operations<ApiKind> for Bili {
     async fn login(&mut self) -> FavCoreResult<()> {
@@ -18,11 +22,11 @@ impl Operations<ApiKind> for Bili {
         let QrInfo { url, qrcode_key } = resp2serde(resp, "/data").await?;
         show_qr_code(url)?;
         // Expired after 120s
-        for _ in 0..40 {
+        for _ in 0..EXPIRED_DURATION / POLL_INTERVAL {
             sleep(Duration::from_secs(POLL_INTERVAL)).await;
             let resp = self.request(ApiKind::QrPoll, [qrcode_key.as_str()]).await?;
             if let Ok(cookies) = try_extract_cookie(&resp) {
-                self.set_cookies(cookies);
+                self.extend_cookies(cookies);
                 return Ok(());
             }
         }
@@ -32,14 +36,19 @@ impl Operations<ApiKind> for Bili {
     async fn logout(&mut self) -> FavCoreResult<()> {
         let params = [self.cookies().get("bili_jct").unwrap().as_str()];
         let resp = self.request(ApiKind::Logout, params).await?;
-        Ok(())
+        match resp2serde::<i32>(resp, "/code").await? {
+            0 => Ok(()),
+            _ => Err(FavCoreError::UtilsError(Box::new(
+                FavUtilsError::LogoutError,
+            ))),
+        }
     }
 
-    async fn fetch(&self, resource: &mut impl Meta) -> FavCoreResult<()> {
+    async fn fetch(&self, _resource: &mut impl Meta) -> FavCoreResult<()> {
         todo!()
     }
 
-    async fn pull(&self, resource: &mut impl Meta) -> FavCoreResult<()> {
+    async fn pull(&self, _resource: &mut impl Meta) -> FavCoreResult<()> {
         todo!()
     }
 }
@@ -66,6 +75,7 @@ mod tests {
     use super::*;
 
     #[tokio::test]
+    #[should_panic(expected = "Expired")]
     async fn login_test() {
         let mut bili = Bili::default();
         bili.login().await.unwrap();

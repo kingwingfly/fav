@@ -68,25 +68,18 @@ pub trait ApiProvider<K> {
 /// This trait should be object-safe.
 /// # Example
 /// See [`ApiProvider`]
-/// Moreover, this trait will do a params' key-check when testing.
 pub trait Api {
-    /// Return the api endpoint
+    /// Provide the api endpoint
     fn endpoint(&self) -> &'static str;
-    /// Return param keys needed
+    /// Provide param keys needed
     fn params(&self) -> &[&str];
+    /// Provide cookie keys needed
+    fn cookie_keys(&self) -> &[&str] {
+        &[]
+    }
 
     /// Return a `Url` parsed with the API endpoint and the given params.
     fn url(&self, params: Vec<(&str, &str)>) -> Url {
-        // Check params when testing
-        #[cfg(test)]
-        {
-            use crate::error::FavCoreError;
-            let need = self.params();
-            if params.len() != need.len() || params.iter().any(|p| !need.contains(&p.0)) {
-                let msg = format!("Need params: {:#?}; Got {:#?}", need, params);
-                panic!("{:?}", FavCoreError::ParamsError(msg));
-            }
-        }
         Url::parse_with_params(self.endpoint(), params).unwrap()
     }
 

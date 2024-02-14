@@ -15,13 +15,15 @@ mod status;
 /// use fav_core::api::Api;
 ///
 /// #[derive(Api)]
-/// #[api(endpoint("http://abc.com"), params(&["id", "pwd"]))]
+/// #[api(endpoint("http://abc.com"), params(&["id", "pwd"]), cookies(&["c1"]), method(POST))]
 /// struct LoginApi;
 ///
 /// # fn main() {
 /// let api = LoginApi;
 /// assert_eq!(api.endpoint(), "http://abc.com");
 /// assert_eq!(api.params(), &["id", "pwd"]);
+/// assert_eq!(api.cookie_keys(), &["c1"]);
+/// assert_eq!(api.method(), reqwest::Method::POST);
 /// # }
 /// ```
 #[proc_macro_derive(Api, attributes(api))]
