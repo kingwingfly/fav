@@ -19,7 +19,7 @@ pub enum DefaultApiKind {
     PullRes,
 }
 
-/// The trait `ApiProvider` makes resources able to provide the releted Apis that implemented [`Api`] trait.
+/// The trait `ApiProvider` makes it able to provide the releted Apis that implemented [`Api`] trait.
 /// # Example
 /// ```
 /// # use fav_core::api::{ApiProvider, Api, DefaultApiKind};
@@ -68,13 +68,14 @@ pub trait ApiProvider<K> {
 /// This trait should be object-safe.
 /// # Example
 /// See [`ApiProvider`]
+/// Moreover, this trait will do a params' key-check when testing.
 pub trait Api {
-    /// Return the endpoint
+    /// Return the api endpoint
     fn endpoint(&self) -> &'static str;
-    /// Return empty params map needed
+    /// Return param keys needed
     fn params(&self) -> &[&str];
 
-    /// Return a `Url` with the API endpoint and the given parameters.
+    /// Return a `Url` parsed with the API endpoint and the given params.
     fn url(&self, params: Vec<(&str, &str)>) -> Url {
         // Check params when testing
         #[cfg(test)]

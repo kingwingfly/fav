@@ -9,13 +9,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Channel::Dev => "CHANNEL_DEV",
     };
     println!("cargo:rustc-cfg={}", channel);
-    #[cfg(test)]
     protobuf_codegen::Codegen::new()
         .pure()
-        .includes(["./proto"])
-        .inputs(["./proto/data.proto"])
-        .out_dir("./src/proto")
+        .includes(["proto"])
+        .inputs(["proto/data.proto"])
+        .out_dir("src/proto")
         .run()
-        .unwrap();
+        .ok(); // Just omit the err since crates.io build on a readonly system
+    println!("cargo:return-if-changed=proto");
     Ok(())
 }
