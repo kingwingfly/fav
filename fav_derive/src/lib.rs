@@ -7,6 +7,7 @@ use proc_macro::TokenStream;
 
 mod api;
 mod attr;
+mod status;
 
 /// A derive macro helping implemente `Api` trait.
 /// # Example
@@ -46,7 +47,34 @@ pub fn derive_api(input: TokenStream) -> TokenStream {
 ///    res_name: String,
 /// }
 /// ```
+/// Default fields are `id` and `name`.
+/// In practice, the `Res` is comming from `protobuf-codegen`,
+/// making the attribute `attr` referring to the fields needed.
 #[proc_macro_derive(Attr, attributes(attr))]
 pub fn derive_attr(input: TokenStream) -> TokenStream {
     attr::derive_attr(input)
+}
+
+/// A derive macro helping implemente `Api` trait.
+/// # Example
+/// ```
+/// use fav_core::status::Status;
+///
+/// #[derive(Status)]
+/// struct Res {
+///   status: i32,
+/// }
+///
+/// #[derive(Status)]
+/// #[status(my_status)]
+/// struct Res_ {
+///   my_status: i32,
+/// }
+/// ```
+/// Default field is `status`.
+/// In practice, the `Res` is comming from `protobuf-codegen`,
+/// making the attribute `status` referring to the fields needed.
+#[proc_macro_derive(Status, attributes(status))]
+pub fn derive_status(input: TokenStream) -> TokenStream {
+    status::derive_status(input)
 }

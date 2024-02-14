@@ -3,6 +3,9 @@
 
 use bitflags::bitflags;
 
+#[cfg(feature = "derive")]
+pub use fav_derive::Status;
+
 /// Making it able to manage the status
 /// # Example
 /// ```
