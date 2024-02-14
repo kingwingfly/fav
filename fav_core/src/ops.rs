@@ -4,7 +4,7 @@ use crate::{
     api::ApiProvider,
     attr::ResAttr,
     config::Config,
-    relation::{ResRel, ResSetRel},
+    relation::ResSetRel,
     {error::FavCoreError, FavCoreResult},
 };
 use core::future::Future;
@@ -100,13 +100,7 @@ where
 {
     /// **Synchronously** fetch all resources using [`LocalOperations::fetch`],
     /// since `async trait` is not Send in rust by now.
-    fn fetch_all<R>(
-        &self,
-        resources: &mut impl ResSetRel<R>,
-    ) -> impl Future<Output = FavCoreResult<()>>
-    where
-        R: ResRel,
-    {
+    fn fetch_all(&self, resources: &mut impl ResSetRel) -> impl Future<Output = FavCoreResult<()>> {
         async {
             for r in resources.iter_mut() {
                 if let Err(e) = self.fetch(r).await {
@@ -122,13 +116,7 @@ where
 
     /// **Synchronously** pull all resources using [`LocalOperations::pull`],
     /// since `async trait` is not Send in rust by now.
-    fn pull_all<R>(
-        &self,
-        resources: &mut impl ResSetRel<R>,
-    ) -> impl Future<Output = FavCoreResult<()>>
-    where
-        R: ResRel,
-    {
+    fn pull_all(&self, resources: &mut impl ResSetRel) -> impl Future<Output = FavCoreResult<()>> {
         async {
             for r in resources.iter_mut() {
                 if let Err(e) = self.pull(r).await {
@@ -156,13 +144,10 @@ where
     K: Send + 'static,
 {
     /// **Asynchronously** fetch resourses using [`Operations::fetch`].
-    fn fetch_all<R>(
+    fn fetch_all(
         &'static self,
-        resources: &'static mut impl ResSetRel<R>,
-    ) -> impl Future<Output = FavCoreResult<()>>
-    where
-        R: ResRel + 'static,
-    {
+        resources: &'static mut impl ResSetRel,
+    ) -> impl Future<Output = FavCoreResult<()>> {
         async {
             let mut rs = resources.iter_mut();
             loop {
@@ -185,13 +170,10 @@ where
     }
 
     /// **Asynchronously** pull resourses using [`Operations::pull`].
-    fn pull_all<R>(
+    fn pull_all(
         &'static self,
-        resources: &'static mut impl ResSetRel<R>,
-    ) -> impl Future<Output = FavCoreResult<()>>
-    where
-        R: ResRel + 'static,
-    {
+        resources: &'static mut impl ResSetRel,
+    ) -> impl Future<Output = FavCoreResult<()>> {
         async {
             let mut rs = resources.iter_mut();
             loop {
