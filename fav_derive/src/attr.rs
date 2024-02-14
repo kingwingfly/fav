@@ -38,10 +38,11 @@ pub(crate) fn derive_attr(input: TokenStream) -> TokenStream {
 
     let expanded = quote! {
         impl #impl_generics fav_core::attr::Attr for #name_ #ty_generics #where_clause {
+            #[inline]
             fn id(&self) -> fav_core::attr::Id {
                 self.#id.into()
             }
-
+            #[inline]
             fn name(&self) -> &str {
                 &self.#name
             }

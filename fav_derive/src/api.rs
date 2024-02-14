@@ -34,10 +34,11 @@ pub(crate) fn derive_api(input: TokenStream) -> TokenStream {
 
     let expanded = quote! {
         impl #impl_generics fav_core::api::Api for #name #ty_generics #where_clause {
+            #[inline]
             fn endpoint(&self) -> &'static str {
                 #endpoint
             }
-
+            #[inline]
             fn params(&self) -> &[&str] {
                 #params
             }

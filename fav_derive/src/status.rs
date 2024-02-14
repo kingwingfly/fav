@@ -27,9 +27,11 @@ pub(crate) fn derive_status(input: TokenStream) -> TokenStream {
 
     let expanded = quote! {
         impl #impl_generics fav_core::status::Status for #name #ty_generics #where_clause {
+            #[inline]
             fn status(&self) -> fav_core::status::StatusFlags {
                 self.#status.into()
             }
+            #[inline]
             fn set_status(&mut self, status: fav_core::status::StatusFlags) {
                 self.#status = status.bits();
             }
