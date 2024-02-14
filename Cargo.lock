@@ -383,6 +383,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "fav_derive"
+version = "0.1.13"
+
+[[package]]
 name = "fav_utils"
 version = "0.0.1-alpha1"
 dependencies = [

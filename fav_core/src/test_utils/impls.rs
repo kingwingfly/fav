@@ -1,6 +1,7 @@
-use super::data::{App, TestRes, TestResSet};
+use super::data::{App, TestRes, TestResSet, TestUpper};
 use ::core::future::Future;
 use reqwest::{header::HeaderMap, Client, Method, Response};
+use serde::de::IntoDeserializer;
 use std::collections::HashMap;
 use std::future::IntoFuture;
 use url::Url;
@@ -69,6 +70,68 @@ impl Operations<DefaultApiKind> for App {
     }
 }
 
+impl Attr for TestRes {
+    fn id(&self) -> Id {
+        self.id.into()
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl Status for TestRes {
+    fn status(&self) -> StatusFlags {
+        self.status.into()
+    }
+
+    fn set_status(&mut self, status: StatusFlags) {
+        self.status = status.bits();
+    }
+}
+
+impl Attr for TestResSet {
+    fn id(&self) -> Id {
+        self.id.into()
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl Attr for TestUpper {
+    fn id(&self) -> Id {
+        self.id.into()
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+}
+
+impl Res for TestRes {
+    fn uppers(&self) -> impl IntoIterator<Item = &impl Attr> {
+        &self.uppers
+    }
+}
+
+impl Res for TestResSet {
+    fn uppers(&self) -> impl IntoIterator<Item = &impl Attr> {
+        &self.uppers
+    }
+}
+
+impl ResSet for TestResSet {
+    fn res(&self) -> impl IntoIterator<Item = &impl Meta> {
+        &self.sets
+    }
+
+    fn res_mut(&mut self) -> impl IntoIterator<Item = &mut impl Meta> {
+        &mut self.sets
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -81,6 +144,6 @@ mod tests {
             status: status.bits(),
             ..Default::default()
         };
-        res_set.set.push(res);
+        res_set.sets.push(res);
     }
 }

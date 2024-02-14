@@ -26,6 +26,8 @@ use reqwest::{Client, Response};
 ///     app.login().await.unwrap();
 /// # }
 /// ```
+/// `App` above is a struct that implements `LocalOperations`/`Operations`,
+/// see [concret implementation](https://github.com/kingwingfly/fav/blob/dev/fav_core/src/test_utils/impls.rs).
 #[allow(missing_docs)]
 #[trait_variant::make(Operations: Send)]
 pub trait LocalOperations<K>: ApiProvider<K> + Config

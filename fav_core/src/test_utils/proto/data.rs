@@ -428,6 +428,9 @@ impl ::protobuf::reflect::ProtobufValue for Headers {
 // @@protoc_insertion_point(message:data.App)
 #[derive(PartialEq,Clone,Default,Debug)]
 pub struct App {
+    // message fields
+    // @@protoc_insertion_point(field:data.App.sets)
+    pub sets: ::std::vec::Vec<TestResSet>,
     // special fields
     // @@protoc_insertion_point(special_field:data.App.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
@@ -445,8 +448,13 @@ impl App {
     }
 
     fn generated_message_descriptor_data() -> ::protobuf::reflect::GeneratedMessageDescriptorData {
-        let mut fields = ::std::vec::Vec::with_capacity(0);
+        let mut fields = ::std::vec::Vec::with_capacity(1);
         let mut oneofs = ::std::vec::Vec::with_capacity(0);
+        fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
+            "sets",
+            |m: &App| { &m.sets },
+            |m: &mut App| { &mut m.sets },
+        ));
         ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<App>(
             "App",
             fields,
@@ -465,6 +473,9 @@ impl ::protobuf::Message for App {
     fn merge_from(&mut self, is: &mut ::protobuf::CodedInputStream<'_>) -> ::protobuf::Result<()> {
         while let Some(tag) = is.read_raw_tag_or_eof()? {
             match tag {
+                10 => {
+                    self.sets.push(is.read_message()?);
+                },
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
                 },
@@ -477,12 +488,19 @@ impl ::protobuf::Message for App {
     #[allow(unused_variables)]
     fn compute_size(&self) -> u64 {
         let mut my_size = 0;
+        for value in &self.sets {
+            let len = value.compute_size();
+            my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
+        };
         my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
         self.special_fields.cached_size().set(my_size as u32);
         my_size
     }
 
     fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
+        for v in &self.sets {
+            ::protobuf::rt::write_message_field_with_cached_size(1, v, os)?;
+        };
         os.write_unknown_fields(self.special_fields.unknown_fields())?;
         ::std::result::Result::Ok(())
     }
@@ -500,11 +518,13 @@ impl ::protobuf::Message for App {
     }
 
     fn clear(&mut self) {
+        self.sets.clear();
         self.special_fields.clear();
     }
 
     fn default_instance() -> &'static App {
         static instance: App = App {
+            sets: ::std::vec::Vec::new(),
             special_fields: ::protobuf::SpecialFields::new(),
         };
         &instance
@@ -536,8 +556,10 @@ pub struct TestResSet {
     pub id: i32,
     // @@protoc_insertion_point(field:data.TestResSet.name)
     pub name: ::std::string::String,
-    // @@protoc_insertion_point(field:data.TestResSet.set)
-    pub set: ::std::vec::Vec<TestRes>,
+    // @@protoc_insertion_point(field:data.TestResSet.sets)
+    pub sets: ::std::vec::Vec<TestRes>,
+    // @@protoc_insertion_point(field:data.TestResSet.uppers)
+    pub uppers: ::std::vec::Vec<TestUpper>,
     // special fields
     // @@protoc_insertion_point(special_field:data.TestResSet.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
@@ -555,7 +577,7 @@ impl TestResSet {
     }
 
     fn generated_message_descriptor_data() -> ::protobuf::reflect::GeneratedMessageDescriptorData {
-        let mut fields = ::std::vec::Vec::with_capacity(3);
+        let mut fields = ::std::vec::Vec::with_capacity(4);
         let mut oneofs = ::std::vec::Vec::with_capacity(0);
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
             "id",
@@ -568,9 +590,14 @@ impl TestResSet {
             |m: &mut TestResSet| { &mut m.name },
         ));
         fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
-            "set",
-            |m: &TestResSet| { &m.set },
-            |m: &mut TestResSet| { &mut m.set },
+            "sets",
+            |m: &TestResSet| { &m.sets },
+            |m: &mut TestResSet| { &mut m.sets },
+        ));
+        fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
+            "uppers",
+            |m: &TestResSet| { &m.uppers },
+            |m: &mut TestResSet| { &mut m.uppers },
         ));
         ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<TestResSet>(
             "TestResSet",
@@ -597,7 +624,10 @@ impl ::protobuf::Message for TestResSet {
                     self.name = is.read_string()?;
                 },
                 26 => {
-                    self.set.push(is.read_message()?);
+                    self.sets.push(is.read_message()?);
+                },
+                34 => {
+                    self.uppers.push(is.read_message()?);
                 },
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
@@ -617,7 +647,11 @@ impl ::protobuf::Message for TestResSet {
         if !self.name.is_empty() {
             my_size += ::protobuf::rt::string_size(2, &self.name);
         }
-        for value in &self.set {
+        for value in &self.sets {
+            let len = value.compute_size();
+            my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
+        };
+        for value in &self.uppers {
             let len = value.compute_size();
             my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
         };
@@ -633,8 +667,11 @@ impl ::protobuf::Message for TestResSet {
         if !self.name.is_empty() {
             os.write_string(2, &self.name)?;
         }
-        for v in &self.set {
+        for v in &self.sets {
             ::protobuf::rt::write_message_field_with_cached_size(3, v, os)?;
+        };
+        for v in &self.uppers {
+            ::protobuf::rt::write_message_field_with_cached_size(4, v, os)?;
         };
         os.write_unknown_fields(self.special_fields.unknown_fields())?;
         ::std::result::Result::Ok(())
@@ -655,7 +692,8 @@ impl ::protobuf::Message for TestResSet {
     fn clear(&mut self) {
         self.id = 0;
         self.name.clear();
-        self.set.clear();
+        self.sets.clear();
+        self.uppers.clear();
         self.special_fields.clear();
     }
 
@@ -663,7 +701,8 @@ impl ::protobuf::Message for TestResSet {
         static instance: TestResSet = TestResSet {
             id: 0,
             name: ::std::string::String::new(),
-            set: ::std::vec::Vec::new(),
+            sets: ::std::vec::Vec::new(),
+            uppers: ::std::vec::Vec::new(),
             special_fields: ::protobuf::SpecialFields::new(),
         };
         &instance
@@ -697,6 +736,8 @@ pub struct TestRes {
     pub name: ::std::string::String,
     // @@protoc_insertion_point(field:data.TestRes.status)
     pub status: i32,
+    // @@protoc_insertion_point(field:data.TestRes.uppers)
+    pub uppers: ::std::vec::Vec<TestUpper>,
     // special fields
     // @@protoc_insertion_point(special_field:data.TestRes.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
@@ -714,7 +755,7 @@ impl TestRes {
     }
 
     fn generated_message_descriptor_data() -> ::protobuf::reflect::GeneratedMessageDescriptorData {
-        let mut fields = ::std::vec::Vec::with_capacity(3);
+        let mut fields = ::std::vec::Vec::with_capacity(4);
         let mut oneofs = ::std::vec::Vec::with_capacity(0);
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
             "id",
@@ -730,6 +771,11 @@ impl TestRes {
             "status",
             |m: &TestRes| { &m.status },
             |m: &mut TestRes| { &mut m.status },
+        ));
+        fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
+            "uppers",
+            |m: &TestRes| { &m.uppers },
+            |m: &mut TestRes| { &mut m.uppers },
         ));
         ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<TestRes>(
             "TestRes",
@@ -758,6 +804,9 @@ impl ::protobuf::Message for TestRes {
                 24 => {
                     self.status = is.read_int32()?;
                 },
+                34 => {
+                    self.uppers.push(is.read_message()?);
+                },
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
                 },
@@ -779,6 +828,10 @@ impl ::protobuf::Message for TestRes {
         if self.status != 0 {
             my_size += ::protobuf::rt::int32_size(3, self.status);
         }
+        for value in &self.uppers {
+            let len = value.compute_size();
+            my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
+        };
         my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
         self.special_fields.cached_size().set(my_size as u32);
         my_size
@@ -794,6 +847,9 @@ impl ::protobuf::Message for TestRes {
         if self.status != 0 {
             os.write_int32(3, self.status)?;
         }
+        for v in &self.uppers {
+            ::protobuf::rt::write_message_field_with_cached_size(4, v, os)?;
+        };
         os.write_unknown_fields(self.special_fields.unknown_fields())?;
         ::std::result::Result::Ok(())
     }
@@ -814,6 +870,7 @@ impl ::protobuf::Message for TestRes {
         self.id = 0;
         self.name.clear();
         self.status = 0;
+        self.uppers.clear();
         self.special_fields.clear();
     }
 
@@ -822,6 +879,7 @@ impl ::protobuf::Message for TestRes {
             id: 0,
             name: ::std::string::String::new(),
             status: 0,
+            uppers: ::std::vec::Vec::new(),
             special_fields: ::protobuf::SpecialFields::new(),
         };
         &instance
@@ -845,6 +903,323 @@ impl ::protobuf::reflect::ProtobufValue for TestRes {
     type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
 }
 
+// @@protoc_insertion_point(message:data.TestUpper)
+#[derive(PartialEq,Clone,Default,Debug)]
+pub struct TestUpper {
+    // message fields
+    // @@protoc_insertion_point(field:data.TestUpper.id)
+    pub id: i32,
+    // @@protoc_insertion_point(field:data.TestUpper.name)
+    pub name: ::std::string::String,
+    // special fields
+    // @@protoc_insertion_point(special_field:data.TestUpper.special_fields)
+    pub special_fields: ::protobuf::SpecialFields,
+}
+
+impl<'a> ::std::default::Default for &'a TestUpper {
+    fn default() -> &'a TestUpper {
+        <TestUpper as ::protobuf::Message>::default_instance()
+    }
+}
+
+impl TestUpper {
+    pub fn new() -> TestUpper {
+        ::std::default::Default::default()
+    }
+
+    fn generated_message_descriptor_data() -> ::protobuf::reflect::GeneratedMessageDescriptorData {
+        let mut fields = ::std::vec::Vec::with_capacity(2);
+        let mut oneofs = ::std::vec::Vec::with_capacity(0);
+        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
+            "id",
+            |m: &TestUpper| { &m.id },
+            |m: &mut TestUpper| { &mut m.id },
+        ));
+        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
+            "name",
+            |m: &TestUpper| { &m.name },
+            |m: &mut TestUpper| { &mut m.name },
+        ));
+        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<TestUpper>(
+            "TestUpper",
+            fields,
+            oneofs,
+        )
+    }
+}
+
+impl ::protobuf::Message for TestUpper {
+    const NAME: &'static str = "TestUpper";
+
+    fn is_initialized(&self) -> bool {
+        true
+    }
+
+    fn merge_from(&mut self, is: &mut ::protobuf::CodedInputStream<'_>) -> ::protobuf::Result<()> {
+        while let Some(tag) = is.read_raw_tag_or_eof()? {
+            match tag {
+                8 => {
+                    self.id = is.read_int32()?;
+                },
+                18 => {
+                    self.name = is.read_string()?;
+                },
+                tag => {
+                    ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
+                },
+            };
+        }
+        ::std::result::Result::Ok(())
+    }
+
+    // Compute sizes of nested messages
+    #[allow(unused_variables)]
+    fn compute_size(&self) -> u64 {
+        let mut my_size = 0;
+        if self.id != 0 {
+            my_size += ::protobuf::rt::int32_size(1, self.id);
+        }
+        if !self.name.is_empty() {
+            my_size += ::protobuf::rt::string_size(2, &self.name);
+        }
+        my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
+        self.special_fields.cached_size().set(my_size as u32);
+        my_size
+    }
+
+    fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
+        if self.id != 0 {
+            os.write_int32(1, self.id)?;
+        }
+        if !self.name.is_empty() {
+            os.write_string(2, &self.name)?;
+        }
+        os.write_unknown_fields(self.special_fields.unknown_fields())?;
+        ::std::result::Result::Ok(())
+    }
+
+    fn special_fields(&self) -> &::protobuf::SpecialFields {
+        &self.special_fields
+    }
+
+    fn mut_special_fields(&mut self) -> &mut ::protobuf::SpecialFields {
+        &mut self.special_fields
+    }
+
+    fn new() -> TestUpper {
+        TestUpper::new()
+    }
+
+    fn clear(&mut self) {
+        self.id = 0;
+        self.name.clear();
+        self.special_fields.clear();
+    }
+
+    fn default_instance() -> &'static TestUpper {
+        static instance: TestUpper = TestUpper {
+            id: 0,
+            name: ::std::string::String::new(),
+            special_fields: ::protobuf::SpecialFields::new(),
+        };
+        &instance
+    }
+}
+
+impl ::protobuf::MessageFull for TestUpper {
+    fn descriptor() -> ::protobuf::reflect::MessageDescriptor {
+        static descriptor: ::protobuf::rt::Lazy<::protobuf::reflect::MessageDescriptor> = ::protobuf::rt::Lazy::new();
+        descriptor.get(|| file_descriptor().message_by_package_relative_name("TestUpper").unwrap()).clone()
+    }
+}
+
+impl ::std::fmt::Display for TestUpper {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        ::protobuf::text_format::fmt(self, f)
+    }
+}
+
+impl ::protobuf::reflect::ProtobufValue for TestUpper {
+    type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
+}
+
+// @@protoc_insertion_point(message:data.StatusTest)
+#[derive(PartialEq,Clone,Default,Debug)]
+pub struct StatusTest {
+    // message fields
+    // @@protoc_insertion_point(field:data.StatusTest.id)
+    pub id: i32,
+    // @@protoc_insertion_point(field:data.StatusTest.name)
+    pub name: ::std::string::String,
+    // @@protoc_insertion_point(field:data.StatusTest.status)
+    pub status: i32,
+    // @@protoc_insertion_point(field:data.StatusTest.uppers)
+    pub uppers: ::std::vec::Vec<TestUpper>,
+    // special fields
+    // @@protoc_insertion_point(special_field:data.StatusTest.special_fields)
+    pub special_fields: ::protobuf::SpecialFields,
+}
+
+impl<'a> ::std::default::Default for &'a StatusTest {
+    fn default() -> &'a StatusTest {
+        <StatusTest as ::protobuf::Message>::default_instance()
+    }
+}
+
+impl StatusTest {
+    pub fn new() -> StatusTest {
+        ::std::default::Default::default()
+    }
+
+    fn generated_message_descriptor_data() -> ::protobuf::reflect::GeneratedMessageDescriptorData {
+        let mut fields = ::std::vec::Vec::with_capacity(4);
+        let mut oneofs = ::std::vec::Vec::with_capacity(0);
+        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
+            "id",
+            |m: &StatusTest| { &m.id },
+            |m: &mut StatusTest| { &mut m.id },
+        ));
+        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
+            "name",
+            |m: &StatusTest| { &m.name },
+            |m: &mut StatusTest| { &mut m.name },
+        ));
+        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
+            "status",
+            |m: &StatusTest| { &m.status },
+            |m: &mut StatusTest| { &mut m.status },
+        ));
+        fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
+            "uppers",
+            |m: &StatusTest| { &m.uppers },
+            |m: &mut StatusTest| { &mut m.uppers },
+        ));
+        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<StatusTest>(
+            "StatusTest",
+            fields,
+            oneofs,
+        )
+    }
+}
+
+impl ::protobuf::Message for StatusTest {
+    const NAME: &'static str = "StatusTest";
+
+    fn is_initialized(&self) -> bool {
+        true
+    }
+
+    fn merge_from(&mut self, is: &mut ::protobuf::CodedInputStream<'_>) -> ::protobuf::Result<()> {
+        while let Some(tag) = is.read_raw_tag_or_eof()? {
+            match tag {
+                8 => {
+                    self.id = is.read_int32()?;
+                },
+                18 => {
+                    self.name = is.read_string()?;
+                },
+                24 => {
+                    self.status = is.read_int32()?;
+                },
+                34 => {
+                    self.uppers.push(is.read_message()?);
+                },
+                tag => {
+                    ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
+                },
+            };
+        }
+        ::std::result::Result::Ok(())
+    }
+
+    // Compute sizes of nested messages
+    #[allow(unused_variables)]
+    fn compute_size(&self) -> u64 {
+        let mut my_size = 0;
+        if self.id != 0 {
+            my_size += ::protobuf::rt::int32_size(1, self.id);
+        }
+        if !self.name.is_empty() {
+            my_size += ::protobuf::rt::string_size(2, &self.name);
+        }
+        if self.status != 0 {
+            my_size += ::protobuf::rt::int32_size(3, self.status);
+        }
+        for value in &self.uppers {
+            let len = value.compute_size();
+            my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
+        };
+        my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
+        self.special_fields.cached_size().set(my_size as u32);
+        my_size
+    }
+
+    fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
+        if self.id != 0 {
+            os.write_int32(1, self.id)?;
+        }
+        if !self.name.is_empty() {
+            os.write_string(2, &self.name)?;
+        }
+        if self.status != 0 {
+            os.write_int32(3, self.status)?;
+        }
+        for v in &self.uppers {
+            ::protobuf::rt::write_message_field_with_cached_size(4, v, os)?;
+        };
+        os.write_unknown_fields(self.special_fields.unknown_fields())?;
+        ::std::result::Result::Ok(())
+    }
+
+    fn special_fields(&self) -> &::protobuf::SpecialFields {
+        &self.special_fields
+    }
+
+    fn mut_special_fields(&mut self) -> &mut ::protobuf::SpecialFields {
+        &mut self.special_fields
+    }
+
+    fn new() -> StatusTest {
+        StatusTest::new()
+    }
+
+    fn clear(&mut self) {
+        self.id = 0;
+        self.name.clear();
+        self.status = 0;
+        self.uppers.clear();
+        self.special_fields.clear();
+    }
+
+    fn default_instance() -> &'static StatusTest {
+        static instance: StatusTest = StatusTest {
+            id: 0,
+            name: ::std::string::String::new(),
+            status: 0,
+            uppers: ::std::vec::Vec::new(),
+            special_fields: ::protobuf::SpecialFields::new(),
+        };
+        &instance
+    }
+}
+
+impl ::protobuf::MessageFull for StatusTest {
+    fn descriptor() -> ::protobuf::reflect::MessageDescriptor {
+        static descriptor: ::protobuf::rt::Lazy<::protobuf::reflect::MessageDescriptor> = ::protobuf::rt::Lazy::new();
+        descriptor.get(|| file_descriptor().message_by_package_relative_name("StatusTest").unwrap()).clone()
+    }
+}
+
+impl ::std::fmt::Display for StatusTest {
+    fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
+        ::protobuf::text_format::fmt(self, f)
+    }
+}
+
+impl ::protobuf::reflect::ProtobufValue for StatusTest {
+    type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
+}
+
 static file_descriptor_proto_data: &'static [u8] = b"\
     \n\ndata.proto\x12\x04data\"\x05\n\x03Msg\"/\n\x04Conf\x12'\n\x07headers\
     \x18\x01\x20\x01(\x0b2\r.data.HeadersR\x07headers\"\xb4\x01\n\x07Headers\
@@ -852,12 +1227,19 @@ static file_descriptor_proto_data: &'static [u8] = b"\
     er\x18\x02\x20\x01(\tR\x07referer\x124\n\x07cookies\x18\x03\x20\x03(\x0b\
     2\x1a.data.Headers.CookiesEntryR\x07cookies\x1a:\n\x0cCookiesEntry\x12\
     \x10\n\x03key\x18\x01\x20\x01(\tR\x03key\x12\x14\n\x05value\x18\x02\x20\
-    \x01(\tR\x05value:\x028\x01\"\x05\n\x03App\"Q\n\nTestResSet\x12\x0e\n\
-    \x02id\x18\x01\x20\x01(\x05R\x02id\x12\x12\n\x04name\x18\x02\x20\x01(\tR\
-    \x04name\x12\x1f\n\x03set\x18\x03\x20\x03(\x0b2\r.data.TestResR\x03set\"\
-    E\n\x07TestRes\x12\x0e\n\x02id\x18\x01\x20\x01(\x05R\x02id\x12\x12\n\x04\
-    name\x18\x02\x20\x01(\tR\x04name\x12\x16\n\x06status\x18\x03\x20\x01(\
-    \x05R\x06statusb\x06proto3\
+    \x01(\tR\x05value:\x028\x01\"+\n\x03App\x12$\n\x04sets\x18\x01\x20\x03(\
+    \x0b2\x10.data.TestResSetR\x04sets\"|\n\nTestResSet\x12\x0e\n\x02id\x18\
+    \x01\x20\x01(\x05R\x02id\x12\x12\n\x04name\x18\x02\x20\x01(\tR\x04name\
+    \x12!\n\x04sets\x18\x03\x20\x03(\x0b2\r.data.TestResR\x04sets\x12'\n\x06\
+    uppers\x18\x04\x20\x03(\x0b2\x0f.data.TestUpperR\x06uppers\"n\n\x07TestR\
+    es\x12\x0e\n\x02id\x18\x01\x20\x01(\x05R\x02id\x12\x12\n\x04name\x18\x02\
+    \x20\x01(\tR\x04name\x12\x16\n\x06status\x18\x03\x20\x01(\x05R\x06status\
+    \x12'\n\x06uppers\x18\x04\x20\x03(\x0b2\x0f.data.TestUpperR\x06uppers\"/\
+    \n\tTestUpper\x12\x0e\n\x02id\x18\x01\x20\x01(\x05R\x02id\x12\x12\n\x04n\
+    ame\x18\x02\x20\x01(\tR\x04name\"q\n\nStatusTest\x12\x0e\n\x02id\x18\x01\
+    \x20\x01(\x05R\x02id\x12\x12\n\x04name\x18\x02\x20\x01(\tR\x04name\x12\
+    \x16\n\x06status\x18\x03\x20\x01(\x05R\x06status\x12'\n\x06uppers\x18\
+    \x04\x20\x03(\x0b2\x0f.data.TestUpperR\x06uppersb\x06proto3\
 ";
 
 /// `FileDescriptorProto` object which was a source for this generated file
@@ -875,13 +1257,15 @@ pub fn file_descriptor() -> &'static ::protobuf::reflect::FileDescriptor {
     file_descriptor.get(|| {
         let generated_file_descriptor = generated_file_descriptor_lazy.get(|| {
             let mut deps = ::std::vec::Vec::with_capacity(0);
-            let mut messages = ::std::vec::Vec::with_capacity(6);
+            let mut messages = ::std::vec::Vec::with_capacity(8);
             messages.push(Msg::generated_message_descriptor_data());
             messages.push(Conf::generated_message_descriptor_data());
             messages.push(Headers::generated_message_descriptor_data());
             messages.push(App::generated_message_descriptor_data());
             messages.push(TestResSet::generated_message_descriptor_data());
             messages.push(TestRes::generated_message_descriptor_data());
+            messages.push(TestUpper::generated_message_descriptor_data());
+            messages.push(StatusTest::generated_message_descriptor_data());
             let mut enums = ::std::vec::Vec::with_capacity(0);
             ::protobuf::reflect::GeneratedFileDescriptor::new_generated(
                 file_descriptor_proto(),
