@@ -366,7 +366,7 @@ dependencies = [
 
 [[package]]
 name = "fav_core"
-version = "0.0.1-alpha1"
+version = "0.0.1-alpha2"
 dependencies = [
  "bitflags 2.4.2",
  "fav_derive",
