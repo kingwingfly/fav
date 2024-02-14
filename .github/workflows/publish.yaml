@@ -2,6 +2,23 @@ name: publish
 
 on:
   workflow_dispatch:
+    inputs:
+      fav_derive:
+        description: "publish fav_derive"
+        type: boolean
+        default: false
+      fav_core:
+        description: "publish fav_core"
+        type: boolean
+        default: false
+      fav_utils:
+        description: "publish fav_utils"
+        type: boolean
+        default: false
+      fav_cli:
+        description: "publish fav_cli"
+        type: boolean
+        default: false
 
 env:
   CARGO_TERM_COLOR: always
@@ -22,5 +39,18 @@ jobs:
       - name: run tests
         run: .github/scripts/test.sh
 
-      - name: publish
-        run: .github/scripts/publish.sh ${{ secrets.CRATESIO }}
+      - name: login to crates.io
+        run: cargo login ${{ secrets.CRATESIO }}
+
+      - name: publish fav_derive
+        if: ${{ inputs.fav_derive }}
+        run: .github/scripts/publish.sh fav_derive
+      - name: publish fav_core
+        if: ${{ inputs.fav_core }}
+        run: .github/scripts/publish.sh fav_core
+      - name: publish fav_utils
+        if: ${{ inputs.fav_utils }}
+        run: .github/scripts/publish.sh fav_utils
+      - name: publish fav_cli
+        if: ${{ inputs.fav_cli }}
+        run: .github/scripts/publish.sh fav_cli
