@@ -1,6 +1,7 @@
-use super::data::App;
+use super::data::{App, TestRes, TestResSet};
 use ::core::future::Future;
 use reqwest::{header::HeaderMap, Client, Method, Response};
+use std::collections::HashMap;
 use std::future::IntoFuture;
 use url::Url;
 
@@ -15,11 +16,11 @@ impl HttpConfig for App {
         HeaderMap::new()
     }
 
-    fn cookies(&self) -> &std::collections::HashMap<String, String> {
+    fn cookies(&self) -> &HashMap<String, String> {
         todo!()
     }
 
-    fn set_cookies(&mut self, cookies: std::collections::HashMap<String, String>) {
+    fn set_cookies(&mut self, cookies: HashMap<String, String>) {
         todo!()
     }
 }
@@ -59,11 +60,27 @@ impl Operations<DefaultApiKind> for App {
         todo!()
     }
 
-    async fn fetch(&self, resource: &mut impl ResAttr) -> FavCoreResult<()> {
+    async fn fetch(&self, resource: &mut impl Meta) -> FavCoreResult<()> {
         todo!()
     }
 
-    async fn pull(&self, resource: &mut impl ResAttr) -> FavCoreResult<()> {
+    async fn pull(&self, resource: &mut impl Meta) -> FavCoreResult<()> {
         todo!()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn meta_status_test() {
+        let mut res_set = TestResSet::default();
+        let status = StatusFlags::empty();
+        let mut res = TestRes {
+            status: status.bits(),
+            ..Default::default()
+        };
+        res_set.set.push(res);
     }
 }

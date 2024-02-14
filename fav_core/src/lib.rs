@@ -10,8 +10,8 @@ pub mod error;
 pub mod local;
 pub mod meta;
 pub mod ops;
-pub mod relation;
 pub mod remote;
+pub mod res;
 pub mod status;
 
 /// Proto data structures used for `fav_core`'s test
@@ -23,12 +23,12 @@ pub use error::*;
 /// Re-export the most important traits and types
 pub mod prelude {
     pub use crate::api::{Api, ApiProvider, DefaultApiKind};
-    pub use crate::attr::{Attr, Id, ResAttr, ResSetAttr};
+    pub use crate::attr::{Attr, Id};
     pub use crate::config::{Config, HttpConfig};
     pub use crate::error::*;
     pub use crate::local::{PathInfo, ProtoLocal};
     pub use crate::meta::Meta;
     pub use crate::ops::{Operations, OperationsExt};
-    pub use crate::relation::{ResRel, ResSetRel};
-    pub use crate::status::Status;
+    pub use crate::res::{Res, ResSet};
+    pub use crate::status::{Status, StatusFlags};
 }

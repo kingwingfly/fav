@@ -1,9 +1,10 @@
 //! Config,
 //! helping managing the configuration
 
+use std::collections::HashMap;
+
 use crate::local::ProtoLocal;
 use reqwest::header::HeaderMap;
-use std::collections::HashMap;
 
 /// A HttpConfig, including headers and cookies.
 /// # Example
@@ -36,7 +37,7 @@ pub trait HttpConfig {
     fn headers(&self) -> HeaderMap;
     /// The cookies
     fn cookies(&self) -> &HashMap<String, String>;
-    /// Set default headers
+    /// Set the cookies
     fn set_cookies(&mut self, cookies: HashMap<String, String>);
 }
 

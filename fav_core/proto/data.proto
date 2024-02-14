@@ -14,3 +14,15 @@ message Headers {
 }
 
 message App {}
+
+message TestResSet {
+    int32 id = 1;
+    string name = 2;
+    repeated TestRes set = 3;
+}
+
+message TestRes {
+    int32 id = 1;
+    string name = 2;
+    int32 status = 3;
+}

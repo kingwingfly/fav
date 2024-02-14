@@ -2,11 +2,7 @@
 //! making app able to perform more operations
 
 use crate::{
-    api::ApiProvider,
-    attr::ResAttr,
-    config::Config,
-    relation::ResSetRel,
-    {error::FavCoreError, FavCoreResult},
+    api::ApiProvider, config::Config, error::FavCoreError, meta::Meta, res::ResSet, FavCoreResult,
 };
 use core::future::Future;
 use reqwest::{Client, Response};
@@ -42,12 +38,12 @@ where
     /// # Caution
     /// One needs to handle Ctrl-C with `tokio::signal::ctrl_c` and `tokio::select!`,
     /// and return [`FavCoreError::Cancel`]
-    async fn fetch(&self, resource: &mut impl ResAttr) -> FavCoreResult<()>;
+    async fn fetch(&self, resource: &mut impl Meta) -> FavCoreResult<()>;
     /// Pull one resource.
     /// # Caution
     /// One needs to handle Ctrl-C with `tokio::signal::ctrl_c` and `tokio::select!`,
     /// and return [`FavCoreError::Cancel`]
-    async fn pull(&self, resource: &mut impl ResAttr) -> FavCoreResult<()>;
+    async fn pull(&self, resource: &mut impl Meta) -> FavCoreResult<()>;
 
     /// Return a `&'static reqwest::Client`, use it to perform operations during the lifetime of the client.
     /// # Example
@@ -101,7 +97,7 @@ where
 {
     /// **Synchronously** fetch all resources using [`LocalOperations::fetch`],
     /// since `async trait` is not Send in rust by now.
-    fn fetch_all(&self, resources: &mut impl ResSetRel) -> impl Future<Output = FavCoreResult<()>> {
+    fn fetch_all(&self, resources: &mut impl ResSet) -> impl Future<Output = FavCoreResult<()>> {
         async {
             for r in resources.iter_mut() {
                 if let Err(e) = self.fetch(r).await {
@@ -117,7 +113,7 @@ where
 
     /// **Synchronously** pull all resources using [`LocalOperations::pull`],
     /// since `async trait` is not Send in rust by now.
-    fn pull_all(&self, resources: &mut impl ResSetRel) -> impl Future<Output = FavCoreResult<()>> {
+    fn pull_all(&self, resources: &mut impl ResSet) -> impl Future<Output = FavCoreResult<()>> {
         async {
             for r in resources.iter_mut() {
                 if let Err(e) = self.pull(r).await {
@@ -132,12 +128,7 @@ where
     }
 }
 
-impl<T, K> LocalOperationsExt<K> for T
-where
-    T: LocalOperations<K>,
-    K: Send,
-{
-}
+impl<T: LocalOperations<K>, K: Send> LocalOperationsExt<K> for T {}
 
 /// `OperationsExt`, including methods to batch fetch and pull.
 pub trait OperationsExt<K>: Operations<K>
@@ -147,7 +138,7 @@ where
     /// **Asynchronously** fetch resourses using [`Operations::fetch`].
     fn fetch_all(
         &'static self,
-        resources: &'static mut impl ResSetRel,
+        resources: &'static mut impl ResSet,
     ) -> impl Future<Output = FavCoreResult<()>> {
         async {
             let mut rs = resources.iter_mut();
@@ -173,7 +164,7 @@ where
     /// **Asynchronously** pull resourses using [`Operations::pull`].
     fn pull_all(
         &'static self,
-        resources: &'static mut impl ResSetRel,
+        resources: &'static mut impl ResSet,
     ) -> impl Future<Output = FavCoreResult<()>> {
         async {
             let mut rs = resources.iter_mut();
@@ -203,9 +194,4 @@ where
     }
 }
 
-impl<T, K> OperationsExt<K> for T
-where
-    T: Operations<K>,
-    K: Send + 'static,
-{
-}
+impl<T: Operations<K>, K: Send + 'static> OperationsExt<K> for T {}

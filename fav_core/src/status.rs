@@ -3,8 +3,16 @@
 
 use bitflags::bitflags;
 
+/// Making it able to manage the status
+pub trait Status {
+    /// return &StatusFlags
+    fn status(&self) -> &StatusFlags;
+    /// return &mut StatusFlags
+    fn status_mut(&mut self) -> &mut StatusFlags;
+}
+
 bitflags! {
-    pub struct Status: u8 {
+    pub struct StatusFlags: i32 {
         const FETCHED = 0b00001;
         const TRACK = 0b00010;
         const SAVED = 0b00100;
@@ -19,8 +27,9 @@ mod tests {
 
     #[test]
     fn status_test() {
-        let mut status = Status::empty();
-        status.insert(Status::FETCHED);
-        assert!(status.intersects(Status::FETCHED));
+        let mut status = StatusFlags::empty();
+        status.insert(StatusFlags::FETCHED);
+        assert!(status.intersects(StatusFlags::FETCHED));
+        assert_eq!(status.bits(), 1);
     }
 }
