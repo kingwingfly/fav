@@ -1,5 +1,5 @@
 //! Attribute,
-//! managing the resources' attributes.
+//! managing the resources' attributes
 
 use crate::status::Status;
 use std::str::FromStr;

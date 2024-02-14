@@ -1,1 +1,1 @@
-//! Remote trait for remote operations.
+//! Remote trait for remote operations

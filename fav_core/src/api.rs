@@ -1,4 +1,5 @@
-//! API
+//! API,
+//! making the api easy to use
 
 use reqwest::Method;
 use url::Url;

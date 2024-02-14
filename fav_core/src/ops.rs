@@ -1,4 +1,5 @@
-//! The `Operations` trait
+//! The `Operations` trait,
+//! making app able to perform more operations
 
 use crate::{
     api::ApiProvider,

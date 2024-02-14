@@ -1,4 +1,5 @@
-//! Config
+//! Config,
+//! helping managing the configuration
 
 use crate::local::ProtoLocal;
 use reqwest::header::HeaderMap;

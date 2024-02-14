@@ -1,4 +1,5 @@
-//! Local
+//! Local,
+//! helping persisting protobuf
 
 use protobuf::MessageFull;
 

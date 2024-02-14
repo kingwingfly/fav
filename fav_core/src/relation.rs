@@ -1,4 +1,4 @@
-//! Relations between resources, resource sets, and uppers.
+//! Relations between resources, resource sets, and uppers
 
 use crate::attr::{Attr, ResAttr, ResSetAttr};
 

@@ -1,4 +1,5 @@
-//! Meta
+//! Meta,
+//! helping reading and writing protobuf metadatas
 
 use crate::local::PathInfo;
 use protobuf::MessageFull;
