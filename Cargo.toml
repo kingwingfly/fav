@@ -1,5 +1,5 @@
 [workspace]
-members = ["fav", "fav_cli", "fav_core", "fav_utils_ng", "fav_utils"]
+members = ["fav", "fav_cli", "fav_core", "fav_utils_ng", "fav_utils", "fav_derive"]
 resolver = "2"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
