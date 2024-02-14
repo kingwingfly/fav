@@ -13,7 +13,7 @@ const POLL_INTERVAL: u64 = 3;
 /// Login with QR code.
 pub(crate) async fn qr_login() -> Result<()> {
     let QrInfo { url, qrcode_key } = qr_info().await?;
-    show_qr_code(url).await?;
+    show_qr_code(url)?;
     qr_ret(qrcode_key).await?;
     info!("Login successfully");
     Ok(())
@@ -51,7 +51,7 @@ async fn qr_info() -> Result<QrInfo> {
     Ok(serde_json::from_value(json["data"].take()).unwrap())
 }
 
-async fn show_qr_code(url: String) -> Result<()> {
+fn show_qr_code(url: String) -> Result<()> {
     let code = QrCode::new(url).unwrap();
     let image = code
         .render::<unicode::Dense1x2>()
