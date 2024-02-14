@@ -30,7 +30,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "signal", "macros"] }
 # utils
 bitflags = "2.4"
 # derive
-fav_derive = { workspace = true, version = "0.0.1-alpha1", optional = true }
+fav_derive = { workspace = true, optional = true }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
