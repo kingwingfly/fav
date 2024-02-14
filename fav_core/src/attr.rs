@@ -1,7 +1,7 @@
-//! Attribute
-//! Contains the traits for resources' attributes.
-//! Helping to gain the `id`, `title` and so on for resource, resource set and upper.
+//! Attribute,
+//! managing the resources' attributes.
 
+use crate::status::Status;
 use std::str::FromStr;
 
 #[allow(missing_docs)]
@@ -37,7 +37,7 @@ impl From<Id> for String {
     }
 }
 
-/// Attributes
+/// Basical attributes
 /// #Example
 /// ```
 /// # use fav_core::attr::{Attr, Id};
@@ -74,7 +74,12 @@ pub trait Attr: Send + Sync {
 }
 
 /// Attributes of a resource.
-pub trait ResAttr: Attr {}
+pub trait ResAttr: Attr {
+    /// [`Status`] are bitflags. See [bitflags](https://docs.rs/bitflags/latest/bitflags/index.html)
+    fn status(&self) -> &Status;
+    /// [`Status`] are bitflags. See [bitflags](https://docs.rs/bitflags/latest/bitflags/index.html)
+    fn status_mut(&mut self) -> &mut Status;
+}
 
 /// Attributes of a resource set.
 pub trait ResSetAttr: Attr {}

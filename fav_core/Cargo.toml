@@ -27,6 +27,8 @@ serde_json = { version = "1" }
 # async
 trait-variant = "0.1"
 tokio = { version = "1", features = ["rt-multi-thread", "signal", "macros"] }
+# utils
+bitflags = "2.4"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
