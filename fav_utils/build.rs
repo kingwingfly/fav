@@ -14,7 +14,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .pure()
             .includes(["./proto"])
             .inputs(["./proto/data.proto"])
-            .out_dir("./src/test_utils/proto")
+            .out_dir("./src/proto")
             .run()
             .unwrap();
     }

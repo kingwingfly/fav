@@ -2,7 +2,7 @@
 name = "fav_utils_ng"
 version = "0.0.1-alpha1"
 authors.workspace = true
-description.workspace = true
+description = "Fav's utils crate; A collection of utilities and data structures for the fav project"
 license.workspace = true
 edition.workspace = true
 repository.workspace = true
