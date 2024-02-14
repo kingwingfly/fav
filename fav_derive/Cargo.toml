@@ -1,6 +1,6 @@
 [package]
 name = "fav_derive"
-version = "0.0.1-alpha1"
+version = "0.0.1-alpha2"
 authors.workspace = true
 description = "Derive macros for fav"
 license.workspace = true

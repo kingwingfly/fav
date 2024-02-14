@@ -1,0 +1,26 @@
+name: publish
+
+on:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: install cargo components
+        run: rustup component add clippy
+
+      - name: Extract version
+        id: extract-version
+        run: echo "VERSION=$(grep -oP '^version = "\K[^"]+' Cargo.toml | awk '{$1=$1;print}')" >> $GITHUB_OUTPUT
+
+      - name: run tests
+        run: .github/scripts/test.sh
+
+      - name: publish
+        run: .github/scripts/publish.sh ${{ secrets.CRATESIO }}

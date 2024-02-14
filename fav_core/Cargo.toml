@@ -1,6 +1,6 @@
 [package]
 name = "fav_core"
-version = "0.0.1-alpha2"
+version = "0.0.1-alpha3"
 authors.workspace = true
 description = "Fav's core crate; A collection of traits."
 license.workspace = true

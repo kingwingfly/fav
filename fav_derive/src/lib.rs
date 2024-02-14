@@ -9,7 +9,7 @@ mod api;
 mod attr;
 mod status;
 
-/// A derive macro helping implemente `Api` trait.
+/// A derive macro helping implemente [`Api`] trait.
 /// # Example
 /// ```
 /// use fav_core::api::Api;
@@ -29,7 +29,7 @@ pub fn derive_api(input: TokenStream) -> TokenStream {
     api::derive_api(input)
 }
 
-/// A derive macro helping implemente `Api` trait.
+/// A derive macro helping implemente [`Attr`] trait.
 /// # Example
 /// ```
 /// use fav_core::attr::Attr;
@@ -55,7 +55,7 @@ pub fn derive_attr(input: TokenStream) -> TokenStream {
     attr::derive_attr(input)
 }
 
-/// A derive macro helping implemente `Api` trait.
+/// A derive macro helping implemente [`Status`] trait.
 /// # Example
 /// ```
 /// use fav_core::status::Status;

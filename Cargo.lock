@@ -366,7 +366,7 @@ dependencies = [
 
 [[package]]
 name = "fav_core"
-version = "0.0.1-alpha2"
+version = "0.0.1-alpha3"
 dependencies = [
  "bitflags 2.4.2",
  "fav_derive",
@@ -385,7 +385,7 @@ dependencies = [
 
 [[package]]
 name = "fav_derive"
-version = "0.0.1-alpha1"
+version = "0.0.1-alpha2"
 dependencies = [
  "fav_core",
  "quote",
@@ -395,7 +395,7 @@ dependencies = [
 
 [[package]]
 name = "fav_utils"
-version = "0.0.1-alpha1"
+version = "0.0.1-alpha2"
 dependencies = [
  "base64",
  "chrono",
