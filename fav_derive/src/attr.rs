@@ -40,7 +40,7 @@ pub(crate) fn derive_attr(input: TokenStream) -> TokenStream {
         impl #impl_generics fav_core::attr::Attr for #name_ #ty_generics #where_clause {
             #[inline]
             fn id(&self) -> fav_core::attr::Id {
-                self.#id.into()
+                self.#id.clone().into()
             }
             #[inline]
             fn name(&self) -> &str {

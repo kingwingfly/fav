@@ -21,13 +21,19 @@ pub use fav_derive::Status;
 ///    fn set_status(&mut self, status: StatusFlags) {
 ///        self.status = status.bits();
 ///    }
+///
+///    fn insert_status(&mut self, status: StatusFlags) {
+///        self.status |= status.bits();
+///    }
 /// }
 /// ```
 pub trait Status {
-    /// return &StatusFlags
+    /// return StatusFlags
     fn status(&self) -> StatusFlags;
-    /// return &mut StatusFlags
+    /// set StatusFlags
     fn set_status(&mut self, status: StatusFlags);
+    /// insert StatusFlags
+    fn insert_status(&mut self, status: StatusFlags);
 }
 
 bitflags! {
@@ -56,5 +62,7 @@ mod tests {
         status.insert(StatusFlags::FETCHED);
         assert!(status.intersects(StatusFlags::FETCHED));
         assert_eq!(status.bits(), 1);
+        status.insert(StatusFlags::TRACK);
+        assert_eq!(status.bits(), 3);
     }
 }

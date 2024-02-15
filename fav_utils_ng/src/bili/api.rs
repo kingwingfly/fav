@@ -7,7 +7,7 @@ impl ApiProvider<ApiKind> for Bili {
             ApiKind::Qr => &QrApi,
             ApiKind::QrPoll => &QrPollApi,
             ApiKind::Logout => &LogoutApi,
-            ApiKind::FetchSets => &FetchSetsApi,
+            ApiKind::FetchFavSets => &FetchFavSetsApi,
         }
     }
 }
@@ -17,7 +17,7 @@ pub(super) enum ApiKind {
     Qr,
     QrPoll,
     Logout,
-    FetchSets,
+    FetchFavSets,
 }
 
 /// The bilibili QR code generation API
@@ -36,4 +36,4 @@ struct LogoutApi;
 
 #[derive(Api)]
 #[api(endpoint("https://api.bilibili.com/x/v3/fav/folder/created/list-all"), params(&["up_mid"]), cookies(&["SESSDATA"]))]
-struct FetchSetsApi;
+struct FetchFavSetsApi;

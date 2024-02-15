@@ -4,3 +4,26 @@ package bili;
 message Bili {
     map<string, string> cookies = 1;
 }
+
+message Res {
+    string id = 1;
+    string name = 2;
+    int32 status = 3;
+    repeated Upper uppers = 15;
+}
+
+message Upper {
+    string id = 1;
+    string name = 2;
+}
+
+message ResSet {
+    string id = 1;
+    string name = 2;
+    int32 status = 3;
+    repeated Res set = 15;
+}
+
+message ResSets {
+    repeated ResSet sets = 15;
+}

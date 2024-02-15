@@ -49,6 +49,7 @@ md5 = "0.7.0"
 chrono = "0.4"
 
 [build-dependencies]
+protobuf = { version = "3", features = ["with-bytes"] }
 protobuf-codegen = { version = "3" }
 rustc_version = "0.4.0"
 

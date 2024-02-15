@@ -39,6 +39,12 @@ impl From<i32> for Id {
     }
 }
 
+impl From<String> for Id {
+    fn from(id: String) -> Self {
+        Id::String(id)
+    }
+}
+
 impl FromStr for Id {
     type Err = std::convert::Infallible;
 
@@ -87,6 +93,7 @@ impl FromStr for Id {
 ///     name: String,
 /// }
 /// ```
+/// More examples in [`fav_derive::Attr`].
 pub trait Attr {
     /// Return the id of the target
     fn id(&self) -> Id;

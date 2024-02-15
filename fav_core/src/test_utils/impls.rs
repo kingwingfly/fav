@@ -101,6 +101,10 @@ impl Status for TestRes {
     fn set_status(&mut self, status: StatusFlags) {
         self.status = status.bits();
     }
+
+    fn insert_status(&mut self, status: StatusFlags) {
+        self.status |= status.bits();
+    }
 }
 
 impl Attr for TestResSet {

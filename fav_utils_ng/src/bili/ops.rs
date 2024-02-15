@@ -48,7 +48,14 @@ impl Operations<ApiKind> for Bili {
     }
 
     async fn fetch(&self, resource: &mut impl Meta) -> FavCoreResult<()> {
-        todo!()
+        let resp = self
+            .request(
+                ApiKind::FetchFavSets,
+                &[self.cookies().get("DedeUserID").expect(HINT)],
+            )
+            .await?;
+        resource.insert_status(StatusFlags::FETCHED);
+        Ok(())
     }
 
     async fn pull(&self, _resource: &mut impl Meta) -> FavCoreResult<()> {

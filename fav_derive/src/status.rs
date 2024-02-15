@@ -35,6 +35,10 @@ pub(crate) fn derive_status(input: TokenStream) -> TokenStream {
             fn set_status(&mut self, status: fav_core::status::StatusFlags) {
                 self.#status = status.bits();
             }
+            #[inline]
+            fn insert_status(&mut self, status: fav_core::status::StatusFlags) {
+                self.#status |= status.bits();
+            }
         }
     };
 
