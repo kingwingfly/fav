@@ -41,14 +41,20 @@ pub enum Id<'a> {
 ///     fn name(&self) -> &str {
 ///         &self.name
 ///     }
+///
+///     fn set_id(&mut self, id: Id) {
+///         self.id = id.into();
+///     }
+///
+///     fn set_name(&mut self, name: &str) {
+///         self.name = name.into()
+///     }
 /// }
 ///
-/// # fn main() {
 /// let res = AttrTest::default();
 ///
 /// assert_eq!(res.id(), 0.into());
 /// assert_eq!(res.name(), "");
-/// # }
 /// ```
 /// Derive macros example:
 /// ```
@@ -60,11 +66,14 @@ pub enum Id<'a> {
 /// }
 /// ```
 /// More examples in [`fav_derive::Attr`].
+#[allow(missing_docs)]
 pub trait Attr {
     /// Return the id of the target
     fn id(&self) -> Id;
     /// Return the name of the target
     fn name(&self) -> &str;
+    fn set_id(&mut self, id: Id);
+    fn set_name(&mut self, name: &str);
 }
 
 impl From<i64> for Id<'_> {
@@ -106,5 +115,32 @@ impl<'a> From<&'a str> for Id<'a> {
 impl<'a> From<&'a String> for Id<'a> {
     fn from(id: &'a String) -> Self {
         id.as_str().into()
+    }
+}
+
+impl From<Id<'_>> for i32 {
+    fn from(value: Id) -> Self {
+        match value {
+            Id::I32(id) => id,
+            _ => panic!("Not i32 id"),
+        }
+    }
+}
+
+impl From<Id<'_>> for i64 {
+    fn from(value: Id) -> Self {
+        match value {
+            Id::I64(id) => id,
+            _ => panic!("Not i32 id"),
+        }
+    }
+}
+
+impl From<Id<'_>> for String {
+    fn from(value: Id) -> Self {
+        match value {
+            Id::String(id) => id.to_owned(),
+            _ => panic!("Not i32 id"),
+        }
     }
 }

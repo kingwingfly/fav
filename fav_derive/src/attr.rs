@@ -46,6 +46,14 @@ pub(crate) fn derive_attr(input: TokenStream) -> TokenStream {
             fn name(&self) -> &str {
                 &self.#name
             }
+            #[inline]
+            fn set_id(&mut self, id: fav_core::attr::Id) {
+                self.#id = id.into();
+            }
+            #[inline]
+            fn set_name(&mut self, name: &str) {
+                self.#name = name.into();
+            }
         }
     };
 

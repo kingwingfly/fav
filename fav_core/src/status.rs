@@ -14,26 +14,39 @@ pub use fav_derive::Status;
 /// # use test_utils::data::StatusTest;
 /// # use fav_core::status::{StatusFlags, Status};
 /// impl Status for StatusTest {
-///    fn status(&self) -> StatusFlags {
-///        self.status.into()
-///    }
+///     fn status(&self) -> StatusFlags {
+///         self.status.into()
+///     }
 ///
-///    fn set_status(&mut self, status: StatusFlags) {
-///        self.status = status.bits();
-///    }
+///     fn check_status(&self, status: StatusFlags) -> bool {
+///         self.status & status.bits() != 0
+///     }
 ///
-///    fn insert_status(&mut self, status: StatusFlags) {
-///        self.status |= status.bits();
-///    }
+///
+///     fn set_status(&mut self, status: StatusFlags) {
+///         self.status = status.bits();
+///     }
+///
+///     fn on_status(&mut self, status: StatusFlags) {
+///         self.status |= status.bits();
+///     }
+///
+///     fn off_status(&mut self, status: StatusFlags) {
+///         self.status &= !status.bits();
+///     }
 /// }
 /// ```
 pub trait Status {
     /// return StatusFlags
     fn status(&self) -> StatusFlags;
+    /// check the StatusFlags
+    fn check_status(&self, status: StatusFlags) -> bool;
     /// set StatusFlags
     fn set_status(&mut self, status: StatusFlags);
-    /// insert StatusFlags
-    fn insert_status(&mut self, status: StatusFlags);
+    /// mark provided StatusFlags 1
+    fn on_status(&mut self, status: StatusFlags);
+    /// mark provided StatusFlags 0
+    fn off_status(&mut self, status: StatusFlags);
 }
 
 bitflags! {
@@ -55,14 +68,33 @@ impl From<i32> for StatusFlags {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate as fav_core;
+
+    #[derive(Status, Default)]
+    struct StatusTest {
+        status: i32,
+    }
 
     #[test]
-    fn status_test() {
+    fn status_flags_test() {
         let mut status = StatusFlags::empty();
         status.insert(StatusFlags::FETCHED);
         assert!(status.intersects(StatusFlags::FETCHED));
         assert_eq!(status.bits(), 1);
         status.insert(StatusFlags::TRACK);
         assert_eq!(status.bits(), 3);
+    }
+
+    #[test]
+    fn status_test() {
+        let mut status = StatusTest::default();
+        status.on_status(StatusFlags::FETCHED);
+        assert!(status.check_status(StatusFlags::FETCHED));
+        status.off_status(StatusFlags::FETCHED);
+        assert!(!status.check_status(StatusFlags::FETCHED));
+        status.on_status(StatusFlags::FETCHED);
+        status.on_status(StatusFlags::SAVED);
+        assert!(status.check_status(StatusFlags::FETCHED));
+        assert!(status.check_status(StatusFlags::SAVED));
     }
 }

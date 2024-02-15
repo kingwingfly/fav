@@ -50,7 +50,9 @@ impl Operations<ApiKind> for Bili {
     async fn fetch(&self, resource: &mut impl Meta) -> FavCoreResult<()> {
         let params = &[self.cookies().get("DedeUserID").expect(HINT).as_str()];
         let resp = self.request(ApiKind::FetchFavSets, params).await?;
-        resource.insert_status(StatusFlags::FETCHED);
+        let json: serde_json::Value = resp.json().await.unwrap();
+        dbg!(json);
+        resource.on_status(StatusFlags::FETCHED);
         Ok(())
     }
 
@@ -85,5 +87,12 @@ mod tests {
     async fn login_test() {
         let mut bili = Bili::default();
         bili.login().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn fetch_test() {
+        let bili = Bili::read();
+        let mut res = crate::proto::bili::Res::default();
+        bili.fetch(&mut res).await.unwrap();
     }
 }

@@ -1,5 +1,6 @@
 use super::data::{App, TestRes, TestResSet, TestUpper};
 use ::core::future::Future;
+use bitflags::Flags;
 use reqwest::{header::HeaderMap, Client, Method, Response};
 use serde::de::IntoDeserializer;
 use std::collections::HashMap;
@@ -91,6 +92,14 @@ impl Attr for TestRes {
     fn name(&self) -> &str {
         &self.name
     }
+
+    fn set_id(&mut self, id: Id) {
+        self.id = id.into();
+    }
+
+    fn set_name(&mut self, name: &str) {
+        self.name = name.into()
+    }
 }
 
 impl Status for TestRes {
@@ -98,12 +107,20 @@ impl Status for TestRes {
         self.status.into()
     }
 
+    fn check_status(&self, status: StatusFlags) -> bool {
+        self.status & status.bits() != 0
+    }
+
     fn set_status(&mut self, status: StatusFlags) {
         self.status = status.bits();
     }
 
-    fn insert_status(&mut self, status: StatusFlags) {
+    fn on_status(&mut self, status: StatusFlags) {
         self.status |= status.bits();
+    }
+
+    fn off_status(&mut self, status: StatusFlags) {
+        self.status &= !status.bits();
     }
 }
 
@@ -115,6 +132,14 @@ impl Attr for TestResSet {
     fn name(&self) -> &str {
         &self.name
     }
+
+    fn set_id(&mut self, id: Id) {
+        todo!()
+    }
+
+    fn set_name(&mut self, name: &str) {
+        todo!()
+    }
 }
 
 impl Attr for TestUpper {
@@ -124,6 +149,14 @@ impl Attr for TestUpper {
 
     fn name(&self) -> &str {
         &self.name
+    }
+
+    fn set_id(&mut self, id: Id) {
+        todo!()
+    }
+
+    fn set_name(&mut self, name: &str) {
+        todo!()
     }
 }
 

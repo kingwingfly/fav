@@ -32,12 +32,20 @@ pub(crate) fn derive_status(input: TokenStream) -> TokenStream {
                 self.#status.into()
             }
             #[inline]
+            fn check_status(&self, status: fav_core::status::StatusFlags) -> bool {
+                self.status & status.bits() != 0
+            }
+            #[inline]
             fn set_status(&mut self, status: fav_core::status::StatusFlags) {
                 self.#status = status.bits();
             }
             #[inline]
-            fn insert_status(&mut self, status: fav_core::status::StatusFlags) {
+            fn on_status(&mut self, status: fav_core::status::StatusFlags) {
                 self.#status |= status.bits();
+            }
+            #[inline]
+            fn off_status(&mut self, status: fav_core::status::StatusFlags) {
+                self.#status &= !status.bits();
             }
         }
     };
