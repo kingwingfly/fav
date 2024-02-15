@@ -15,6 +15,7 @@ const POLL_INTERVAL: u64 = 3;
 const EXPIRED_DURATION: u64 = 120;
 #[cfg(test)]
 const EXPIRED_DURATION: u64 = 3;
+const HINT: &str = "Never Login";
 
 impl Operations<ApiKind> for Bili {
     async fn login(&mut self) -> FavCoreResult<()> {
@@ -36,7 +37,7 @@ impl Operations<ApiKind> for Bili {
     }
 
     async fn logout(&mut self) -> FavCoreResult<()> {
-        let params = &[self.cookies().get("bili_jct").unwrap().as_str()];
+        let params = &[self.cookies().get("bili_jct").expect(HINT).as_str()];
         let resp = self.request(ApiKind::Logout, params).await?;
         match resp2serde::<i32>(resp, "/code").await? {
             0 => Ok(()),
@@ -46,7 +47,7 @@ impl Operations<ApiKind> for Bili {
         }
     }
 
-    async fn fetch(&self, _resource: &mut impl Meta) -> FavCoreResult<()> {
+    async fn fetch(&self, resource: &mut impl Meta) -> FavCoreResult<()> {
         todo!()
     }
 
