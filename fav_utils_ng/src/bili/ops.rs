@@ -101,6 +101,5 @@ mod tests {
     async fn fetch_test() {
         let bili = Bili::read();
         let sets: ResSets = bili.fetch_sets().await.unwrap();
-        dbg!(sets);
     }
 }

@@ -25,14 +25,15 @@ pub enum Id<'a> {
     String(&'a str),
 }
 
-/// Basical attributes
-/// #Example
+/// Attributes managing trait.
+///
+/// You may easily implement the `Attr` trait by deriving [`fav_derive::Attr`].
+/// # Example
 /// ```
 /// # #[path = "test_utils/mod.rs"]
 /// # mod test_utils;
 /// # use test_utils::data::AttrTest;
 /// # use fav_core::attr::{Attr, Id};
-///
 /// impl Attr for AttrTest {
 ///     fn id(&self) -> Id {
 ///        self.id.into()

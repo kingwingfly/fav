@@ -30,6 +30,6 @@ pub mod prelude {
     pub use crate::local::{PathInfo, ProtoLocal};
     pub use crate::meta::Meta;
     pub use crate::ops::{Operations, OperationsExt};
-    pub use crate::res::{Res, ResSet};
+    pub use crate::res::{Res, ResSet, ResSets};
     pub use crate::status::{Status, StatusFlags};
 }
