@@ -33,7 +33,7 @@ use reqwest::header::{HeaderMap, HeaderValue};
 /// }
 /// ```
 pub trait HttpConfig {
-    /// The headers
+    /// The default headers
     fn headers(&self) -> HeaderMap;
     /// The cookies. [`HttpConfig::cookie_value`] uses this to generate the `Cookie` header.
     /// # Caution

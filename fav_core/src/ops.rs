@@ -72,9 +72,10 @@ where
         CLIENT.get_or_init(|| Client::builder().default_headers(headers).build().unwrap())
     }
 
-    /// Request the api, which is returned by `Api::api(api_kind)`,
-    /// and with the method, which is returned `Api::method()`.
-    /// Use the provided params, and client with default headers `Config::headers()`.
+    /// Request the api returned by [`ApiProvider::api`],
+    /// and with the method returned by `Api::method` and cookie returned by `HttpConfig::cookie_value`.
+    ///
+    /// Use the provided params, and client with `HttpConfig::headers`.
     fn request(
         &self,
         api_kind: K,
