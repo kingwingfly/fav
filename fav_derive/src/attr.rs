@@ -10,7 +10,7 @@ pub(crate) fn derive_attr(input: TokenStream) -> TokenStream {
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
     let mut id: Ident = syn::parse_str("id").unwrap();
-    let mut name: Ident = syn::parse_str("name").unwrap();
+    let mut title: Ident = syn::parse_str("title").unwrap();
 
     if let Some(attr) = input
         .attrs
@@ -25,8 +25,8 @@ pub(crate) fn derive_attr(input: TokenStream) -> TokenStream {
                     "id" => {
                         id = content.parse()?;
                     }
-                    "name" => {
-                        name = content.parse()?;
+                    "title" => {
+                        title = content.parse()?;
                     }
                     attr => return Err(meta.error(format!("unknown attribute {attr}"))),
                 }
@@ -43,16 +43,16 @@ pub(crate) fn derive_attr(input: TokenStream) -> TokenStream {
                 (&self.#id).into()
             }
             #[inline]
-            fn name(&self) -> &str {
-                &self.#name
+            fn title(&self) -> &str {
+                &self.#title
             }
             #[inline]
             fn set_id(&mut self, id: fav_core::attr::Id) {
                 self.#id = id.into();
             }
             #[inline]
-            fn set_name(&mut self, name: &str) {
-                self.#name = name.into();
+            fn set_title(&mut self, title: &str) {
+                self.#title = title.into();
             }
         }
     };

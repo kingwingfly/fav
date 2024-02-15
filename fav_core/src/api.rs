@@ -42,8 +42,8 @@ pub enum DefaultApiKind {
 /// struct LogoutApi;
 ///
 /// impl ApiProvider<DefaultApiKind> for Remote {
-///     fn api(&self, api_name: DefaultApiKind) -> &dyn Api {
-///         match api_name {
+///     fn api(&self, api_kind: DefaultApiKind) -> &dyn Api {
+///         match api_kind {
 ///             DefaultApiKind::Login => &LoginApi,
 ///             DefaultApiKind::Logout => &LogoutApi,
 ///             _ => unimplemented!()
@@ -98,8 +98,8 @@ mod tests {
     struct Remote;
 
     impl ApiProvider<DefaultApiKind> for Remote {
-        fn api(&self, api_name: DefaultApiKind) -> &dyn Api {
-            match api_name {
+        fn api(&self, api_kind: DefaultApiKind) -> &dyn Api {
+            match api_kind {
                 DefaultApiKind::Login => todo!(),
                 _ => todo!(),
             }

@@ -13,31 +13,31 @@ message App {
 
 message TestResSet {
     int32 id = 1;
-    string name = 2;
+    string title = 2;
     repeated TestRes sets = 3;
     repeated TestUpper uppers = 4;
 }
 
 message TestRes {
     int32 id = 1;
-    string name = 2;
+    string title = 2;
     int32 status = 3;
     repeated TestUpper uppers = 4;
 }
 
 message TestUpper {
     int32 id = 1;
-    string name = 2;
+    string title = 2;
 }
 
 message StatusTest {
     int32 id = 1;
-    string name = 2;
+    string title = 2;
     int32 status = 3;
     repeated TestUpper uppers = 4;
 }
 
 message AttrTest {
     int32 id = 1;
-    string name = 2;
+    string title = 2;
 }

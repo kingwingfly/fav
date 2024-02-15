@@ -39,17 +39,17 @@ pub fn derive_api(input: TokenStream) -> TokenStream {
 /// #[derive(Attr)]
 /// struct Res {
 ///    id: i32,
-///    name: String,
+///    title: String,
 /// }
 ///
 /// #[derive(Attr)]
-/// #[attr(id(res_id), name(res_name))]
+/// #[attr(id(res_id), title(res_name))]
 /// struct Res_ {
 ///    res_id: i32,
 ///    res_name: String,
 /// }
 /// ```
-/// Default fields are `id` and `name`.
+/// Default fields are `id` and `title`.
 /// In practice, the `Res` is comming from `protobuf-codegen`,
 /// making the attribute `attr` referring to the fields needed.
 #[proc_macro_derive(Attr, attributes(attr))]

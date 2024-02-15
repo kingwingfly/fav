@@ -7,20 +7,21 @@ message Bili {
 
 message Res {
     string id = 1;
-    string name = 2;
+    string title = 2;
     int32 status = 3;
     repeated Upper uppers = 15;
 }
 
 message Upper {
     string id = 1;
-    string name = 2;
+    string title = 2;
 }
 
 message ResSet {
     string id = 1;
-    string name = 2;
+    string title = 2;
     int32 status = 3;
+    repeated Upper uppers = 14;
     repeated Res set = 15;
 }
 

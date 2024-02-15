@@ -5,6 +5,7 @@ use crate::{
     api::ApiProvider, config::Config, error::FavCoreError, meta::Meta, res::ResSet, FavCoreResult,
 };
 use core::future::Future;
+use protobuf::Message;
 use reqwest::{header, Client, Response};
 
 /// Making a client able to perform operations.
@@ -42,6 +43,10 @@ where
 {
     async fn login(&mut self) -> FavCoreResult<()>;
     async fn logout(&mut self) -> FavCoreResult<()>;
+    /// Fetch all resource sets
+    async fn fetch_sets(&self) -> FavCoreResult<impl Message>;
+    /// Fetch one resource set
+    async fn fetch_set(&self, resource: &mut impl Meta) -> FavCoreResult<()>;
     /// Fetch one resource
     /// # Caution
     /// One needs to handle Ctrl-C with `tokio::signal::ctrl_c` and `tokio::select!`,

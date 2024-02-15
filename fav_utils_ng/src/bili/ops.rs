@@ -2,11 +2,12 @@ use std::collections::HashMap;
 
 use super::api::ApiKind;
 use crate::{
-    proto::bili::Bili,
+    proto::bili::{Bili, ResSets},
     utils::{parse::resp2serde, qr::show_qr_code},
     FavUtilsError, FavUtilsResult,
 };
 use fav_core::prelude::*;
+use protobuf::Message;
 use reqwest::Response;
 use tokio::time::{sleep, Duration};
 
@@ -47,16 +48,23 @@ impl Operations<ApiKind> for Bili {
         }
     }
 
-    async fn fetch(&self, resource: &mut impl Meta) -> FavCoreResult<()> {
+    async fn fetch_sets(&self) -> FavCoreResult<impl Message> {
         let params = &[self.cookies().get("DedeUserID").expect(HINT).as_str()];
         let resp = self.request(ApiKind::FetchFavSets, params).await?;
         let json: serde_json::Value = resp.json().await.unwrap();
         dbg!(json);
-        resource.on_status(StatusFlags::FETCHED);
+        Ok(ResSets::default())
+    }
+
+    async fn fetch_set(&self, resource: &mut impl Meta) -> FavCoreResult<()> {
+        todo!()
+    }
+
+    async fn fetch(&self, resource: &mut impl Meta) -> FavCoreResult<()> {
         Ok(())
     }
 
-    async fn pull(&self, _resource: &mut impl Meta) -> FavCoreResult<()> {
+    async fn pull(&self, resource: &mut impl Meta) -> FavCoreResult<()> {
         todo!()
     }
 }
@@ -92,7 +100,6 @@ mod tests {
     #[tokio::test]
     async fn fetch_test() {
         let bili = Bili::read();
-        let mut res = crate::proto::bili::Res::default();
-        bili.fetch(&mut res).await.unwrap();
+        bili.fetch_sets().await.unwrap();
     }
 }

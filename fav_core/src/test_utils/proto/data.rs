@@ -397,8 +397,8 @@ pub struct TestResSet {
     // message fields
     // @@protoc_insertion_point(field:data.TestResSet.id)
     pub id: i32,
-    // @@protoc_insertion_point(field:data.TestResSet.name)
-    pub name: ::std::string::String,
+    // @@protoc_insertion_point(field:data.TestResSet.title)
+    pub title: ::std::string::String,
     // @@protoc_insertion_point(field:data.TestResSet.sets)
     pub sets: ::std::vec::Vec<TestRes>,
     // @@protoc_insertion_point(field:data.TestResSet.uppers)
@@ -428,9 +428,9 @@ impl TestResSet {
             |m: &mut TestResSet| { &mut m.id },
         ));
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
-            "name",
-            |m: &TestResSet| { &m.name },
-            |m: &mut TestResSet| { &mut m.name },
+            "title",
+            |m: &TestResSet| { &m.title },
+            |m: &mut TestResSet| { &mut m.title },
         ));
         fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
             "sets",
@@ -464,7 +464,7 @@ impl ::protobuf::Message for TestResSet {
                     self.id = is.read_int32()?;
                 },
                 18 => {
-                    self.name = is.read_string()?;
+                    self.title = is.read_string()?;
                 },
                 26 => {
                     self.sets.push(is.read_message()?);
@@ -487,8 +487,8 @@ impl ::protobuf::Message for TestResSet {
         if self.id != 0 {
             my_size += ::protobuf::rt::int32_size(1, self.id);
         }
-        if !self.name.is_empty() {
-            my_size += ::protobuf::rt::string_size(2, &self.name);
+        if !self.title.is_empty() {
+            my_size += ::protobuf::rt::string_size(2, &self.title);
         }
         for value in &self.sets {
             let len = value.compute_size();
@@ -507,8 +507,8 @@ impl ::protobuf::Message for TestResSet {
         if self.id != 0 {
             os.write_int32(1, self.id)?;
         }
-        if !self.name.is_empty() {
-            os.write_string(2, &self.name)?;
+        if !self.title.is_empty() {
+            os.write_string(2, &self.title)?;
         }
         for v in &self.sets {
             ::protobuf::rt::write_message_field_with_cached_size(3, v, os)?;
@@ -534,7 +534,7 @@ impl ::protobuf::Message for TestResSet {
 
     fn clear(&mut self) {
         self.id = 0;
-        self.name.clear();
+        self.title.clear();
         self.sets.clear();
         self.uppers.clear();
         self.special_fields.clear();
@@ -543,7 +543,7 @@ impl ::protobuf::Message for TestResSet {
     fn default_instance() -> &'static TestResSet {
         static instance: TestResSet = TestResSet {
             id: 0,
-            name: ::std::string::String::new(),
+            title: ::std::string::String::new(),
             sets: ::std::vec::Vec::new(),
             uppers: ::std::vec::Vec::new(),
             special_fields: ::protobuf::SpecialFields::new(),
@@ -575,8 +575,8 @@ pub struct TestRes {
     // message fields
     // @@protoc_insertion_point(field:data.TestRes.id)
     pub id: i32,
-    // @@protoc_insertion_point(field:data.TestRes.name)
-    pub name: ::std::string::String,
+    // @@protoc_insertion_point(field:data.TestRes.title)
+    pub title: ::std::string::String,
     // @@protoc_insertion_point(field:data.TestRes.status)
     pub status: i32,
     // @@protoc_insertion_point(field:data.TestRes.uppers)
@@ -606,9 +606,9 @@ impl TestRes {
             |m: &mut TestRes| { &mut m.id },
         ));
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
-            "name",
-            |m: &TestRes| { &m.name },
-            |m: &mut TestRes| { &mut m.name },
+            "title",
+            |m: &TestRes| { &m.title },
+            |m: &mut TestRes| { &mut m.title },
         ));
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
             "status",
@@ -642,7 +642,7 @@ impl ::protobuf::Message for TestRes {
                     self.id = is.read_int32()?;
                 },
                 18 => {
-                    self.name = is.read_string()?;
+                    self.title = is.read_string()?;
                 },
                 24 => {
                     self.status = is.read_int32()?;
@@ -665,8 +665,8 @@ impl ::protobuf::Message for TestRes {
         if self.id != 0 {
             my_size += ::protobuf::rt::int32_size(1, self.id);
         }
-        if !self.name.is_empty() {
-            my_size += ::protobuf::rt::string_size(2, &self.name);
+        if !self.title.is_empty() {
+            my_size += ::protobuf::rt::string_size(2, &self.title);
         }
         if self.status != 0 {
             my_size += ::protobuf::rt::int32_size(3, self.status);
@@ -684,8 +684,8 @@ impl ::protobuf::Message for TestRes {
         if self.id != 0 {
             os.write_int32(1, self.id)?;
         }
-        if !self.name.is_empty() {
-            os.write_string(2, &self.name)?;
+        if !self.title.is_empty() {
+            os.write_string(2, &self.title)?;
         }
         if self.status != 0 {
             os.write_int32(3, self.status)?;
@@ -711,7 +711,7 @@ impl ::protobuf::Message for TestRes {
 
     fn clear(&mut self) {
         self.id = 0;
-        self.name.clear();
+        self.title.clear();
         self.status = 0;
         self.uppers.clear();
         self.special_fields.clear();
@@ -720,7 +720,7 @@ impl ::protobuf::Message for TestRes {
     fn default_instance() -> &'static TestRes {
         static instance: TestRes = TestRes {
             id: 0,
-            name: ::std::string::String::new(),
+            title: ::std::string::String::new(),
             status: 0,
             uppers: ::std::vec::Vec::new(),
             special_fields: ::protobuf::SpecialFields::new(),
@@ -752,8 +752,8 @@ pub struct TestUpper {
     // message fields
     // @@protoc_insertion_point(field:data.TestUpper.id)
     pub id: i32,
-    // @@protoc_insertion_point(field:data.TestUpper.name)
-    pub name: ::std::string::String,
+    // @@protoc_insertion_point(field:data.TestUpper.title)
+    pub title: ::std::string::String,
     // special fields
     // @@protoc_insertion_point(special_field:data.TestUpper.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
@@ -779,9 +779,9 @@ impl TestUpper {
             |m: &mut TestUpper| { &mut m.id },
         ));
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
-            "name",
-            |m: &TestUpper| { &m.name },
-            |m: &mut TestUpper| { &mut m.name },
+            "title",
+            |m: &TestUpper| { &m.title },
+            |m: &mut TestUpper| { &mut m.title },
         ));
         ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<TestUpper>(
             "TestUpper",
@@ -805,7 +805,7 @@ impl ::protobuf::Message for TestUpper {
                     self.id = is.read_int32()?;
                 },
                 18 => {
-                    self.name = is.read_string()?;
+                    self.title = is.read_string()?;
                 },
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
@@ -822,8 +822,8 @@ impl ::protobuf::Message for TestUpper {
         if self.id != 0 {
             my_size += ::protobuf::rt::int32_size(1, self.id);
         }
-        if !self.name.is_empty() {
-            my_size += ::protobuf::rt::string_size(2, &self.name);
+        if !self.title.is_empty() {
+            my_size += ::protobuf::rt::string_size(2, &self.title);
         }
         my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
         self.special_fields.cached_size().set(my_size as u32);
@@ -834,8 +834,8 @@ impl ::protobuf::Message for TestUpper {
         if self.id != 0 {
             os.write_int32(1, self.id)?;
         }
-        if !self.name.is_empty() {
-            os.write_string(2, &self.name)?;
+        if !self.title.is_empty() {
+            os.write_string(2, &self.title)?;
         }
         os.write_unknown_fields(self.special_fields.unknown_fields())?;
         ::std::result::Result::Ok(())
@@ -855,14 +855,14 @@ impl ::protobuf::Message for TestUpper {
 
     fn clear(&mut self) {
         self.id = 0;
-        self.name.clear();
+        self.title.clear();
         self.special_fields.clear();
     }
 
     fn default_instance() -> &'static TestUpper {
         static instance: TestUpper = TestUpper {
             id: 0,
-            name: ::std::string::String::new(),
+            title: ::std::string::String::new(),
             special_fields: ::protobuf::SpecialFields::new(),
         };
         &instance
@@ -892,8 +892,8 @@ pub struct StatusTest {
     // message fields
     // @@protoc_insertion_point(field:data.StatusTest.id)
     pub id: i32,
-    // @@protoc_insertion_point(field:data.StatusTest.name)
-    pub name: ::std::string::String,
+    // @@protoc_insertion_point(field:data.StatusTest.title)
+    pub title: ::std::string::String,
     // @@protoc_insertion_point(field:data.StatusTest.status)
     pub status: i32,
     // @@protoc_insertion_point(field:data.StatusTest.uppers)
@@ -923,9 +923,9 @@ impl StatusTest {
             |m: &mut StatusTest| { &mut m.id },
         ));
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
-            "name",
-            |m: &StatusTest| { &m.name },
-            |m: &mut StatusTest| { &mut m.name },
+            "title",
+            |m: &StatusTest| { &m.title },
+            |m: &mut StatusTest| { &mut m.title },
         ));
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
             "status",
@@ -959,7 +959,7 @@ impl ::protobuf::Message for StatusTest {
                     self.id = is.read_int32()?;
                 },
                 18 => {
-                    self.name = is.read_string()?;
+                    self.title = is.read_string()?;
                 },
                 24 => {
                     self.status = is.read_int32()?;
@@ -982,8 +982,8 @@ impl ::protobuf::Message for StatusTest {
         if self.id != 0 {
             my_size += ::protobuf::rt::int32_size(1, self.id);
         }
-        if !self.name.is_empty() {
-            my_size += ::protobuf::rt::string_size(2, &self.name);
+        if !self.title.is_empty() {
+            my_size += ::protobuf::rt::string_size(2, &self.title);
         }
         if self.status != 0 {
             my_size += ::protobuf::rt::int32_size(3, self.status);
@@ -1001,8 +1001,8 @@ impl ::protobuf::Message for StatusTest {
         if self.id != 0 {
             os.write_int32(1, self.id)?;
         }
-        if !self.name.is_empty() {
-            os.write_string(2, &self.name)?;
+        if !self.title.is_empty() {
+            os.write_string(2, &self.title)?;
         }
         if self.status != 0 {
             os.write_int32(3, self.status)?;
@@ -1028,7 +1028,7 @@ impl ::protobuf::Message for StatusTest {
 
     fn clear(&mut self) {
         self.id = 0;
-        self.name.clear();
+        self.title.clear();
         self.status = 0;
         self.uppers.clear();
         self.special_fields.clear();
@@ -1037,7 +1037,7 @@ impl ::protobuf::Message for StatusTest {
     fn default_instance() -> &'static StatusTest {
         static instance: StatusTest = StatusTest {
             id: 0,
-            name: ::std::string::String::new(),
+            title: ::std::string::String::new(),
             status: 0,
             uppers: ::std::vec::Vec::new(),
             special_fields: ::protobuf::SpecialFields::new(),
@@ -1069,8 +1069,8 @@ pub struct AttrTest {
     // message fields
     // @@protoc_insertion_point(field:data.AttrTest.id)
     pub id: i32,
-    // @@protoc_insertion_point(field:data.AttrTest.name)
-    pub name: ::std::string::String,
+    // @@protoc_insertion_point(field:data.AttrTest.title)
+    pub title: ::std::string::String,
     // special fields
     // @@protoc_insertion_point(special_field:data.AttrTest.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
@@ -1096,9 +1096,9 @@ impl AttrTest {
             |m: &mut AttrTest| { &mut m.id },
         ));
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
-            "name",
-            |m: &AttrTest| { &m.name },
-            |m: &mut AttrTest| { &mut m.name },
+            "title",
+            |m: &AttrTest| { &m.title },
+            |m: &mut AttrTest| { &mut m.title },
         ));
         ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<AttrTest>(
             "AttrTest",
@@ -1122,7 +1122,7 @@ impl ::protobuf::Message for AttrTest {
                     self.id = is.read_int32()?;
                 },
                 18 => {
-                    self.name = is.read_string()?;
+                    self.title = is.read_string()?;
                 },
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
@@ -1139,8 +1139,8 @@ impl ::protobuf::Message for AttrTest {
         if self.id != 0 {
             my_size += ::protobuf::rt::int32_size(1, self.id);
         }
-        if !self.name.is_empty() {
-            my_size += ::protobuf::rt::string_size(2, &self.name);
+        if !self.title.is_empty() {
+            my_size += ::protobuf::rt::string_size(2, &self.title);
         }
         my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
         self.special_fields.cached_size().set(my_size as u32);
@@ -1151,8 +1151,8 @@ impl ::protobuf::Message for AttrTest {
         if self.id != 0 {
             os.write_int32(1, self.id)?;
         }
-        if !self.name.is_empty() {
-            os.write_string(2, &self.name)?;
+        if !self.title.is_empty() {
+            os.write_string(2, &self.title)?;
         }
         os.write_unknown_fields(self.special_fields.unknown_fields())?;
         ::std::result::Result::Ok(())
@@ -1172,14 +1172,14 @@ impl ::protobuf::Message for AttrTest {
 
     fn clear(&mut self) {
         self.id = 0;
-        self.name.clear();
+        self.title.clear();
         self.special_fields.clear();
     }
 
     fn default_instance() -> &'static AttrTest {
         static instance: AttrTest = AttrTest {
             id: 0,
-            name: ::std::string::String::new(),
+            title: ::std::string::String::new(),
             special_fields: ::protobuf::SpecialFields::new(),
         };
         &instance
@@ -1208,20 +1208,20 @@ static file_descriptor_proto_data: &'static [u8] = b"\
     \x18\x01\x20\x03(\x0b2\x17.data.Conf.CookiesEntryR\x07cookies\x1a:\n\x0c\
     CookiesEntry\x12\x10\n\x03key\x18\x01\x20\x01(\tR\x03key\x12\x14\n\x05va\
     lue\x18\x02\x20\x01(\tR\x05value:\x028\x01\"+\n\x03App\x12$\n\x04sets\
-    \x18\x01\x20\x03(\x0b2\x10.data.TestResSetR\x04sets\"|\n\nTestResSet\x12\
-    \x0e\n\x02id\x18\x01\x20\x01(\x05R\x02id\x12\x12\n\x04name\x18\x02\x20\
-    \x01(\tR\x04name\x12!\n\x04sets\x18\x03\x20\x03(\x0b2\r.data.TestResR\
+    \x18\x01\x20\x03(\x0b2\x10.data.TestResSetR\x04sets\"~\n\nTestResSet\x12\
+    \x0e\n\x02id\x18\x01\x20\x01(\x05R\x02id\x12\x14\n\x05title\x18\x02\x20\
+    \x01(\tR\x05title\x12!\n\x04sets\x18\x03\x20\x03(\x0b2\r.data.TestResR\
     \x04sets\x12'\n\x06uppers\x18\x04\x20\x03(\x0b2\x0f.data.TestUpperR\x06u\
-    ppers\"n\n\x07TestRes\x12\x0e\n\x02id\x18\x01\x20\x01(\x05R\x02id\x12\
-    \x12\n\x04name\x18\x02\x20\x01(\tR\x04name\x12\x16\n\x06status\x18\x03\
+    ppers\"p\n\x07TestRes\x12\x0e\n\x02id\x18\x01\x20\x01(\x05R\x02id\x12\
+    \x14\n\x05title\x18\x02\x20\x01(\tR\x05title\x12\x16\n\x06status\x18\x03\
     \x20\x01(\x05R\x06status\x12'\n\x06uppers\x18\x04\x20\x03(\x0b2\x0f.data\
-    .TestUpperR\x06uppers\"/\n\tTestUpper\x12\x0e\n\x02id\x18\x01\x20\x01(\
-    \x05R\x02id\x12\x12\n\x04name\x18\x02\x20\x01(\tR\x04name\"q\n\nStatusTe\
-    st\x12\x0e\n\x02id\x18\x01\x20\x01(\x05R\x02id\x12\x12\n\x04name\x18\x02\
-    \x20\x01(\tR\x04name\x12\x16\n\x06status\x18\x03\x20\x01(\x05R\x06status\
-    \x12'\n\x06uppers\x18\x04\x20\x03(\x0b2\x0f.data.TestUpperR\x06uppers\".\
-    \n\x08AttrTest\x12\x0e\n\x02id\x18\x01\x20\x01(\x05R\x02id\x12\x12\n\x04\
-    name\x18\x02\x20\x01(\tR\x04nameb\x06proto3\
+    .TestUpperR\x06uppers\"1\n\tTestUpper\x12\x0e\n\x02id\x18\x01\x20\x01(\
+    \x05R\x02id\x12\x14\n\x05title\x18\x02\x20\x01(\tR\x05title\"s\n\nStatus\
+    Test\x12\x0e\n\x02id\x18\x01\x20\x01(\x05R\x02id\x12\x14\n\x05title\x18\
+    \x02\x20\x01(\tR\x05title\x12\x16\n\x06status\x18\x03\x20\x01(\x05R\x06s\
+    tatus\x12'\n\x06uppers\x18\x04\x20\x03(\x0b2\x0f.data.TestUpperR\x06uppe\
+    rs\"0\n\x08AttrTest\x12\x0e\n\x02id\x18\x01\x20\x01(\x05R\x02id\x12\x14\
+    \n\x05title\x18\x02\x20\x01(\tR\x05titleb\x06proto3\
 ";
 
 /// `FileDescriptorProto` object which was a source for this generated file

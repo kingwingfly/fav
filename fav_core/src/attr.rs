@@ -38,23 +38,23 @@ pub enum Id<'a> {
 ///        self.id.into()
 ///     }
 ///
-///     fn name(&self) -> &str {
-///         &self.name
+///     fn title(&self) -> &str {
+///         &self.title
 ///     }
 ///
 ///     fn set_id(&mut self, id: Id) {
 ///         self.id = id.into();
 ///     }
 ///
-///     fn set_name(&mut self, name: &str) {
-///         self.name = name.into()
+///     fn set_title(&mut self, title: &str) {
+///         self.title = title.into()
 ///     }
 /// }
 ///
 /// let res = AttrTest::default();
 ///
 /// assert_eq!(res.id(), 0.into());
-/// assert_eq!(res.name(), "");
+/// assert_eq!(res.title(), "");
 /// ```
 /// Derive macros example:
 /// ```
@@ -62,7 +62,7 @@ pub enum Id<'a> {
 /// #[derive(Attr)]
 /// struct AttrTest {
 ///     id: i32,
-///     name: String,
+///     title: String,
 /// }
 /// ```
 /// More examples in [`fav_derive::Attr`].
@@ -70,10 +70,10 @@ pub enum Id<'a> {
 pub trait Attr {
     /// Return the id of the target
     fn id(&self) -> Id;
-    /// Return the name of the target
-    fn name(&self) -> &str;
+    /// Return the title of the target
+    fn title(&self) -> &str;
     fn set_id(&mut self, id: Id);
-    fn set_name(&mut self, name: &str);
+    fn set_title(&mut self, title: &str);
 }
 
 impl From<i64> for Id<'_> {

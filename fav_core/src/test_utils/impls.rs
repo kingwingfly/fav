@@ -1,6 +1,7 @@
 use super::data::{App, TestRes, TestResSet, TestUpper};
 use ::core::future::Future;
 use bitflags::Flags;
+use protobuf::Message;
 use reqwest::{header::HeaderMap, Client, Method, Response};
 use serde::de::IntoDeserializer;
 use std::collections::HashMap;
@@ -82,6 +83,14 @@ impl Operations<DefaultApiKind> for App {
     async fn pull(&self, resource: &mut impl Meta) -> FavCoreResult<()> {
         todo!()
     }
+
+    async fn fetch_set(&self, resource: &mut impl Meta) -> FavCoreResult<()> {
+        todo!()
+    }
+
+    async fn fetch_sets(&self) -> FavCoreResult<impl Message> {
+        Ok(TestResSet::default())
+    }
 }
 
 impl Attr for TestRes {
@@ -89,16 +98,16 @@ impl Attr for TestRes {
         self.id.into()
     }
 
-    fn name(&self) -> &str {
-        &self.name
+    fn title(&self) -> &str {
+        &self.title
     }
 
     fn set_id(&mut self, id: Id) {
         self.id = id.into();
     }
 
-    fn set_name(&mut self, name: &str) {
-        self.name = name.into()
+    fn set_title(&mut self, title: &str) {
+        self.title = title.into()
     }
 }
 
@@ -129,15 +138,15 @@ impl Attr for TestResSet {
         self.id.into()
     }
 
-    fn name(&self) -> &str {
-        &self.name
+    fn title(&self) -> &str {
+        &self.title
     }
 
     fn set_id(&mut self, id: Id) {
         todo!()
     }
 
-    fn set_name(&mut self, name: &str) {
+    fn set_title(&mut self, title: &str) {
         todo!()
     }
 }
@@ -147,15 +156,15 @@ impl Attr for TestUpper {
         self.id.into()
     }
 
-    fn name(&self) -> &str {
-        &self.name
+    fn title(&self) -> &str {
+        &self.title
     }
 
     fn set_id(&mut self, id: Id) {
         todo!()
     }
 
-    fn set_name(&mut self, name: &str) {
+    fn set_title(&mut self, title: &str) {
         todo!()
     }
 }
