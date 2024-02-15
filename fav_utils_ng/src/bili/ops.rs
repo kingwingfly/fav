@@ -64,7 +64,7 @@ impl Operations<BiliSets, BiliSet, BiliRes, ApiKind> for Bili {
             let resp = self.request(ApiKind::FetchSet, params).await?;
             let res: BiliSet = resp2proto(resp, "/data").await?;
             res.medias.into_iter().for_each(|mut r| {
-                if let None = set.medias.iter().find(|r1| r1.bvid == r.bvid) {
+                if !set.medias.iter().any(|r1| r1.bvid == r.bvid) {
                     r.on_status(StatusFlags::FAV);
                     set.medias.push(r);
                 }
@@ -73,11 +73,11 @@ impl Operations<BiliSets, BiliSet, BiliRes, ApiKind> for Bili {
         Ok(())
     }
 
-    async fn fetch(&self, resource: &mut BiliRes) -> FavCoreResult<()> {
+    async fn fetch(&self, _resource: &mut BiliRes) -> FavCoreResult<()> {
         Ok(())
     }
 
-    async fn pull(&self, resource: &mut BiliRes) -> FavCoreResult<()> {
+    async fn pull(&self, _resource: &mut BiliRes) -> FavCoreResult<()> {
         Ok(())
     }
 }

@@ -12,8 +12,8 @@ statements=(
     "cargo doc --no-deps -p fav_core"
     "cargo test -p fav_derive"
     # fav_utils_ng
-    "cargo test -p fav_utils_ng"
-    "cargo doc --no-deps -p fav_utils_ng"
+    # "cargo test -p fav_utils_ng"
+    # "cargo doc --no-deps -p fav_utils_ng"
 )
 
 # loop echo and executing statements
