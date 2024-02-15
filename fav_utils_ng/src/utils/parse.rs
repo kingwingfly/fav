@@ -21,14 +21,14 @@ pub async fn resp2serde<T: DeserializeOwned>(resp: Response, pointer: &str) -> F
 }
 
 pub async fn resp2proto<T: MessageFull>(resp: Response, pointer: &str) -> FavCoreResult<T> {
+    let json = resp
+        .json::<Value>()
+        .await?
+        .pointer_mut(pointer)
+        .unwrap()
+        .take();
     Ok(parse_from_str_with_options(
-        &resp
-            .json::<Value>()
-            .await?
-            .pointer_mut(pointer)
-            .unwrap()
-            .take()
-            .to_string(),
+        &json.to_string(),
         &PARSE_OPTIONS,
     )?)
 }

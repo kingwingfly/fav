@@ -6,23 +6,24 @@ message Bili {
 }
 
 message BiliRes {
-    string id = 1;
+    string bvid = 1;
     string title = 2;
     int32 status = 3;
-    repeated Upper uppers = 15;
+    Upper upper = 15;
 }
 
 message Upper {
-    string id = 1;
-    string title = 2;
+    int64 mid = 1;
+    string name = 2;
 }
 
 message BiliSet {
     int64 id = 1;
     string title = 2;
     int32 status = 3;
-    repeated Upper uppers = 14;
-    repeated BiliRes set = 15;
+    int32 media_count = 4;
+    Upper upper = 14;
+    repeated BiliRes medias = 15;
 }
 
 message BiliSets {

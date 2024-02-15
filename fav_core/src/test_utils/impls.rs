@@ -185,8 +185,8 @@ impl Attr for TestUpper {
 }
 
 impl Res for TestRes {
-    fn uppers(&self) -> impl IntoIterator<Item = &impl Attr> {
-        &self.uppers
+    fn upper(&self) -> &impl Attr {
+        self.upper.as_ref().unwrap()
     }
 }
 
@@ -213,8 +213,8 @@ impl Status for TestResSet {
 }
 
 impl Res for TestResSet {
-    fn uppers(&self) -> impl IntoIterator<Item = &impl Attr> {
-        &self.uppers
+    fn upper(&self) -> &impl Attr {
+        self.upper.as_ref().unwrap()
     }
 }
 

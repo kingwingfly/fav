@@ -51,12 +51,25 @@ impl Operations<BiliSets, BiliSet, BiliRes, ApiKind> for Bili {
 
     async fn fetch_sets(&self) -> FavCoreResult<BiliSets> {
         let params = &[self.cookies().get("DedeUserID").expect(HINT).as_str()];
-        let resp = self.request(ApiKind::FetchFavSets, params).await?;
+        let resp = self.request(ApiKind::FetchSets, params).await?;
         resp2proto::<BiliSets>(resp, "/data").await
     }
 
     async fn fetch_set(&self, set: &mut BiliSet) -> FavCoreResult<()> {
-        set.on_status(StatusFlags::FETCHED);
+        let id = set.id.to_string();
+
+        for pn in 1..=set.media_count.saturating_sub(1) / 20 + 1 {
+            let pn = pn.to_string();
+            let params = &[id.as_str(), pn.as_str(), "20"];
+            let resp = self.request(ApiKind::FetchSet, params).await?;
+            let res: BiliSet = resp2proto(resp, "/data").await?;
+            res.medias.into_iter().for_each(|mut r| {
+                if let None = set.medias.iter().find(|r1| r1.bvid == r.bvid) {
+                    r.on_status(StatusFlags::FAV);
+                    set.medias.push(r);
+                }
+            });
+        }
         Ok(())
     }
 
@@ -104,5 +117,6 @@ mod tests {
         let mut sets: BiliSets = bili.fetch_sets().await.unwrap();
         let set = sets.iter_mut().next().unwrap();
         bili.fetch_set(set).await.unwrap();
+        dbg!(set);
     }
 }

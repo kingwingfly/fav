@@ -166,18 +166,19 @@ impl ::protobuf::reflect::ProtobufValue for Bili {
 }
 
 #[derive(fav_core::attr::Attr, fav_core::status::Status)]
+#[attr(id(bvid))]
 // @@protoc_insertion_point(message:bili.BiliRes)
 #[derive(PartialEq,Clone,Default,Debug)]
 pub struct BiliRes {
     // message fields
-    // @@protoc_insertion_point(field:bili.BiliRes.id)
-    pub id: ::std::string::String,
+    // @@protoc_insertion_point(field:bili.BiliRes.bvid)
+    pub bvid: ::std::string::String,
     // @@protoc_insertion_point(field:bili.BiliRes.title)
     pub title: ::std::string::String,
     // @@protoc_insertion_point(field:bili.BiliRes.status)
     pub status: i32,
-    // @@protoc_insertion_point(field:bili.BiliRes.uppers)
-    pub uppers: ::std::vec::Vec<Upper>,
+    // @@protoc_insertion_point(field:bili.BiliRes.upper)
+    pub upper: ::protobuf::MessageField<Upper>,
     // special fields
     // @@protoc_insertion_point(special_field:bili.BiliRes.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
@@ -198,9 +199,9 @@ impl BiliRes {
         let mut fields = ::std::vec::Vec::with_capacity(4);
         let mut oneofs = ::std::vec::Vec::with_capacity(0);
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
-            "id",
-            |m: &BiliRes| { &m.id },
-            |m: &mut BiliRes| { &mut m.id },
+            "bvid",
+            |m: &BiliRes| { &m.bvid },
+            |m: &mut BiliRes| { &mut m.bvid },
         ));
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
             "title",
@@ -212,10 +213,10 @@ impl BiliRes {
             |m: &BiliRes| { &m.status },
             |m: &mut BiliRes| { &mut m.status },
         ));
-        fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
-            "uppers",
-            |m: &BiliRes| { &m.uppers },
-            |m: &mut BiliRes| { &mut m.uppers },
+        fields.push(::protobuf::reflect::rt::v2::make_message_field_accessor::<_, Upper>(
+            "upper",
+            |m: &BiliRes| { &m.upper },
+            |m: &mut BiliRes| { &mut m.upper },
         ));
         ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<BiliRes>(
             "BiliRes",
@@ -236,7 +237,7 @@ impl ::protobuf::Message for BiliRes {
         while let Some(tag) = is.read_raw_tag_or_eof()? {
             match tag {
                 10 => {
-                    self.id = is.read_string()?;
+                    self.bvid = is.read_string()?;
                 },
                 18 => {
                     self.title = is.read_string()?;
@@ -245,7 +246,7 @@ impl ::protobuf::Message for BiliRes {
                     self.status = is.read_int32()?;
                 },
                 122 => {
-                    self.uppers.push(is.read_message()?);
+                    ::protobuf::rt::read_singular_message_into_field(is, &mut self.upper)?;
                 },
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
@@ -259,8 +260,8 @@ impl ::protobuf::Message for BiliRes {
     #[allow(unused_variables)]
     fn compute_size(&self) -> u64 {
         let mut my_size = 0;
-        if !self.id.is_empty() {
-            my_size += ::protobuf::rt::string_size(1, &self.id);
+        if !self.bvid.is_empty() {
+            my_size += ::protobuf::rt::string_size(1, &self.bvid);
         }
         if !self.title.is_empty() {
             my_size += ::protobuf::rt::string_size(2, &self.title);
@@ -268,18 +269,18 @@ impl ::protobuf::Message for BiliRes {
         if self.status != 0 {
             my_size += ::protobuf::rt::int32_size(3, self.status);
         }
-        for value in &self.uppers {
-            let len = value.compute_size();
+        if let Some(v) = self.upper.as_ref() {
+            let len = v.compute_size();
             my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
-        };
+        }
         my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
         self.special_fields.cached_size().set(my_size as u32);
         my_size
     }
 
     fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
-        if !self.id.is_empty() {
-            os.write_string(1, &self.id)?;
+        if !self.bvid.is_empty() {
+            os.write_string(1, &self.bvid)?;
         }
         if !self.title.is_empty() {
             os.write_string(2, &self.title)?;
@@ -287,9 +288,9 @@ impl ::protobuf::Message for BiliRes {
         if self.status != 0 {
             os.write_int32(3, self.status)?;
         }
-        for v in &self.uppers {
+        if let Some(v) = self.upper.as_ref() {
             ::protobuf::rt::write_message_field_with_cached_size(15, v, os)?;
-        };
+        }
         os.write_unknown_fields(self.special_fields.unknown_fields())?;
         ::std::result::Result::Ok(())
     }
@@ -307,19 +308,19 @@ impl ::protobuf::Message for BiliRes {
     }
 
     fn clear(&mut self) {
-        self.id.clear();
+        self.bvid.clear();
         self.title.clear();
         self.status = 0;
-        self.uppers.clear();
+        self.upper.clear();
         self.special_fields.clear();
     }
 
     fn default_instance() -> &'static BiliRes {
         static instance: BiliRes = BiliRes {
-            id: ::std::string::String::new(),
+            bvid: ::std::string::String::new(),
             title: ::std::string::String::new(),
             status: 0,
-            uppers: ::std::vec::Vec::new(),
+            upper: ::protobuf::MessageField::none(),
             special_fields: ::protobuf::SpecialFields::new(),
         };
         &instance
@@ -344,14 +345,15 @@ impl ::protobuf::reflect::ProtobufValue for BiliRes {
 }
 
 #[derive(fav_core::attr::Attr)]
+#[attr(id(mid), title(name))]
 // @@protoc_insertion_point(message:bili.Upper)
 #[derive(PartialEq,Clone,Default,Debug)]
 pub struct Upper {
     // message fields
-    // @@protoc_insertion_point(field:bili.Upper.id)
-    pub id: ::std::string::String,
-    // @@protoc_insertion_point(field:bili.Upper.title)
-    pub title: ::std::string::String,
+    // @@protoc_insertion_point(field:bili.Upper.mid)
+    pub mid: i64,
+    // @@protoc_insertion_point(field:bili.Upper.name)
+    pub name: ::std::string::String,
     // special fields
     // @@protoc_insertion_point(special_field:bili.Upper.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
@@ -372,14 +374,14 @@ impl Upper {
         let mut fields = ::std::vec::Vec::with_capacity(2);
         let mut oneofs = ::std::vec::Vec::with_capacity(0);
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
-            "id",
-            |m: &Upper| { &m.id },
-            |m: &mut Upper| { &mut m.id },
+            "mid",
+            |m: &Upper| { &m.mid },
+            |m: &mut Upper| { &mut m.mid },
         ));
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
-            "title",
-            |m: &Upper| { &m.title },
-            |m: &mut Upper| { &mut m.title },
+            "name",
+            |m: &Upper| { &m.name },
+            |m: &mut Upper| { &mut m.name },
         ));
         ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<Upper>(
             "Upper",
@@ -399,11 +401,11 @@ impl ::protobuf::Message for Upper {
     fn merge_from(&mut self, is: &mut ::protobuf::CodedInputStream<'_>) -> ::protobuf::Result<()> {
         while let Some(tag) = is.read_raw_tag_or_eof()? {
             match tag {
-                10 => {
-                    self.id = is.read_string()?;
+                8 => {
+                    self.mid = is.read_int64()?;
                 },
                 18 => {
-                    self.title = is.read_string()?;
+                    self.name = is.read_string()?;
                 },
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
@@ -417,11 +419,11 @@ impl ::protobuf::Message for Upper {
     #[allow(unused_variables)]
     fn compute_size(&self) -> u64 {
         let mut my_size = 0;
-        if !self.id.is_empty() {
-            my_size += ::protobuf::rt::string_size(1, &self.id);
+        if self.mid != 0 {
+            my_size += ::protobuf::rt::int64_size(1, self.mid);
         }
-        if !self.title.is_empty() {
-            my_size += ::protobuf::rt::string_size(2, &self.title);
+        if !self.name.is_empty() {
+            my_size += ::protobuf::rt::string_size(2, &self.name);
         }
         my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
         self.special_fields.cached_size().set(my_size as u32);
@@ -429,11 +431,11 @@ impl ::protobuf::Message for Upper {
     }
 
     fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
-        if !self.id.is_empty() {
-            os.write_string(1, &self.id)?;
+        if self.mid != 0 {
+            os.write_int64(1, self.mid)?;
         }
-        if !self.title.is_empty() {
-            os.write_string(2, &self.title)?;
+        if !self.name.is_empty() {
+            os.write_string(2, &self.name)?;
         }
         os.write_unknown_fields(self.special_fields.unknown_fields())?;
         ::std::result::Result::Ok(())
@@ -452,15 +454,15 @@ impl ::protobuf::Message for Upper {
     }
 
     fn clear(&mut self) {
-        self.id.clear();
-        self.title.clear();
+        self.mid = 0;
+        self.name.clear();
         self.special_fields.clear();
     }
 
     fn default_instance() -> &'static Upper {
         static instance: Upper = Upper {
-            id: ::std::string::String::new(),
-            title: ::std::string::String::new(),
+            mid: 0,
+            name: ::std::string::String::new(),
             special_fields: ::protobuf::SpecialFields::new(),
         };
         &instance
@@ -495,10 +497,12 @@ pub struct BiliSet {
     pub title: ::std::string::String,
     // @@protoc_insertion_point(field:bili.BiliSet.status)
     pub status: i32,
-    // @@protoc_insertion_point(field:bili.BiliSet.uppers)
-    pub uppers: ::std::vec::Vec<Upper>,
-    // @@protoc_insertion_point(field:bili.BiliSet.set)
-    pub set: ::std::vec::Vec<BiliRes>,
+    // @@protoc_insertion_point(field:bili.BiliSet.media_count)
+    pub media_count: i32,
+    // @@protoc_insertion_point(field:bili.BiliSet.upper)
+    pub upper: ::protobuf::MessageField<Upper>,
+    // @@protoc_insertion_point(field:bili.BiliSet.medias)
+    pub medias: ::std::vec::Vec<BiliRes>,
     // special fields
     // @@protoc_insertion_point(special_field:bili.BiliSet.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
@@ -516,7 +520,7 @@ impl BiliSet {
     }
 
     fn generated_message_descriptor_data() -> ::protobuf::reflect::GeneratedMessageDescriptorData {
-        let mut fields = ::std::vec::Vec::with_capacity(5);
+        let mut fields = ::std::vec::Vec::with_capacity(6);
         let mut oneofs = ::std::vec::Vec::with_capacity(0);
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
             "id",
@@ -533,15 +537,20 @@ impl BiliSet {
             |m: &BiliSet| { &m.status },
             |m: &mut BiliSet| { &mut m.status },
         ));
-        fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
-            "uppers",
-            |m: &BiliSet| { &m.uppers },
-            |m: &mut BiliSet| { &mut m.uppers },
+        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
+            "media_count",
+            |m: &BiliSet| { &m.media_count },
+            |m: &mut BiliSet| { &mut m.media_count },
+        ));
+        fields.push(::protobuf::reflect::rt::v2::make_message_field_accessor::<_, Upper>(
+            "upper",
+            |m: &BiliSet| { &m.upper },
+            |m: &mut BiliSet| { &mut m.upper },
         ));
         fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
-            "set",
-            |m: &BiliSet| { &m.set },
-            |m: &mut BiliSet| { &mut m.set },
+            "medias",
+            |m: &BiliSet| { &m.medias },
+            |m: &mut BiliSet| { &mut m.medias },
         ));
         ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<BiliSet>(
             "BiliSet",
@@ -570,11 +579,14 @@ impl ::protobuf::Message for BiliSet {
                 24 => {
                     self.status = is.read_int32()?;
                 },
+                32 => {
+                    self.media_count = is.read_int32()?;
+                },
                 114 => {
-                    self.uppers.push(is.read_message()?);
+                    ::protobuf::rt::read_singular_message_into_field(is, &mut self.upper)?;
                 },
                 122 => {
-                    self.set.push(is.read_message()?);
+                    self.medias.push(is.read_message()?);
                 },
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
@@ -597,11 +609,14 @@ impl ::protobuf::Message for BiliSet {
         if self.status != 0 {
             my_size += ::protobuf::rt::int32_size(3, self.status);
         }
-        for value in &self.uppers {
-            let len = value.compute_size();
+        if self.media_count != 0 {
+            my_size += ::protobuf::rt::int32_size(4, self.media_count);
+        }
+        if let Some(v) = self.upper.as_ref() {
+            let len = v.compute_size();
             my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
-        };
-        for value in &self.set {
+        }
+        for value in &self.medias {
             let len = value.compute_size();
             my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
         };
@@ -620,10 +635,13 @@ impl ::protobuf::Message for BiliSet {
         if self.status != 0 {
             os.write_int32(3, self.status)?;
         }
-        for v in &self.uppers {
+        if self.media_count != 0 {
+            os.write_int32(4, self.media_count)?;
+        }
+        if let Some(v) = self.upper.as_ref() {
             ::protobuf::rt::write_message_field_with_cached_size(14, v, os)?;
-        };
-        for v in &self.set {
+        }
+        for v in &self.medias {
             ::protobuf::rt::write_message_field_with_cached_size(15, v, os)?;
         };
         os.write_unknown_fields(self.special_fields.unknown_fields())?;
@@ -646,8 +664,9 @@ impl ::protobuf::Message for BiliSet {
         self.id = 0;
         self.title.clear();
         self.status = 0;
-        self.uppers.clear();
-        self.set.clear();
+        self.media_count = 0;
+        self.upper.clear();
+        self.medias.clear();
         self.special_fields.clear();
     }
 
@@ -656,8 +675,9 @@ impl ::protobuf::Message for BiliSet {
             id: 0,
             title: ::std::string::String::new(),
             status: 0,
-            uppers: ::std::vec::Vec::new(),
-            set: ::std::vec::Vec::new(),
+            media_count: 0,
+            upper: ::protobuf::MessageField::none(),
+            medias: ::std::vec::Vec::new(),
             special_fields: ::protobuf::SpecialFields::new(),
         };
         &instance
@@ -808,17 +828,18 @@ static file_descriptor_proto_data: &'static [u8] = b"\
     \n\nbili.proto\x12\x04bili\"u\n\x04Bili\x121\n\x07cookies\x18\x01\x20\
     \x03(\x0b2\x17.bili.Bili.CookiesEntryR\x07cookies\x1a:\n\x0cCookiesEntry\
     \x12\x10\n\x03key\x18\x01\x20\x01(\tR\x03key\x12\x14\n\x05value\x18\x02\
-    \x20\x01(\tR\x05value:\x028\x01\"l\n\x07BiliRes\x12\x0e\n\x02id\x18\x01\
-    \x20\x01(\tR\x02id\x12\x14\n\x05title\x18\x02\x20\x01(\tR\x05title\x12\
-    \x16\n\x06status\x18\x03\x20\x01(\x05R\x06status\x12#\n\x06uppers\x18\
-    \x0f\x20\x03(\x0b2\x0b.bili.UpperR\x06uppers\"-\n\x05Upper\x12\x0e\n\x02\
-    id\x18\x01\x20\x01(\tR\x02id\x12\x14\n\x05title\x18\x02\x20\x01(\tR\x05t\
-    itle\"\x8d\x01\n\x07BiliSet\x12\x0e\n\x02id\x18\x01\x20\x01(\x03R\x02id\
-    \x12\x14\n\x05title\x18\x02\x20\x01(\tR\x05title\x12\x16\n\x06status\x18\
-    \x03\x20\x01(\x05R\x06status\x12#\n\x06uppers\x18\x0e\x20\x03(\x0b2\x0b.\
-    bili.UpperR\x06uppers\x12\x1f\n\x03set\x18\x0f\x20\x03(\x0b2\r.bili.Bili\
-    ResR\x03set\"-\n\x08BiliSets\x12!\n\x04list\x18\x0f\x20\x03(\x0b2\r.bili\
-    .BiliSetR\x04listb\x06proto3\
+    \x20\x01(\tR\x05value:\x028\x01\"n\n\x07BiliRes\x12\x12\n\x04bvid\x18\
+    \x01\x20\x01(\tR\x04bvid\x12\x14\n\x05title\x18\x02\x20\x01(\tR\x05title\
+    \x12\x16\n\x06status\x18\x03\x20\x01(\x05R\x06status\x12!\n\x05upper\x18\
+    \x0f\x20\x01(\x0b2\x0b.bili.UpperR\x05upper\"-\n\x05Upper\x12\x10\n\x03m\
+    id\x18\x01\x20\x01(\x03R\x03mid\x12\x12\n\x04name\x18\x02\x20\x01(\tR\
+    \x04name\"\xb2\x01\n\x07BiliSet\x12\x0e\n\x02id\x18\x01\x20\x01(\x03R\
+    \x02id\x12\x14\n\x05title\x18\x02\x20\x01(\tR\x05title\x12\x16\n\x06stat\
+    us\x18\x03\x20\x01(\x05R\x06status\x12\x1f\n\x0bmedia_count\x18\x04\x20\
+    \x01(\x05R\nmediaCount\x12!\n\x05upper\x18\x0e\x20\x01(\x0b2\x0b.bili.Up\
+    perR\x05upper\x12%\n\x06medias\x18\x0f\x20\x03(\x0b2\r.bili.BiliResR\x06\
+    medias\"-\n\x08BiliSets\x12!\n\x04list\x18\x0f\x20\x03(\x0b2\r.bili.Bili\
+    SetR\x04listb\x06proto3\
 ";
 
 /// `FileDescriptorProto` object which was a source for this generated file

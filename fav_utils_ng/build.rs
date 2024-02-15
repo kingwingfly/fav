@@ -30,12 +30,15 @@ impl CustomizeCallback for MyCustomizeCallback {
     fn message(&self, message: &MessageDescriptor) -> Customize {
         let name = message.name();
         match name {
-            "Upper" => Customize::default().before(DERIVE_ATTR),
-            "BiliRes" | "BiliSet" => Customize::default().before(DERIVE_ATTR_STATUS),
+            "Upper" => Customize::default().before(DERIVE_UPPER),
+            "BiliRes" => Customize::default().before(DERIVE_BILIRES),
+            "BiliSet" => Customize::default().before(DERIVE_BILISET),
             _ => Customize::default(),
         }
     }
 }
 
-const DERIVE_ATTR: &str = "#[derive(fav_core::attr::Attr)]";
-const DERIVE_ATTR_STATUS: &str = "#[derive(fav_core::attr::Attr, fav_core::status::Status)]";
+const DERIVE_UPPER: &str = "#[derive(fav_core::attr::Attr)]\n#[attr(id(mid), title(name))]";
+const DERIVE_BILIRES: &str =
+    "#[derive(fav_core::attr::Attr, fav_core::status::Status)]\n#[attr(id(bvid))]";
+const DERIVE_BILISET: &str = "#[derive(fav_core::attr::Attr, fav_core::status::Status)]";

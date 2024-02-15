@@ -132,7 +132,7 @@ impl From<Id<'_>> for i64 {
     fn from(value: Id) -> Self {
         match value {
             Id::I64(id) => id,
-            _ => panic!("Not i32 id"),
+            _ => panic!("Not i64 id"),
         }
     }
 }
@@ -141,7 +141,8 @@ impl From<Id<'_>> for String {
     fn from(value: Id) -> Self {
         match value {
             Id::String(id) => id.to_owned(),
-            _ => panic!("Not i32 id"),
+            Id::I64(id) => id.to_string(),
+            Id::I32(id) => id.to_string(),
         }
     }
 }

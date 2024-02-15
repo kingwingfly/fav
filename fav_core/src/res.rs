@@ -5,12 +5,7 @@ use crate::{attr::Attr, meta::Meta, prelude::Id};
 /// Relations owned by a resource.
 pub trait Res: Meta {
     /// Resource upper.
-    fn uppers(&self) -> impl IntoIterator<Item = &impl Attr>;
-
-    /// Returns an iterator over the resource upper.
-    fn uppers_iter(&self) -> impl Iterator<Item = &impl Attr> {
-        self.uppers().into_iter()
-    }
+    fn upper(&self) -> &impl Attr;
 
     /// Whether the resource belongs to the resource set.
     fn belongs(&self, res_set: &impl ResSet<Self>) -> bool

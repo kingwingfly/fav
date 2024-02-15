@@ -524,8 +524,8 @@ pub struct TestResSet {
     pub title: ::std::string::String,
     // @@protoc_insertion_point(field:data.TestResSet.set)
     pub set: ::std::vec::Vec<TestRes>,
-    // @@protoc_insertion_point(field:data.TestResSet.uppers)
-    pub uppers: ::std::vec::Vec<TestUpper>,
+    // @@protoc_insertion_point(field:data.TestResSet.upper)
+    pub upper: ::protobuf::MessageField<TestUpper>,
     // special fields
     // @@protoc_insertion_point(special_field:data.TestResSet.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
@@ -560,10 +560,10 @@ impl TestResSet {
             |m: &TestResSet| { &m.set },
             |m: &mut TestResSet| { &mut m.set },
         ));
-        fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
-            "uppers",
-            |m: &TestResSet| { &m.uppers },
-            |m: &mut TestResSet| { &mut m.uppers },
+        fields.push(::protobuf::reflect::rt::v2::make_message_field_accessor::<_, TestUpper>(
+            "upper",
+            |m: &TestResSet| { &m.upper },
+            |m: &mut TestResSet| { &mut m.upper },
         ));
         ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<TestResSet>(
             "TestResSet",
@@ -593,7 +593,7 @@ impl ::protobuf::Message for TestResSet {
                     self.set.push(is.read_message()?);
                 },
                 34 => {
-                    self.uppers.push(is.read_message()?);
+                    ::protobuf::rt::read_singular_message_into_field(is, &mut self.upper)?;
                 },
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
@@ -617,10 +617,10 @@ impl ::protobuf::Message for TestResSet {
             let len = value.compute_size();
             my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
         };
-        for value in &self.uppers {
-            let len = value.compute_size();
+        if let Some(v) = self.upper.as_ref() {
+            let len = v.compute_size();
             my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
-        };
+        }
         my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
         self.special_fields.cached_size().set(my_size as u32);
         my_size
@@ -636,9 +636,9 @@ impl ::protobuf::Message for TestResSet {
         for v in &self.set {
             ::protobuf::rt::write_message_field_with_cached_size(3, v, os)?;
         };
-        for v in &self.uppers {
+        if let Some(v) = self.upper.as_ref() {
             ::protobuf::rt::write_message_field_with_cached_size(4, v, os)?;
-        };
+        }
         os.write_unknown_fields(self.special_fields.unknown_fields())?;
         ::std::result::Result::Ok(())
     }
@@ -659,7 +659,7 @@ impl ::protobuf::Message for TestResSet {
         self.id = 0;
         self.title.clear();
         self.set.clear();
-        self.uppers.clear();
+        self.upper.clear();
         self.special_fields.clear();
     }
 
@@ -668,7 +668,7 @@ impl ::protobuf::Message for TestResSet {
             id: 0,
             title: ::std::string::String::new(),
             set: ::std::vec::Vec::new(),
-            uppers: ::std::vec::Vec::new(),
+            upper: ::protobuf::MessageField::none(),
             special_fields: ::protobuf::SpecialFields::new(),
         };
         &instance
@@ -702,8 +702,8 @@ pub struct TestRes {
     pub title: ::std::string::String,
     // @@protoc_insertion_point(field:data.TestRes.status)
     pub status: i32,
-    // @@protoc_insertion_point(field:data.TestRes.uppers)
-    pub uppers: ::std::vec::Vec<TestUpper>,
+    // @@protoc_insertion_point(field:data.TestRes.upper)
+    pub upper: ::protobuf::MessageField<TestUpper>,
     // special fields
     // @@protoc_insertion_point(special_field:data.TestRes.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
@@ -738,10 +738,10 @@ impl TestRes {
             |m: &TestRes| { &m.status },
             |m: &mut TestRes| { &mut m.status },
         ));
-        fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
-            "uppers",
-            |m: &TestRes| { &m.uppers },
-            |m: &mut TestRes| { &mut m.uppers },
+        fields.push(::protobuf::reflect::rt::v2::make_message_field_accessor::<_, TestUpper>(
+            "upper",
+            |m: &TestRes| { &m.upper },
+            |m: &mut TestRes| { &mut m.upper },
         ));
         ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<TestRes>(
             "TestRes",
@@ -771,7 +771,7 @@ impl ::protobuf::Message for TestRes {
                     self.status = is.read_int32()?;
                 },
                 34 => {
-                    self.uppers.push(is.read_message()?);
+                    ::protobuf::rt::read_singular_message_into_field(is, &mut self.upper)?;
                 },
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
@@ -794,10 +794,10 @@ impl ::protobuf::Message for TestRes {
         if self.status != 0 {
             my_size += ::protobuf::rt::int32_size(3, self.status);
         }
-        for value in &self.uppers {
-            let len = value.compute_size();
+        if let Some(v) = self.upper.as_ref() {
+            let len = v.compute_size();
             my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
-        };
+        }
         my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
         self.special_fields.cached_size().set(my_size as u32);
         my_size
@@ -813,9 +813,9 @@ impl ::protobuf::Message for TestRes {
         if self.status != 0 {
             os.write_int32(3, self.status)?;
         }
-        for v in &self.uppers {
+        if let Some(v) = self.upper.as_ref() {
             ::protobuf::rt::write_message_field_with_cached_size(4, v, os)?;
-        };
+        }
         os.write_unknown_fields(self.special_fields.unknown_fields())?;
         ::std::result::Result::Ok(())
     }
@@ -836,7 +836,7 @@ impl ::protobuf::Message for TestRes {
         self.id = 0;
         self.title.clear();
         self.status = 0;
-        self.uppers.clear();
+        self.upper.clear();
         self.special_fields.clear();
     }
 
@@ -845,7 +845,7 @@ impl ::protobuf::Message for TestRes {
             id: 0,
             title: ::std::string::String::new(),
             status: 0,
-            uppers: ::std::vec::Vec::new(),
+            upper: ::protobuf::MessageField::none(),
             special_fields: ::protobuf::SpecialFields::new(),
         };
         &instance
@@ -1019,8 +1019,8 @@ pub struct StatusTest {
     pub title: ::std::string::String,
     // @@protoc_insertion_point(field:data.StatusTest.status)
     pub status: i32,
-    // @@protoc_insertion_point(field:data.StatusTest.uppers)
-    pub uppers: ::std::vec::Vec<TestUpper>,
+    // @@protoc_insertion_point(field:data.StatusTest.upper)
+    pub upper: ::protobuf::MessageField<TestUpper>,
     // special fields
     // @@protoc_insertion_point(special_field:data.StatusTest.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
@@ -1055,10 +1055,10 @@ impl StatusTest {
             |m: &StatusTest| { &m.status },
             |m: &mut StatusTest| { &mut m.status },
         ));
-        fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
-            "uppers",
-            |m: &StatusTest| { &m.uppers },
-            |m: &mut StatusTest| { &mut m.uppers },
+        fields.push(::protobuf::reflect::rt::v2::make_message_field_accessor::<_, TestUpper>(
+            "upper",
+            |m: &StatusTest| { &m.upper },
+            |m: &mut StatusTest| { &mut m.upper },
         ));
         ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<StatusTest>(
             "StatusTest",
@@ -1088,7 +1088,7 @@ impl ::protobuf::Message for StatusTest {
                     self.status = is.read_int32()?;
                 },
                 34 => {
-                    self.uppers.push(is.read_message()?);
+                    ::protobuf::rt::read_singular_message_into_field(is, &mut self.upper)?;
                 },
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
@@ -1111,10 +1111,10 @@ impl ::protobuf::Message for StatusTest {
         if self.status != 0 {
             my_size += ::protobuf::rt::int32_size(3, self.status);
         }
-        for value in &self.uppers {
-            let len = value.compute_size();
+        if let Some(v) = self.upper.as_ref() {
+            let len = v.compute_size();
             my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
-        };
+        }
         my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
         self.special_fields.cached_size().set(my_size as u32);
         my_size
@@ -1130,9 +1130,9 @@ impl ::protobuf::Message for StatusTest {
         if self.status != 0 {
             os.write_int32(3, self.status)?;
         }
-        for v in &self.uppers {
+        if let Some(v) = self.upper.as_ref() {
             ::protobuf::rt::write_message_field_with_cached_size(4, v, os)?;
-        };
+        }
         os.write_unknown_fields(self.special_fields.unknown_fields())?;
         ::std::result::Result::Ok(())
     }
@@ -1153,7 +1153,7 @@ impl ::protobuf::Message for StatusTest {
         self.id = 0;
         self.title.clear();
         self.status = 0;
-        self.uppers.clear();
+        self.upper.clear();
         self.special_fields.clear();
     }
 
@@ -1162,7 +1162,7 @@ impl ::protobuf::Message for StatusTest {
             id: 0,
             title: ::std::string::String::new(),
             status: 0,
-            uppers: ::std::vec::Vec::new(),
+            upper: ::protobuf::MessageField::none(),
             special_fields: ::protobuf::SpecialFields::new(),
         };
         &instance
@@ -1332,20 +1332,20 @@ static file_descriptor_proto_data: &'static [u8] = b"\
     CookiesEntry\x12\x10\n\x03key\x18\x01\x20\x01(\tR\x03key\x12\x14\n\x05va\
     lue\x18\x02\x20\x01(\tR\x05value:\x028\x01\"+\n\x03App\x12$\n\x04sets\
     \x18\x01\x20\x03(\x0b2\x10.data.TestResSetR\x04sets\"3\n\x0bTestResSets\
-    \x12$\n\x04sets\x18\x01\x20\x03(\x0b2\x10.data.TestResSetR\x04sets\"|\n\
+    \x12$\n\x04sets\x18\x01\x20\x03(\x0b2\x10.data.TestResSetR\x04sets\"z\n\
     \nTestResSet\x12\x0e\n\x02id\x18\x01\x20\x01(\x05R\x02id\x12\x14\n\x05ti\
     tle\x18\x02\x20\x01(\tR\x05title\x12\x1f\n\x03set\x18\x03\x20\x03(\x0b2\
-    \r.data.TestResR\x03set\x12'\n\x06uppers\x18\x04\x20\x03(\x0b2\x0f.data.\
-    TestUpperR\x06uppers\"p\n\x07TestRes\x12\x0e\n\x02id\x18\x01\x20\x01(\
-    \x05R\x02id\x12\x14\n\x05title\x18\x02\x20\x01(\tR\x05title\x12\x16\n\
-    \x06status\x18\x03\x20\x01(\x05R\x06status\x12'\n\x06uppers\x18\x04\x20\
-    \x03(\x0b2\x0f.data.TestUpperR\x06uppers\"1\n\tTestUpper\x12\x0e\n\x02id\
-    \x18\x01\x20\x01(\x05R\x02id\x12\x14\n\x05title\x18\x02\x20\x01(\tR\x05t\
-    itle\"s\n\nStatusTest\x12\x0e\n\x02id\x18\x01\x20\x01(\x05R\x02id\x12\
-    \x14\n\x05title\x18\x02\x20\x01(\tR\x05title\x12\x16\n\x06status\x18\x03\
-    \x20\x01(\x05R\x06status\x12'\n\x06uppers\x18\x04\x20\x03(\x0b2\x0f.data\
-    .TestUpperR\x06uppers\"0\n\x08AttrTest\x12\x0e\n\x02id\x18\x01\x20\x01(\
-    \x05R\x02id\x12\x14\n\x05title\x18\x02\x20\x01(\tR\x05titleb\x06proto3\
+    \r.data.TestResR\x03set\x12%\n\x05upper\x18\x04\x20\x01(\x0b2\x0f.data.T\
+    estUpperR\x05upper\"n\n\x07TestRes\x12\x0e\n\x02id\x18\x01\x20\x01(\x05R\
+    \x02id\x12\x14\n\x05title\x18\x02\x20\x01(\tR\x05title\x12\x16\n\x06stat\
+    us\x18\x03\x20\x01(\x05R\x06status\x12%\n\x05upper\x18\x04\x20\x01(\x0b2\
+    \x0f.data.TestUpperR\x05upper\"1\n\tTestUpper\x12\x0e\n\x02id\x18\x01\
+    \x20\x01(\x05R\x02id\x12\x14\n\x05title\x18\x02\x20\x01(\tR\x05title\"q\
+    \n\nStatusTest\x12\x0e\n\x02id\x18\x01\x20\x01(\x05R\x02id\x12\x14\n\x05\
+    title\x18\x02\x20\x01(\tR\x05title\x12\x16\n\x06status\x18\x03\x20\x01(\
+    \x05R\x06status\x12%\n\x05upper\x18\x04\x20\x01(\x0b2\x0f.data.TestUpper\
+    R\x05upper\"0\n\x08AttrTest\x12\x0e\n\x02id\x18\x01\x20\x01(\x05R\x02id\
+    \x12\x14\n\x05title\x18\x02\x20\x01(\tR\x05titleb\x06proto3\
 ";
 
 /// `FileDescriptorProto` object which was a source for this generated file

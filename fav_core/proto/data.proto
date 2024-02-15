@@ -19,14 +19,14 @@ message TestResSet {
     int32 id = 1;
     string title = 2;
     repeated TestRes set = 3;
-    repeated TestUpper uppers = 4;
+    TestUpper upper = 4;
 }
 
 message TestRes {
     int32 id = 1;
     string title = 2;
     int32 status = 3;
-    repeated TestUpper uppers = 4;
+    TestUpper upper = 4;
 }
 
 message TestUpper {
@@ -38,7 +38,7 @@ message StatusTest {
     int32 id = 1;
     string title = 2;
     int32 status = 3;
-    repeated TestUpper uppers = 4;
+    TestUpper upper = 4;
 }
 
 message AttrTest {

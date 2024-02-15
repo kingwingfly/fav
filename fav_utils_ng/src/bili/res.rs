@@ -18,8 +18,8 @@ impl ResSets<BiliSet, BiliRes> for BiliSets {
 }
 
 impl Res for BiliSet {
-    fn uppers(&self) -> impl IntoIterator<Item = &impl Attr> {
-        self.uppers.iter()
+    fn upper(&self) -> &impl Attr {
+        self.upper.as_ref().unwrap()
     }
 }
 
@@ -28,28 +28,28 @@ impl ResSet<BiliRes> for BiliSet {
     where
         BiliRes: 'a,
     {
-        &self.set
+        &self.medias
     }
 
     fn res_mut<'a>(&'a mut self) -> impl IntoIterator<Item = &'a mut BiliRes>
     where
         BiliRes: 'a,
     {
-        &mut self.set
+        &mut self.medias
     }
 
     fn push(&mut self, resource: BiliRes) {
-        self.set.push(resource);
+        self.medias.push(resource);
     }
 
     fn remove(&mut self, id: Id) {
         let id: String = id.into();
-        self.set.retain(|res| res.id != id);
+        self.medias.retain(|res| res.bvid != id);
     }
 }
 
 impl Res for BiliRes {
-    fn uppers(&self) -> impl IntoIterator<Item = &impl Attr> {
-        self.uppers.iter()
+    fn upper(&self) -> &impl Attr {
+        self.upper.as_ref().unwrap()
     }
 }
