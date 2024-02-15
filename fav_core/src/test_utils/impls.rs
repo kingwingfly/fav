@@ -88,8 +88,8 @@ impl Operations<DefaultApiKind> for App {
         todo!()
     }
 
-    async fn fetch_sets(&self) -> FavCoreResult<impl Message> {
-        Ok(TestResSet::default())
+    async fn fetch_sets<T>(&self) -> FavCoreResult<T> {
+        todo!()
     }
 }
 

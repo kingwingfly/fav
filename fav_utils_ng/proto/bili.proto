@@ -18,7 +18,7 @@ message Upper {
 }
 
 message ResSet {
-    string id = 1;
+    int64 id = 1;
     string title = 2;
     int32 status = 3;
     repeated Upper uppers = 14;
@@ -26,5 +26,5 @@ message ResSet {
 }
 
 message ResSets {
-    repeated ResSet sets = 15;
+    repeated ResSet list = 15;
 }

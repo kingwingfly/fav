@@ -490,7 +490,7 @@ impl ::protobuf::reflect::ProtobufValue for Upper {
 pub struct ResSet {
     // message fields
     // @@protoc_insertion_point(field:bili.ResSet.id)
-    pub id: ::std::string::String,
+    pub id: i64,
     // @@protoc_insertion_point(field:bili.ResSet.title)
     pub title: ::std::string::String,
     // @@protoc_insertion_point(field:bili.ResSet.status)
@@ -561,8 +561,8 @@ impl ::protobuf::Message for ResSet {
     fn merge_from(&mut self, is: &mut ::protobuf::CodedInputStream<'_>) -> ::protobuf::Result<()> {
         while let Some(tag) = is.read_raw_tag_or_eof()? {
             match tag {
-                10 => {
-                    self.id = is.read_string()?;
+                8 => {
+                    self.id = is.read_int64()?;
                 },
                 18 => {
                     self.title = is.read_string()?;
@@ -588,8 +588,8 @@ impl ::protobuf::Message for ResSet {
     #[allow(unused_variables)]
     fn compute_size(&self) -> u64 {
         let mut my_size = 0;
-        if !self.id.is_empty() {
-            my_size += ::protobuf::rt::string_size(1, &self.id);
+        if self.id != 0 {
+            my_size += ::protobuf::rt::int64_size(1, self.id);
         }
         if !self.title.is_empty() {
             my_size += ::protobuf::rt::string_size(2, &self.title);
@@ -611,8 +611,8 @@ impl ::protobuf::Message for ResSet {
     }
 
     fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
-        if !self.id.is_empty() {
-            os.write_string(1, &self.id)?;
+        if self.id != 0 {
+            os.write_int64(1, self.id)?;
         }
         if !self.title.is_empty() {
             os.write_string(2, &self.title)?;
@@ -643,7 +643,7 @@ impl ::protobuf::Message for ResSet {
     }
 
     fn clear(&mut self) {
-        self.id.clear();
+        self.id = 0;
         self.title.clear();
         self.status = 0;
         self.uppers.clear();
@@ -653,7 +653,7 @@ impl ::protobuf::Message for ResSet {
 
     fn default_instance() -> &'static ResSet {
         static instance: ResSet = ResSet {
-            id: ::std::string::String::new(),
+            id: 0,
             title: ::std::string::String::new(),
             status: 0,
             uppers: ::std::vec::Vec::new(),
@@ -685,8 +685,8 @@ impl ::protobuf::reflect::ProtobufValue for ResSet {
 #[derive(PartialEq,Clone,Default,Debug)]
 pub struct ResSets {
     // message fields
-    // @@protoc_insertion_point(field:bili.ResSets.sets)
-    pub sets: ::std::vec::Vec<ResSet>,
+    // @@protoc_insertion_point(field:bili.ResSets.list)
+    pub list: ::std::vec::Vec<ResSet>,
     // special fields
     // @@protoc_insertion_point(special_field:bili.ResSets.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
@@ -707,9 +707,9 @@ impl ResSets {
         let mut fields = ::std::vec::Vec::with_capacity(1);
         let mut oneofs = ::std::vec::Vec::with_capacity(0);
         fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
-            "sets",
-            |m: &ResSets| { &m.sets },
-            |m: &mut ResSets| { &mut m.sets },
+            "list",
+            |m: &ResSets| { &m.list },
+            |m: &mut ResSets| { &mut m.list },
         ));
         ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<ResSets>(
             "ResSets",
@@ -730,7 +730,7 @@ impl ::protobuf::Message for ResSets {
         while let Some(tag) = is.read_raw_tag_or_eof()? {
             match tag {
                 122 => {
-                    self.sets.push(is.read_message()?);
+                    self.list.push(is.read_message()?);
                 },
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
@@ -744,7 +744,7 @@ impl ::protobuf::Message for ResSets {
     #[allow(unused_variables)]
     fn compute_size(&self) -> u64 {
         let mut my_size = 0;
-        for value in &self.sets {
+        for value in &self.list {
             let len = value.compute_size();
             my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
         };
@@ -754,7 +754,7 @@ impl ::protobuf::Message for ResSets {
     }
 
     fn write_to_with_cached_sizes(&self, os: &mut ::protobuf::CodedOutputStream<'_>) -> ::protobuf::Result<()> {
-        for v in &self.sets {
+        for v in &self.list {
             ::protobuf::rt::write_message_field_with_cached_size(15, v, os)?;
         };
         os.write_unknown_fields(self.special_fields.unknown_fields())?;
@@ -774,13 +774,13 @@ impl ::protobuf::Message for ResSets {
     }
 
     fn clear(&mut self) {
-        self.sets.clear();
+        self.list.clear();
         self.special_fields.clear();
     }
 
     fn default_instance() -> &'static ResSets {
         static instance: ResSets = ResSets {
-            sets: ::std::vec::Vec::new(),
+            list: ::std::vec::Vec::new(),
             special_fields: ::protobuf::SpecialFields::new(),
         };
         &instance
@@ -813,12 +813,12 @@ static file_descriptor_proto_data: &'static [u8] = b"\
     \x06status\x18\x03\x20\x01(\x05R\x06status\x12#\n\x06uppers\x18\x0f\x20\
     \x03(\x0b2\x0b.bili.UpperR\x06uppers\"-\n\x05Upper\x12\x0e\n\x02id\x18\
     \x01\x20\x01(\tR\x02id\x12\x14\n\x05title\x18\x02\x20\x01(\tR\x05title\"\
-    \x88\x01\n\x06ResSet\x12\x0e\n\x02id\x18\x01\x20\x01(\tR\x02id\x12\x14\n\
-    \x05title\x18\x02\x20\x01(\tR\x05title\x12\x16\n\x06status\x18\x03\x20\
+    \x88\x01\n\x06ResSet\x12\x0e\n\x02id\x18\x01\x20\x01(\x03R\x02id\x12\x14\
+    \n\x05title\x18\x02\x20\x01(\tR\x05title\x12\x16\n\x06status\x18\x03\x20\
     \x01(\x05R\x06status\x12#\n\x06uppers\x18\x0e\x20\x03(\x0b2\x0b.bili.Upp\
     erR\x06uppers\x12\x1b\n\x03set\x18\x0f\x20\x03(\x0b2\t.bili.ResR\x03set\
-    \"+\n\x07ResSets\x12\x20\n\x04sets\x18\x0f\x20\x03(\x0b2\x0c.bili.ResSet\
-    R\x04setsb\x06proto3\
+    \"+\n\x07ResSets\x12\x20\n\x04list\x18\x0f\x20\x03(\x0b2\x0c.bili.ResSet\
+    R\x04listb\x06proto3\
 ";
 
 /// `FileDescriptorProto` object which was a source for this generated file

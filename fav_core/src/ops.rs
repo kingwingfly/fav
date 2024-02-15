@@ -5,7 +5,7 @@ use crate::{
     api::ApiProvider, config::Config, error::FavCoreError, meta::Meta, res::ResSet, FavCoreResult,
 };
 use core::future::Future;
-use protobuf::Message;
+use protobuf::MessageFull;
 use reqwest::{header, Client, Response};
 
 /// Making a client able to perform operations.
@@ -44,7 +44,7 @@ where
     async fn login(&mut self) -> FavCoreResult<()>;
     async fn logout(&mut self) -> FavCoreResult<()>;
     /// Fetch all resource sets
-    async fn fetch_sets(&self) -> FavCoreResult<impl Message>;
+    async fn fetch_sets<T: MessageFull>(&self) -> FavCoreResult<T>;
     /// Fetch one resource set
     async fn fetch_set(&self, resource: &mut impl Meta) -> FavCoreResult<()>;
     /// Fetch one resource

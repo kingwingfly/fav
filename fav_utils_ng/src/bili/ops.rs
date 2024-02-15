@@ -1,14 +1,16 @@
-use std::collections::HashMap;
-
 use super::api::ApiKind;
 use crate::{
     proto::bili::{Bili, ResSets},
-    utils::{parse::resp2serde, qr::show_qr_code},
+    utils::{
+        parse::{resp2proto, resp2serde},
+        qr::show_qr_code,
+    },
     FavUtilsError, FavUtilsResult,
 };
 use fav_core::prelude::*;
-use protobuf::Message;
+use protobuf::MessageFull;
 use reqwest::Response;
+use std::collections::HashMap;
 use tokio::time::{sleep, Duration};
 
 const POLL_INTERVAL: u64 = 3;
@@ -48,12 +50,10 @@ impl Operations<ApiKind> for Bili {
         }
     }
 
-    async fn fetch_sets(&self) -> FavCoreResult<impl Message> {
+    async fn fetch_sets<T: MessageFull>(&self) -> FavCoreResult<T> {
         let params = &[self.cookies().get("DedeUserID").expect(HINT).as_str()];
         let resp = self.request(ApiKind::FetchFavSets, params).await?;
-        let json: serde_json::Value = resp.json().await.unwrap();
-        dbg!(json);
-        Ok(ResSets::default())
+        resp2proto::<T>(resp, "/data").await
     }
 
     async fn fetch_set(&self, resource: &mut impl Meta) -> FavCoreResult<()> {
@@ -100,6 +100,7 @@ mod tests {
     #[tokio::test]
     async fn fetch_test() {
         let bili = Bili::read();
-        bili.fetch_sets().await.unwrap();
+        let sets: ResSets = bili.fetch_sets().await.unwrap();
+        dbg!(sets);
     }
 }
