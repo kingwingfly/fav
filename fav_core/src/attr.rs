@@ -10,12 +10,12 @@ pub use fav_derive::Attr;
 /// # use fav_core::attr::Id;
 /// let id: Id = 123.into();
 /// assert_eq!(id, Id::I32(123));
-/// let id: Id = "123".parse().unwrap();
+/// let id: Id = "123".into();
 /// assert_eq!(id, Id::I32(123));
-/// let id: Id = "68719476735".parse().unwrap();
+/// let id: Id = "68719476735".into();
 /// assert_eq!(id, Id::I64(68719476735)); // 68719476735 is 0xFFFF_FFFF_F, which > i32::MAX
-/// let id: Id = "abc".parse().unwrap();
-/// assert_eq!(id, Id::String("abc".to_owned()));
+/// let id: Id = "abc".into();
+/// assert_eq!(id, Id::String("abc"));
 /// ```
 #[allow(missing_docs)]
 #[derive(Debug, PartialEq)]
