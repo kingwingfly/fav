@@ -66,7 +66,8 @@ pub trait ApiProvider<K> {
 /// The trait `Api` is the base trait for all API endpoints.
 /// This trait should be object-safe.
 /// # Example
-/// See [`ApiProvider`]
+/// See [`ApiProvider`].
+/// For derive example, see [`fav_derive::Api`].g
 pub trait Api {
     /// Provide the api endpoint
     fn endpoint(&self) -> &'static str;
@@ -78,6 +79,8 @@ pub trait Api {
     }
 
     /// Return a `Url` parsed with the API endpoint and the given params.
+    ///
+    /// The number and order of the params should match the keys provided by [`Api::params`].
     fn url(&self, params: &[&str]) -> Url {
         Url::parse_with_params(self.endpoint(), self.params().iter().zip(params.iter())).unwrap()
     }
