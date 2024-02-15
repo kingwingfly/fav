@@ -3,7 +3,7 @@ use fav_core::prelude::*;
 
 impl PathInfo for Bili {
     #[cfg(test)]
-    const PATH: &'static str = "temp/bili";
+    const PATH: &'static str = "temp/temp.bili";
     #[cfg(not(test))]
     const PATH: &'static str = ".fav/bili";
 }
