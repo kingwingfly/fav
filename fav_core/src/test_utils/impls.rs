@@ -1,4 +1,4 @@
-use super::data::{App, TestRes, TestResSet, TestUpper};
+use super::data::{App, TestRes, TestResSet, TestResSets, TestUpper};
 use ::core::future::Future;
 use bitflags::Flags;
 use protobuf::{Message, MessageFull};
@@ -66,32 +66,44 @@ impl ApiProvider<DefaultApiKind> for App {
     }
 }
 
-impl Operations<DefaultApiKind> for App {
+impl ResSets<TestResSet, TestRes> for TestResSets {
+    fn sets<'a>(&'a self) -> impl IntoIterator<Item = &'a TestResSet>
+    where
+        TestResSet: 'a,
+    {
+        &self.sets
+    }
+
+    fn sets_mut<'a>(&'a mut self) -> impl IntoIterator<Item = &'a mut TestResSet>
+    where
+        TestResSet: 'a,
+    {
+        &mut self.sets
+    }
+}
+
+impl Operations<TestResSets, TestResSet, TestRes, DefaultApiKind> for App {
     async fn login(&mut self) -> FavCoreResult<()> {
-        // let resp = self.request(DefaultApiKind::Login, vec![]).await?;
-        Ok(())
+        todo!()
     }
 
     async fn logout(&mut self) -> FavCoreResult<()> {
         todo!()
     }
 
-    async fn fetch_sets<T: MessageFull>(&self) -> FavCoreResult<T> {
+    async fn fetch_sets(&self) -> FavCoreResult<TestResSets> {
         todo!()
     }
 
-    async fn fetch_set<'s, R: Res + 's, S: ResSet<'s, R> + 's>(
-        &self,
-        resource: &mut S,
-    ) -> FavCoreResult<()> {
+    async fn fetch_set(&self, resource: &mut TestResSet) -> FavCoreResult<()> {
         todo!()
     }
 
-    async fn fetch<R: Res>(&self, set: &mut R) -> FavCoreResult<()> {
+    async fn fetch(&self, set: &mut TestRes) -> FavCoreResult<()> {
         todo!()
     }
 
-    async fn pull<R: Res>(&self, resource: &mut R) -> FavCoreResult<()> {
+    async fn pull(&self, resource: &mut TestRes) -> FavCoreResult<()> {
         todo!()
     }
 }
@@ -206,20 +218,26 @@ impl Res for TestResSet {
     }
 }
 
-impl<'s> ResSet<'s, TestRes> for TestResSet {
-    fn res(&'s self) -> impl IntoIterator<Item = &'s TestRes> {
-        &self.sets
+impl ResSet<TestRes> for TestResSet {
+    fn res<'a>(&'a self) -> impl IntoIterator<Item = &'a TestRes>
+    where
+        TestRes: 'a,
+    {
+        &self.set
     }
 
-    fn res_mut(&'s mut self) -> impl IntoIterator<Item = &'s mut TestRes> {
-        &mut self.sets
+    fn res_mut<'a>(&'a mut self) -> impl IntoIterator<Item = &'a mut TestRes>
+    where
+        TestRes: 'a,
+    {
+        &mut self.set
     }
 
     fn push(&mut self, resource: TestRes) {
         todo!()
     }
 
-    fn remove(&mut self, resource: Id) {
+    fn remove(&mut self, id: Id) {
         todo!()
     }
 }
@@ -236,6 +254,6 @@ mod tests {
             status: status.bits(),
             ..Default::default()
         };
-        res_set.sets.push(res);
+        res_set.set.push(res);
     }
 }

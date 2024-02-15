@@ -1,6 +1,6 @@
 use super::api::ApiKind;
 use crate::{
-    proto::bili::Bili,
+    proto::bili::{Bili, BiliRes, BiliSet, BiliSets},
     utils::{
         parse::{resp2proto, resp2serde},
         qr::show_qr_code,
@@ -8,7 +8,6 @@ use crate::{
     FavUtilsError, FavUtilsResult,
 };
 use fav_core::prelude::*;
-use protobuf::MessageFull;
 use reqwest::Response;
 use std::collections::HashMap;
 use tokio::time::{sleep, Duration};
@@ -20,7 +19,7 @@ const EXPIRED_DURATION: u64 = 120;
 const EXPIRED_DURATION: u64 = 3;
 const HINT: &str = "Never Login";
 
-impl Operations<ApiKind> for Bili {
+impl Operations<BiliSets, BiliSet, BiliRes, ApiKind> for Bili {
     async fn login(&mut self) -> FavCoreResult<()> {
         let resp = self.request(ApiKind::Qr, &[]).await?;
         let QrInfo { url, qrcode_key } = resp2serde(resp, "/data").await?;
@@ -50,26 +49,23 @@ impl Operations<ApiKind> for Bili {
         }
     }
 
-    async fn fetch_sets<S: MessageFull>(&self) -> FavCoreResult<S> {
+    async fn fetch_sets(&self) -> FavCoreResult<BiliSets> {
         let params = &[self.cookies().get("DedeUserID").expect(HINT).as_str()];
         let resp = self.request(ApiKind::FetchFavSets, params).await?;
-        resp2proto::<S>(resp, "/data").await
+        resp2proto::<BiliSets>(resp, "/data").await
     }
 
-    async fn fetch_set<'s, R: Res + 's, S: ResSet<'s, R> + 's>(
-        &self,
-        set: &mut S,
-    ) -> FavCoreResult<()> {
+    async fn fetch_set(&self, set: &mut BiliSet) -> FavCoreResult<()> {
         set.on_status(StatusFlags::FETCHED);
         Ok(())
     }
 
-    async fn fetch<R: Meta>(&self, resource: &mut R) -> FavCoreResult<()> {
+    async fn fetch(&self, resource: &mut BiliRes) -> FavCoreResult<()> {
         Ok(())
     }
 
-    async fn pull<R: Meta>(&self, resource: &mut R) -> FavCoreResult<()> {
-        todo!()
+    async fn pull(&self, resource: &mut BiliRes) -> FavCoreResult<()> {
+        Ok(())
     }
 }
 

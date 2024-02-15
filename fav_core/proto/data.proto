@@ -11,10 +11,14 @@ message App {
     repeated TestResSet sets = 1;
 }
 
+message TestResSets {
+    repeated TestResSet sets = 1;
+}
+
 message TestResSet {
     int32 id = 1;
     string title = 2;
-    repeated TestRes sets = 3;
+    repeated TestRes set = 3;
     repeated TestUpper uppers = 4;
 }
 

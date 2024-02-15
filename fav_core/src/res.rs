@@ -4,16 +4,16 @@ use crate::{attr::Attr, meta::Meta, prelude::Id};
 
 /// Relations owned by a resource.
 pub trait Res: Meta {
-    /// Resource's upper.
+    /// Resource upper.
     fn uppers(&self) -> impl IntoIterator<Item = &impl Attr>;
 
-    /// Returns an iterator over the resource's upper.
+    /// Returns an iterator over the resource upper.
     fn uppers_iter(&self) -> impl Iterator<Item = &impl Attr> {
         self.uppers().into_iter()
     }
 
     /// Whether the resource belongs to the resource set.
-    fn belongs<'s>(&'s self, res_set: &'s impl ResSet<'s, Self>) -> bool
+    fn belongs(&self, res_set: &impl ResSet<Self>) -> bool
     where
         Self: Sized,
     {
@@ -23,48 +23,72 @@ pub trait Res: Meta {
 }
 
 /// Relations owned by a resource set.
-pub trait ResSet<'s, R: Res + 's>: Res {
+pub trait ResSet<R: Res>: Res {
     /// The &resource that the resource set contains.
-    fn res(&'s self) -> impl IntoIterator<Item = &'s R>;
+    fn res<'a>(&'a self) -> impl IntoIterator<Item = &'a R>
+    where
+        R: 'a;
     /// The &mut resource that the resource set contains.
-    fn res_mut(&'s mut self) -> impl IntoIterator<Item = &'s mut R>;
+    fn res_mut<'a>(&'a mut self) -> impl IntoIterator<Item = &'a mut R>
+    where
+        R: 'a;
     /// Push a resource to the set.
     fn push(&mut self, resource: R);
     /// Remove a resource from the set.
     fn remove(&mut self, id: Id);
 
     /// The &resource that the resource set contains.
-    fn iter(&'s self) -> impl Iterator<Item = &'s R> {
+    fn iter<'a>(&'a self) -> impl Iterator<Item = &'a R>
+    where
+        R: 'a,
+    {
         self.res().into_iter()
     }
     /// The &mut resource that the resource set contains.
-    fn iter_mut(&'s mut self) -> impl Iterator<Item = &'s mut R> {
+    fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut R>
+    where
+        R: 'a,
+    {
         self.res_mut().into_iter()
     }
     /// Whether the set contains the resource.
-    fn contains(&'s self, resource: &R) -> bool {
+    fn contains(&self, resource: &R) -> bool {
         let id = resource.id();
         self.iter().any(|r| r.id() == id)
     }
 }
 
 /// Relations owned by a resource sets.
-pub trait ResSets<'s, R: Res + 's, S: ResSet<'s, R> + 's> {
+pub trait ResSets<S, R>
+where
+    S: ResSet<R>,
+    R: Res,
+{
     /// The &set that the resource sets contains.
-    fn sets(&'s self) -> impl IntoIterator<Item = &'s S>;
+    fn sets<'a>(&'a self) -> impl IntoIterator<Item = &'a S>
+    where
+        S: 'a;
     /// The &mut set that the resource sets contains.
-    fn sets_mut(&'s mut self) -> impl IntoIterator<Item = &'s mut S>;
+    fn sets_mut<'a>(&'a mut self) -> impl IntoIterator<Item = &'a mut S>
+    where
+        S: 'a;
 
     /// The &set that the resource sets contains.
-    fn iter(&'s self) -> impl Iterator<Item = &'s S> {
+    fn iter<'a>(&'a self) -> impl Iterator<Item = &'a S>
+    where
+        S: 'a,
+    {
         self.sets().into_iter()
     }
     /// The &mut set that the resource sets contains.
-    fn iter_mut(&'s mut self) -> impl Iterator<Item = &'s mut S> {
+    fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut S>
+    where
+        S: 'a,
+    {
         self.sets_mut().into_iter()
     }
     /// Whether the sets contains the resource set.
-    fn contains(&'s self, set: &S) -> bool {
+    fn contains(&self, set: &S) -> bool {
         let id = set.id();
         self.iter().any(|r| r.id() == id)
     }

@@ -5,7 +5,7 @@ use crate::{
     api::ApiProvider,
     config::Config,
     error::FavCoreError,
-    meta::Meta,
+    prelude::ResSets,
     res::{Res, ResSet},
     FavCoreResult,
 };
@@ -42,29 +42,29 @@ use reqwest::{header, Client, Response};
 /// after your editor generating the methods, change `LocalOperations` to `Operations`.
 #[allow(missing_docs)]
 #[trait_variant::make(Operations: Send)]
-pub trait LocalOperations<K>: ApiProvider<K> + Config
+pub trait LocalOperations<SS, S, R, K>: ApiProvider<K> + Config
 where
+    SS: ResSets<S, R> + MessageFull,
+    S: ResSet<R>,
+    R: Res,
     K: Send,
 {
     async fn login(&mut self) -> FavCoreResult<()>;
     async fn logout(&mut self) -> FavCoreResult<()>;
     /// Fetch all resource sets
-    async fn fetch_sets<T: MessageFull>(&self) -> FavCoreResult<T>;
+    async fn fetch_sets(&self) -> FavCoreResult<SS>;
     /// Fetch one resource set
-    async fn fetch_set<'s, R: Res + 's, S: ResSet<'s, R> + 's>(
-        &self,
-        resource: &mut S,
-    ) -> FavCoreResult<()>;
+    async fn fetch_set(&self, set: &mut S) -> FavCoreResult<()>;
     /// Fetch one resource
     /// # Caution
     /// One needs to handle Ctrl-C with `tokio::signal::ctrl_c` and `tokio::select!`,
     /// and return [`FavCoreError::Cancel`]
-    async fn fetch<R: Res>(&self, set: &mut R) -> FavCoreResult<()>;
+    async fn fetch(&self, resource: &mut R) -> FavCoreResult<()>;
     /// Pull one resource.
     /// # Caution
     /// One needs to handle Ctrl-C with `tokio::signal::ctrl_c` and `tokio::select!`,
     /// and return [`FavCoreError::Cancel`]
-    async fn pull<R: Res>(&self, resource: &mut R) -> FavCoreResult<()>;
+    async fn pull(&self, resource: &mut R) -> FavCoreResult<()>;
 
     /// Return a `&'static reqwest::Client`, use it to perform operations during the lifetime of the client.
     /// # Example
@@ -111,15 +111,16 @@ where
 /// `LocalOperationsExt`, including methods to batch fetch and pull, however,
 /// it is synchronize since methods in [`LocalOperations`] is not `Send`.
 /// See [`Operations`] and [`OperationsExt`] for asynchronous version.
-pub trait LocalOperationsExt<'s, K, R, S>: LocalOperations<K>
+pub trait LocalOperationsExt<SS, S, R, K>: LocalOperations<SS, S, R, K>
 where
+    SS: ResSets<S, R> + MessageFull,
+    S: ResSet<R>,
+    R: Res,
     K: Send,
-    R: Res + 's,
-    S: ResSet<'s, R> + 's,
 {
     /// **Synchronously** fetch all resources using [`LocalOperations::fetch`],
     /// since `async trait` is not Send in rust by now.
-    fn fetch_all(&self, resources: &'s mut S) -> impl Future<Output = FavCoreResult<()>> {
+    fn fetch_all(&self, resources: &mut S) -> impl Future<Output = FavCoreResult<()>> {
         async {
             for r in resources.iter_mut() {
                 if let Err(e) = self.fetch(r).await {
@@ -135,7 +136,7 @@ where
 
     /// **Synchronously** pull all resources using [`LocalOperations::pull`],
     /// since `async trait` is not Send in rust by now.
-    fn pull_all(&self, resources: &'s mut S) -> impl Future<Output = FavCoreResult<()>> {
+    fn pull_all(&self, resources: &mut S) -> impl Future<Output = FavCoreResult<()>> {
         async {
             for r in resources.iter_mut() {
                 if let Err(e) = self.pull(r).await {
@@ -150,17 +151,23 @@ where
     }
 }
 
-impl<'s, T: LocalOperations<K>, K: Send, R: Res + 's, S: ResSet<'s, R> + 's>
-    LocalOperationsExt<'s, K, R, S> for T
+impl<T, SS, S, R, K> LocalOperationsExt<SS, S, R, K> for T
+where
+    T: LocalOperations<SS, S, R, K>,
+    SS: ResSets<S, R> + MessageFull,
+    S: ResSet<R>,
+    R: Res,
+    K: Send,
 {
 }
 
 /// `OperationsExt`, including methods to batch fetch and pull.
-pub trait OperationsExt<K, R, S>: Operations<K>
+pub trait OperationsExt<SS, S, R, K>: Operations<SS, S, R, K>
 where
-    K: Send + 'static,
+    SS: ResSets<S, R> + MessageFull + 'static,
+    S: ResSet<R> + 'static,
     R: Res + 'static,
-    S: ResSet<'static, R> + 'static,
+    K: Send + 'static,
 {
     /// **Asynchronously** fetch resourses using [`Operations::fetch`].
     fn fetch_all(
@@ -221,7 +228,12 @@ where
     }
 }
 
-impl<T: Operations<K>, K: Send + 'static, R: Res + 'static, S: ResSet<'static, R> + 'static>
-    OperationsExt<K, R, S> for T
+impl<T, SS, S, R, K> OperationsExt<SS, S, R, K> for T
+where
+    T: Operations<SS, S, R, K>,
+    SS: ResSets<S, R> + MessageFull + 'static,
+    S: ResSet<R> + 'static,
+    R: Res + 'static,
+    K: Send + 'static,
 {
 }

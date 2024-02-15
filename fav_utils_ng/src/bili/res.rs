@@ -1,13 +1,19 @@
 use crate::proto::bili::{BiliRes, BiliSet, BiliSets};
 use fav_core::prelude::*;
 
-impl<'s> ResSets<'s, BiliRes, BiliSet> for BiliSets {
-    fn sets(&'s self) -> impl IntoIterator<Item = &'s BiliSet> {
-        self.list.iter()
+impl ResSets<BiliSet, BiliRes> for BiliSets {
+    fn sets<'a>(&'a self) -> impl IntoIterator<Item = &'a BiliSet>
+    where
+        BiliRes: 'a,
+    {
+        &self.list
     }
 
-    fn sets_mut(&'s mut self) -> impl IntoIterator<Item = &'s mut BiliSet> {
-        self.list.iter_mut()
+    fn sets_mut<'a>(&'a mut self) -> impl IntoIterator<Item = &'a mut BiliSet>
+    where
+        BiliRes: 'a,
+    {
+        &mut self.list
     }
 }
 
@@ -17,13 +23,19 @@ impl Res for BiliSet {
     }
 }
 
-impl<'s> ResSet<'s, BiliRes> for BiliSet {
-    fn res(&'s self) -> impl IntoIterator<Item = &'s BiliRes> {
-        self.set.iter()
+impl ResSet<BiliRes> for BiliSet {
+    fn res<'a>(&'a self) -> impl IntoIterator<Item = &'a BiliRes>
+    where
+        BiliRes: 'a,
+    {
+        &self.set
     }
 
-    fn res_mut(&'s mut self) -> impl IntoIterator<Item = &'s mut BiliRes> {
-        self.set.iter_mut()
+    fn res_mut<'a>(&'a mut self) -> impl IntoIterator<Item = &'a mut BiliRes>
+    where
+        BiliRes: 'a,
+    {
+        &mut self.set
     }
 
     fn push(&mut self, resource: BiliRes) {
