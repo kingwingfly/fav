@@ -5,7 +5,7 @@ message Bili {
     map<string, string> cookies = 1;
 }
 
-message Res {
+message BiliRes {
     string id = 1;
     string title = 2;
     int32 status = 3;
@@ -17,14 +17,14 @@ message Upper {
     string title = 2;
 }
 
-message ResSet {
+message BiliSet {
     int64 id = 1;
     string title = 2;
     int32 status = 3;
     repeated Upper uppers = 14;
-    repeated Res set = 15;
+    repeated BiliRes set = 15;
 }
 
-message ResSets {
-    repeated ResSet list = 15;
+message BiliSets {
+    repeated BiliSet list = 15;
 }

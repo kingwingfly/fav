@@ -1,6 +1,6 @@
 use super::api::ApiKind;
 use crate::{
-    proto::bili::{Bili, ResSets},
+    proto::bili::Bili,
     utils::{
         parse::{resp2proto, resp2serde},
         qr::show_qr_code,
@@ -50,21 +50,25 @@ impl Operations<ApiKind> for Bili {
         }
     }
 
-    async fn fetch_sets<T: MessageFull>(&self) -> FavCoreResult<T> {
+    async fn fetch_sets<S: MessageFull>(&self) -> FavCoreResult<S> {
         let params = &[self.cookies().get("DedeUserID").expect(HINT).as_str()];
         let resp = self.request(ApiKind::FetchFavSets, params).await?;
-        resp2proto::<T>(resp, "/data").await
+        resp2proto::<S>(resp, "/data").await
     }
 
-    async fn fetch_set(&self, resource: &mut impl Meta) -> FavCoreResult<()> {
-        todo!()
-    }
-
-    async fn fetch(&self, resource: &mut impl Meta) -> FavCoreResult<()> {
+    async fn fetch_set<'s, R: Res + 's, S: ResSet<'s, R> + 's>(
+        &self,
+        set: &mut S,
+    ) -> FavCoreResult<()> {
+        set.on_status(StatusFlags::FETCHED);
         Ok(())
     }
 
-    async fn pull(&self, resource: &mut impl Meta) -> FavCoreResult<()> {
+    async fn fetch<R: Meta>(&self, resource: &mut R) -> FavCoreResult<()> {
+        Ok(())
+    }
+
+    async fn pull<R: Meta>(&self, resource: &mut R) -> FavCoreResult<()> {
         todo!()
     }
 }
@@ -89,6 +93,7 @@ fn try_extract_cookie(resp: &Response) -> FavUtilsResult<HashMap<String, String>
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::proto::bili::BiliSets;
 
     #[tokio::test]
     #[should_panic(expected = "Expired")]
@@ -100,6 +105,8 @@ mod tests {
     #[tokio::test]
     async fn fetch_test() {
         let bili = Bili::read();
-        let sets: ResSets = bili.fetch_sets().await.unwrap();
+        let mut sets: BiliSets = bili.fetch_sets().await.unwrap();
+        let set = sets.iter_mut().next().unwrap();
+        bili.fetch_set(set).await.unwrap();
     }
 }

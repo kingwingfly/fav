@@ -1,4 +1,4 @@
-use crate::proto::bili::{Bili, ResSets};
+use crate::proto::bili::{Bili, BiliSets};
 use fav_core::prelude::*;
 
 impl PathInfo for Bili {
@@ -8,7 +8,7 @@ impl PathInfo for Bili {
     const PATH: &'static str = ".fav/bili";
 }
 
-impl PathInfo for ResSets {
+impl PathInfo for BiliSets {
     #[cfg(test)]
     const PATH: &'static str = "temp/temp.sets";
     #[cfg(not(test))]
@@ -21,7 +21,7 @@ impl Drop for Bili {
     }
 }
 
-impl Drop for ResSets {
+impl Drop for BiliSets {
     fn drop(&mut self) {
         self.write();
     }

@@ -166,31 +166,31 @@ impl ::protobuf::reflect::ProtobufValue for Bili {
 }
 
 #[derive(fav_core::attr::Attr, fav_core::status::Status)]
-// @@protoc_insertion_point(message:bili.Res)
+// @@protoc_insertion_point(message:bili.BiliRes)
 #[derive(PartialEq,Clone,Default,Debug)]
-pub struct Res {
+pub struct BiliRes {
     // message fields
-    // @@protoc_insertion_point(field:bili.Res.id)
+    // @@protoc_insertion_point(field:bili.BiliRes.id)
     pub id: ::std::string::String,
-    // @@protoc_insertion_point(field:bili.Res.title)
+    // @@protoc_insertion_point(field:bili.BiliRes.title)
     pub title: ::std::string::String,
-    // @@protoc_insertion_point(field:bili.Res.status)
+    // @@protoc_insertion_point(field:bili.BiliRes.status)
     pub status: i32,
-    // @@protoc_insertion_point(field:bili.Res.uppers)
+    // @@protoc_insertion_point(field:bili.BiliRes.uppers)
     pub uppers: ::std::vec::Vec<Upper>,
     // special fields
-    // @@protoc_insertion_point(special_field:bili.Res.special_fields)
+    // @@protoc_insertion_point(special_field:bili.BiliRes.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
 }
 
-impl<'a> ::std::default::Default for &'a Res {
-    fn default() -> &'a Res {
-        <Res as ::protobuf::Message>::default_instance()
+impl<'a> ::std::default::Default for &'a BiliRes {
+    fn default() -> &'a BiliRes {
+        <BiliRes as ::protobuf::Message>::default_instance()
     }
 }
 
-impl Res {
-    pub fn new() -> Res {
+impl BiliRes {
+    pub fn new() -> BiliRes {
         ::std::default::Default::default()
     }
 
@@ -199,34 +199,34 @@ impl Res {
         let mut oneofs = ::std::vec::Vec::with_capacity(0);
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
             "id",
-            |m: &Res| { &m.id },
-            |m: &mut Res| { &mut m.id },
+            |m: &BiliRes| { &m.id },
+            |m: &mut BiliRes| { &mut m.id },
         ));
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
             "title",
-            |m: &Res| { &m.title },
-            |m: &mut Res| { &mut m.title },
+            |m: &BiliRes| { &m.title },
+            |m: &mut BiliRes| { &mut m.title },
         ));
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
             "status",
-            |m: &Res| { &m.status },
-            |m: &mut Res| { &mut m.status },
+            |m: &BiliRes| { &m.status },
+            |m: &mut BiliRes| { &mut m.status },
         ));
         fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
             "uppers",
-            |m: &Res| { &m.uppers },
-            |m: &mut Res| { &mut m.uppers },
+            |m: &BiliRes| { &m.uppers },
+            |m: &mut BiliRes| { &mut m.uppers },
         ));
-        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<Res>(
-            "Res",
+        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<BiliRes>(
+            "BiliRes",
             fields,
             oneofs,
         )
     }
 }
 
-impl ::protobuf::Message for Res {
-    const NAME: &'static str = "Res";
+impl ::protobuf::Message for BiliRes {
+    const NAME: &'static str = "BiliRes";
 
     fn is_initialized(&self) -> bool {
         true
@@ -302,8 +302,8 @@ impl ::protobuf::Message for Res {
         &mut self.special_fields
     }
 
-    fn new() -> Res {
-        Res::new()
+    fn new() -> BiliRes {
+        BiliRes::new()
     }
 
     fn clear(&mut self) {
@@ -314,8 +314,8 @@ impl ::protobuf::Message for Res {
         self.special_fields.clear();
     }
 
-    fn default_instance() -> &'static Res {
-        static instance: Res = Res {
+    fn default_instance() -> &'static BiliRes {
+        static instance: BiliRes = BiliRes {
             id: ::std::string::String::new(),
             title: ::std::string::String::new(),
             status: 0,
@@ -326,20 +326,20 @@ impl ::protobuf::Message for Res {
     }
 }
 
-impl ::protobuf::MessageFull for Res {
+impl ::protobuf::MessageFull for BiliRes {
     fn descriptor() -> ::protobuf::reflect::MessageDescriptor {
         static descriptor: ::protobuf::rt::Lazy<::protobuf::reflect::MessageDescriptor> = ::protobuf::rt::Lazy::new();
-        descriptor.get(|| file_descriptor().message_by_package_relative_name("Res").unwrap()).clone()
+        descriptor.get(|| file_descriptor().message_by_package_relative_name("BiliRes").unwrap()).clone()
     }
 }
 
-impl ::std::fmt::Display for Res {
+impl ::std::fmt::Display for BiliRes {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         ::protobuf::text_format::fmt(self, f)
     }
 }
 
-impl ::protobuf::reflect::ProtobufValue for Res {
+impl ::protobuf::reflect::ProtobufValue for BiliRes {
     type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
 }
 
@@ -485,33 +485,33 @@ impl ::protobuf::reflect::ProtobufValue for Upper {
 }
 
 #[derive(fav_core::attr::Attr, fav_core::status::Status)]
-// @@protoc_insertion_point(message:bili.ResSet)
+// @@protoc_insertion_point(message:bili.BiliSet)
 #[derive(PartialEq,Clone,Default,Debug)]
-pub struct ResSet {
+pub struct BiliSet {
     // message fields
-    // @@protoc_insertion_point(field:bili.ResSet.id)
+    // @@protoc_insertion_point(field:bili.BiliSet.id)
     pub id: i64,
-    // @@protoc_insertion_point(field:bili.ResSet.title)
+    // @@protoc_insertion_point(field:bili.BiliSet.title)
     pub title: ::std::string::String,
-    // @@protoc_insertion_point(field:bili.ResSet.status)
+    // @@protoc_insertion_point(field:bili.BiliSet.status)
     pub status: i32,
-    // @@protoc_insertion_point(field:bili.ResSet.uppers)
+    // @@protoc_insertion_point(field:bili.BiliSet.uppers)
     pub uppers: ::std::vec::Vec<Upper>,
-    // @@protoc_insertion_point(field:bili.ResSet.set)
-    pub set: ::std::vec::Vec<Res>,
+    // @@protoc_insertion_point(field:bili.BiliSet.set)
+    pub set: ::std::vec::Vec<BiliRes>,
     // special fields
-    // @@protoc_insertion_point(special_field:bili.ResSet.special_fields)
+    // @@protoc_insertion_point(special_field:bili.BiliSet.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
 }
 
-impl<'a> ::std::default::Default for &'a ResSet {
-    fn default() -> &'a ResSet {
-        <ResSet as ::protobuf::Message>::default_instance()
+impl<'a> ::std::default::Default for &'a BiliSet {
+    fn default() -> &'a BiliSet {
+        <BiliSet as ::protobuf::Message>::default_instance()
     }
 }
 
-impl ResSet {
-    pub fn new() -> ResSet {
+impl BiliSet {
+    pub fn new() -> BiliSet {
         ::std::default::Default::default()
     }
 
@@ -520,39 +520,39 @@ impl ResSet {
         let mut oneofs = ::std::vec::Vec::with_capacity(0);
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
             "id",
-            |m: &ResSet| { &m.id },
-            |m: &mut ResSet| { &mut m.id },
+            |m: &BiliSet| { &m.id },
+            |m: &mut BiliSet| { &mut m.id },
         ));
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
             "title",
-            |m: &ResSet| { &m.title },
-            |m: &mut ResSet| { &mut m.title },
+            |m: &BiliSet| { &m.title },
+            |m: &mut BiliSet| { &mut m.title },
         ));
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
             "status",
-            |m: &ResSet| { &m.status },
-            |m: &mut ResSet| { &mut m.status },
+            |m: &BiliSet| { &m.status },
+            |m: &mut BiliSet| { &mut m.status },
         ));
         fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
             "uppers",
-            |m: &ResSet| { &m.uppers },
-            |m: &mut ResSet| { &mut m.uppers },
+            |m: &BiliSet| { &m.uppers },
+            |m: &mut BiliSet| { &mut m.uppers },
         ));
         fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
             "set",
-            |m: &ResSet| { &m.set },
-            |m: &mut ResSet| { &mut m.set },
+            |m: &BiliSet| { &m.set },
+            |m: &mut BiliSet| { &mut m.set },
         ));
-        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<ResSet>(
-            "ResSet",
+        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<BiliSet>(
+            "BiliSet",
             fields,
             oneofs,
         )
     }
 }
 
-impl ::protobuf::Message for ResSet {
-    const NAME: &'static str = "ResSet";
+impl ::protobuf::Message for BiliSet {
+    const NAME: &'static str = "BiliSet";
 
     fn is_initialized(&self) -> bool {
         true
@@ -638,8 +638,8 @@ impl ::protobuf::Message for ResSet {
         &mut self.special_fields
     }
 
-    fn new() -> ResSet {
-        ResSet::new()
+    fn new() -> BiliSet {
+        BiliSet::new()
     }
 
     fn clear(&mut self) {
@@ -651,8 +651,8 @@ impl ::protobuf::Message for ResSet {
         self.special_fields.clear();
     }
 
-    fn default_instance() -> &'static ResSet {
-        static instance: ResSet = ResSet {
+    fn default_instance() -> &'static BiliSet {
+        static instance: BiliSet = BiliSet {
             id: 0,
             title: ::std::string::String::new(),
             status: 0,
@@ -664,42 +664,42 @@ impl ::protobuf::Message for ResSet {
     }
 }
 
-impl ::protobuf::MessageFull for ResSet {
+impl ::protobuf::MessageFull for BiliSet {
     fn descriptor() -> ::protobuf::reflect::MessageDescriptor {
         static descriptor: ::protobuf::rt::Lazy<::protobuf::reflect::MessageDescriptor> = ::protobuf::rt::Lazy::new();
-        descriptor.get(|| file_descriptor().message_by_package_relative_name("ResSet").unwrap()).clone()
+        descriptor.get(|| file_descriptor().message_by_package_relative_name("BiliSet").unwrap()).clone()
     }
 }
 
-impl ::std::fmt::Display for ResSet {
+impl ::std::fmt::Display for BiliSet {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         ::protobuf::text_format::fmt(self, f)
     }
 }
 
-impl ::protobuf::reflect::ProtobufValue for ResSet {
+impl ::protobuf::reflect::ProtobufValue for BiliSet {
     type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
 }
 
-// @@protoc_insertion_point(message:bili.ResSets)
+// @@protoc_insertion_point(message:bili.BiliSets)
 #[derive(PartialEq,Clone,Default,Debug)]
-pub struct ResSets {
+pub struct BiliSets {
     // message fields
-    // @@protoc_insertion_point(field:bili.ResSets.list)
-    pub list: ::std::vec::Vec<ResSet>,
+    // @@protoc_insertion_point(field:bili.BiliSets.list)
+    pub list: ::std::vec::Vec<BiliSet>,
     // special fields
-    // @@protoc_insertion_point(special_field:bili.ResSets.special_fields)
+    // @@protoc_insertion_point(special_field:bili.BiliSets.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
 }
 
-impl<'a> ::std::default::Default for &'a ResSets {
-    fn default() -> &'a ResSets {
-        <ResSets as ::protobuf::Message>::default_instance()
+impl<'a> ::std::default::Default for &'a BiliSets {
+    fn default() -> &'a BiliSets {
+        <BiliSets as ::protobuf::Message>::default_instance()
     }
 }
 
-impl ResSets {
-    pub fn new() -> ResSets {
+impl BiliSets {
+    pub fn new() -> BiliSets {
         ::std::default::Default::default()
     }
 
@@ -708,19 +708,19 @@ impl ResSets {
         let mut oneofs = ::std::vec::Vec::with_capacity(0);
         fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
             "list",
-            |m: &ResSets| { &m.list },
-            |m: &mut ResSets| { &mut m.list },
+            |m: &BiliSets| { &m.list },
+            |m: &mut BiliSets| { &mut m.list },
         ));
-        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<ResSets>(
-            "ResSets",
+        ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<BiliSets>(
+            "BiliSets",
             fields,
             oneofs,
         )
     }
 }
 
-impl ::protobuf::Message for ResSets {
-    const NAME: &'static str = "ResSets";
+impl ::protobuf::Message for BiliSets {
+    const NAME: &'static str = "BiliSets";
 
     fn is_initialized(&self) -> bool {
         true
@@ -769,8 +769,8 @@ impl ::protobuf::Message for ResSets {
         &mut self.special_fields
     }
 
-    fn new() -> ResSets {
-        ResSets::new()
+    fn new() -> BiliSets {
+        BiliSets::new()
     }
 
     fn clear(&mut self) {
@@ -778,8 +778,8 @@ impl ::protobuf::Message for ResSets {
         self.special_fields.clear();
     }
 
-    fn default_instance() -> &'static ResSets {
-        static instance: ResSets = ResSets {
+    fn default_instance() -> &'static BiliSets {
+        static instance: BiliSets = BiliSets {
             list: ::std::vec::Vec::new(),
             special_fields: ::protobuf::SpecialFields::new(),
         };
@@ -787,20 +787,20 @@ impl ::protobuf::Message for ResSets {
     }
 }
 
-impl ::protobuf::MessageFull for ResSets {
+impl ::protobuf::MessageFull for BiliSets {
     fn descriptor() -> ::protobuf::reflect::MessageDescriptor {
         static descriptor: ::protobuf::rt::Lazy<::protobuf::reflect::MessageDescriptor> = ::protobuf::rt::Lazy::new();
-        descriptor.get(|| file_descriptor().message_by_package_relative_name("ResSets").unwrap()).clone()
+        descriptor.get(|| file_descriptor().message_by_package_relative_name("BiliSets").unwrap()).clone()
     }
 }
 
-impl ::std::fmt::Display for ResSets {
+impl ::std::fmt::Display for BiliSets {
     fn fmt(&self, f: &mut ::std::fmt::Formatter<'_>) -> ::std::fmt::Result {
         ::protobuf::text_format::fmt(self, f)
     }
 }
 
-impl ::protobuf::reflect::ProtobufValue for ResSets {
+impl ::protobuf::reflect::ProtobufValue for BiliSets {
     type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
 }
 
@@ -808,17 +808,17 @@ static file_descriptor_proto_data: &'static [u8] = b"\
     \n\nbili.proto\x12\x04bili\"u\n\x04Bili\x121\n\x07cookies\x18\x01\x20\
     \x03(\x0b2\x17.bili.Bili.CookiesEntryR\x07cookies\x1a:\n\x0cCookiesEntry\
     \x12\x10\n\x03key\x18\x01\x20\x01(\tR\x03key\x12\x14\n\x05value\x18\x02\
-    \x20\x01(\tR\x05value:\x028\x01\"h\n\x03Res\x12\x0e\n\x02id\x18\x01\x20\
-    \x01(\tR\x02id\x12\x14\n\x05title\x18\x02\x20\x01(\tR\x05title\x12\x16\n\
-    \x06status\x18\x03\x20\x01(\x05R\x06status\x12#\n\x06uppers\x18\x0f\x20\
-    \x03(\x0b2\x0b.bili.UpperR\x06uppers\"-\n\x05Upper\x12\x0e\n\x02id\x18\
-    \x01\x20\x01(\tR\x02id\x12\x14\n\x05title\x18\x02\x20\x01(\tR\x05title\"\
-    \x88\x01\n\x06ResSet\x12\x0e\n\x02id\x18\x01\x20\x01(\x03R\x02id\x12\x14\
-    \n\x05title\x18\x02\x20\x01(\tR\x05title\x12\x16\n\x06status\x18\x03\x20\
-    \x01(\x05R\x06status\x12#\n\x06uppers\x18\x0e\x20\x03(\x0b2\x0b.bili.Upp\
-    erR\x06uppers\x12\x1b\n\x03set\x18\x0f\x20\x03(\x0b2\t.bili.ResR\x03set\
-    \"+\n\x07ResSets\x12\x20\n\x04list\x18\x0f\x20\x03(\x0b2\x0c.bili.ResSet\
-    R\x04listb\x06proto3\
+    \x20\x01(\tR\x05value:\x028\x01\"l\n\x07BiliRes\x12\x0e\n\x02id\x18\x01\
+    \x20\x01(\tR\x02id\x12\x14\n\x05title\x18\x02\x20\x01(\tR\x05title\x12\
+    \x16\n\x06status\x18\x03\x20\x01(\x05R\x06status\x12#\n\x06uppers\x18\
+    \x0f\x20\x03(\x0b2\x0b.bili.UpperR\x06uppers\"-\n\x05Upper\x12\x0e\n\x02\
+    id\x18\x01\x20\x01(\tR\x02id\x12\x14\n\x05title\x18\x02\x20\x01(\tR\x05t\
+    itle\"\x8d\x01\n\x07BiliSet\x12\x0e\n\x02id\x18\x01\x20\x01(\x03R\x02id\
+    \x12\x14\n\x05title\x18\x02\x20\x01(\tR\x05title\x12\x16\n\x06status\x18\
+    \x03\x20\x01(\x05R\x06status\x12#\n\x06uppers\x18\x0e\x20\x03(\x0b2\x0b.\
+    bili.UpperR\x06uppers\x12\x1f\n\x03set\x18\x0f\x20\x03(\x0b2\r.bili.Bili\
+    ResR\x03set\"-\n\x08BiliSets\x12!\n\x04list\x18\x0f\x20\x03(\x0b2\r.bili\
+    .BiliSetR\x04listb\x06proto3\
 ";
 
 /// `FileDescriptorProto` object which was a source for this generated file
@@ -838,10 +838,10 @@ pub fn file_descriptor() -> &'static ::protobuf::reflect::FileDescriptor {
             let mut deps = ::std::vec::Vec::with_capacity(0);
             let mut messages = ::std::vec::Vec::with_capacity(5);
             messages.push(Bili::generated_message_descriptor_data());
-            messages.push(Res::generated_message_descriptor_data());
+            messages.push(BiliRes::generated_message_descriptor_data());
             messages.push(Upper::generated_message_descriptor_data());
-            messages.push(ResSet::generated_message_descriptor_data());
-            messages.push(ResSets::generated_message_descriptor_data());
+            messages.push(BiliSet::generated_message_descriptor_data());
+            messages.push(BiliSets::generated_message_descriptor_data());
             let mut enums = ::std::vec::Vec::with_capacity(0);
             ::protobuf::reflect::GeneratedFileDescriptor::new_generated(
                 file_descriptor_proto(),

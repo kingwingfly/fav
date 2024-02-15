@@ -1,7 +1,7 @@
 use super::data::{App, TestRes, TestResSet, TestUpper};
 use ::core::future::Future;
 use bitflags::Flags;
-use protobuf::Message;
+use protobuf::{Message, MessageFull};
 use reqwest::{header::HeaderMap, Client, Method, Response};
 use serde::de::IntoDeserializer;
 use std::collections::HashMap;
@@ -76,19 +76,22 @@ impl Operations<DefaultApiKind> for App {
         todo!()
     }
 
-    async fn fetch(&self, resource: &mut impl Meta) -> FavCoreResult<()> {
+    async fn fetch_sets<T: MessageFull>(&self) -> FavCoreResult<T> {
         todo!()
     }
 
-    async fn pull(&self, resource: &mut impl Meta) -> FavCoreResult<()> {
+    async fn fetch_set<'s, R: Res + 's, S: ResSet<'s, R> + 's>(
+        &self,
+        resource: &mut S,
+    ) -> FavCoreResult<()> {
         todo!()
     }
 
-    async fn fetch_set(&self, resource: &mut impl Meta) -> FavCoreResult<()> {
+    async fn fetch<R: Res>(&self, set: &mut R) -> FavCoreResult<()> {
         todo!()
     }
 
-    async fn fetch_sets<T>(&self) -> FavCoreResult<T> {
+    async fn pull<R: Res>(&self, resource: &mut R) -> FavCoreResult<()> {
         todo!()
     }
 }
@@ -175,19 +178,49 @@ impl Res for TestRes {
     }
 }
 
+impl Status for TestResSet {
+    fn status(&self) -> StatusFlags {
+        todo!()
+    }
+
+    fn check_status(&self, status: StatusFlags) -> bool {
+        todo!()
+    }
+
+    fn set_status(&mut self, status: StatusFlags) {
+        todo!()
+    }
+
+    fn on_status(&mut self, status: StatusFlags) {
+        todo!()
+    }
+
+    fn off_status(&mut self, status: StatusFlags) {
+        todo!()
+    }
+}
+
 impl Res for TestResSet {
     fn uppers(&self) -> impl IntoIterator<Item = &impl Attr> {
         &self.uppers
     }
 }
 
-impl ResSet for TestResSet {
-    fn res(&self) -> impl IntoIterator<Item = &impl Meta> {
+impl<'s> ResSet<'s, TestRes> for TestResSet {
+    fn res(&'s self) -> impl IntoIterator<Item = &'s TestRes> {
         &self.sets
     }
 
-    fn res_mut(&mut self) -> impl IntoIterator<Item = &mut impl Meta> {
+    fn res_mut(&'s mut self) -> impl IntoIterator<Item = &'s mut TestRes> {
         &mut self.sets
+    }
+
+    fn push(&mut self, resource: TestRes) {
+        todo!()
+    }
+
+    fn remove(&mut self, resource: Id) {
+        todo!()
     }
 }
 

@@ -2,7 +2,12 @@
 //! making app able to perform more operations
 
 use crate::{
-    api::ApiProvider, config::Config, error::FavCoreError, meta::Meta, res::ResSet, FavCoreResult,
+    api::ApiProvider,
+    config::Config,
+    error::FavCoreError,
+    meta::Meta,
+    res::{Res, ResSet},
+    FavCoreResult,
 };
 use core::future::Future;
 use protobuf::MessageFull;
@@ -46,17 +51,20 @@ where
     /// Fetch all resource sets
     async fn fetch_sets<T: MessageFull>(&self) -> FavCoreResult<T>;
     /// Fetch one resource set
-    async fn fetch_set(&self, resource: &mut impl Meta) -> FavCoreResult<()>;
+    async fn fetch_set<'s, R: Res + 's, S: ResSet<'s, R> + 's>(
+        &self,
+        resource: &mut S,
+    ) -> FavCoreResult<()>;
     /// Fetch one resource
     /// # Caution
     /// One needs to handle Ctrl-C with `tokio::signal::ctrl_c` and `tokio::select!`,
     /// and return [`FavCoreError::Cancel`]
-    async fn fetch(&self, resource: &mut impl Meta) -> FavCoreResult<()>;
+    async fn fetch<R: Res>(&self, set: &mut R) -> FavCoreResult<()>;
     /// Pull one resource.
     /// # Caution
     /// One needs to handle Ctrl-C with `tokio::signal::ctrl_c` and `tokio::select!`,
     /// and return [`FavCoreError::Cancel`]
-    async fn pull(&self, resource: &mut impl Meta) -> FavCoreResult<()>;
+    async fn pull<R: Res>(&self, resource: &mut R) -> FavCoreResult<()>;
 
     /// Return a `&'static reqwest::Client`, use it to perform operations during the lifetime of the client.
     /// # Example
@@ -103,13 +111,15 @@ where
 /// `LocalOperationsExt`, including methods to batch fetch and pull, however,
 /// it is synchronize since methods in [`LocalOperations`] is not `Send`.
 /// See [`Operations`] and [`OperationsExt`] for asynchronous version.
-pub trait LocalOperationsExt<K>: LocalOperations<K>
+pub trait LocalOperationsExt<'s, K, R, S>: LocalOperations<K>
 where
     K: Send,
+    R: Res + 's,
+    S: ResSet<'s, R> + 's,
 {
     /// **Synchronously** fetch all resources using [`LocalOperations::fetch`],
     /// since `async trait` is not Send in rust by now.
-    fn fetch_all(&self, resources: &mut impl ResSet) -> impl Future<Output = FavCoreResult<()>> {
+    fn fetch_all(&self, resources: &'s mut S) -> impl Future<Output = FavCoreResult<()>> {
         async {
             for r in resources.iter_mut() {
                 if let Err(e) = self.fetch(r).await {
@@ -125,7 +135,7 @@ where
 
     /// **Synchronously** pull all resources using [`LocalOperations::pull`],
     /// since `async trait` is not Send in rust by now.
-    fn pull_all(&self, resources: &mut impl ResSet) -> impl Future<Output = FavCoreResult<()>> {
+    fn pull_all(&self, resources: &'s mut S) -> impl Future<Output = FavCoreResult<()>> {
         async {
             for r in resources.iter_mut() {
                 if let Err(e) = self.pull(r).await {
@@ -140,17 +150,22 @@ where
     }
 }
 
-impl<T: LocalOperations<K>, K: Send> LocalOperationsExt<K> for T {}
+impl<'s, T: LocalOperations<K>, K: Send, R: Res + 's, S: ResSet<'s, R> + 's>
+    LocalOperationsExt<'s, K, R, S> for T
+{
+}
 
 /// `OperationsExt`, including methods to batch fetch and pull.
-pub trait OperationsExt<K>: Operations<K>
+pub trait OperationsExt<K, R, S>: Operations<K>
 where
     K: Send + 'static,
+    R: Res + 'static,
+    S: ResSet<'static, R> + 'static,
 {
     /// **Asynchronously** fetch resourses using [`Operations::fetch`].
     fn fetch_all(
         &'static self,
-        resources: &'static mut impl ResSet,
+        resources: &'static mut S,
     ) -> impl Future<Output = FavCoreResult<()>> {
         async {
             let mut rs = resources.iter_mut();
@@ -176,7 +191,7 @@ where
     /// **Asynchronously** pull resourses using [`Operations::pull`].
     fn pull_all(
         &'static self,
-        resources: &'static mut impl ResSet,
+        resources: &'static mut S,
     ) -> impl Future<Output = FavCoreResult<()>> {
         async {
             let mut rs = resources.iter_mut();
@@ -206,4 +221,7 @@ where
     }
 }
 
-impl<T: Operations<K>, K: Send + 'static> OperationsExt<K> for T {}
+impl<T: Operations<K>, K: Send + 'static, R: Res + 'static, S: ResSet<'static, R> + 'static>
+    OperationsExt<K, R, S> for T
+{
+}

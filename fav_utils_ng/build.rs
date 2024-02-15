@@ -31,7 +31,7 @@ impl CustomizeCallback for MyCustomizeCallback {
         let name = message.name();
         match name {
             "Upper" => Customize::default().before(DERIVE_ATTR),
-            "Res" | "ResSet" => Customize::default().before(DERIVE_ATTR_STATUS),
+            "BiliRes" | "BiliSet" => Customize::default().before(DERIVE_ATTR_STATUS),
             _ => Customize::default(),
         }
     }
