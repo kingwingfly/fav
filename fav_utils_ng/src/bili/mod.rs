@@ -4,3 +4,5 @@ mod api;
 mod config;
 mod local;
 mod ops;
+
+pub use crate::proto::bili::Bili;

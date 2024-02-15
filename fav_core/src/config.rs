@@ -35,7 +35,10 @@ use reqwest::header::{HeaderMap, HeaderValue};
 pub trait HttpConfig {
     /// The headers
     fn headers(&self) -> HeaderMap;
-    /// The cookies
+    /// The cookies. [`HttpConfig::cookie_value`] uses this to generate the `Cookie` header.
+    /// # Caution
+    /// `HttpConfig::cookie_value` will omit the keys that are not in the cookies
+    /// without any warning.
     fn cookies(&self) -> &HashMap<String, String>;
     /// Set the cookies
     fn extend_cookies(&mut self, cookies: HashMap<String, String>);
