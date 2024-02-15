@@ -1,8 +1,6 @@
 //! Attribute,
 //! managing the resources' attributes
 
-use std::str::FromStr;
-
 #[cfg(feature = "derive")]
 pub use fav_derive::Attr;
 
@@ -21,42 +19,10 @@ pub use fav_derive::Attr;
 /// ```
 #[allow(missing_docs)]
 #[derive(Debug, PartialEq)]
-pub enum Id {
+pub enum Id<'a> {
     I64(i64),
     I32(i32),
-    String(String),
-}
-
-impl From<i64> for Id {
-    fn from(id: i64) -> Self {
-        Id::I64(id)
-    }
-}
-
-impl From<i32> for Id {
-    fn from(id: i32) -> Self {
-        Id::I32(id)
-    }
-}
-
-impl From<String> for Id {
-    fn from(id: String) -> Self {
-        Id::String(id)
-    }
-}
-
-impl FromStr for Id {
-    type Err = std::convert::Infallible;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(match s.parse::<i32>() {
-            Ok(id) => Id::I32(id),
-            Err(_) => match s.parse::<i64>() {
-                Ok(id) => Id::I64(id),
-                Err(_) => Id::String(s.to_owned()),
-            },
-        })
-    }
+    String(&'a str),
 }
 
 /// Basical attributes
@@ -99,4 +65,46 @@ pub trait Attr {
     fn id(&self) -> Id;
     /// Return the name of the target
     fn name(&self) -> &str;
+}
+
+impl From<i64> for Id<'_> {
+    fn from(id: i64) -> Self {
+        Id::I64(id)
+    }
+}
+
+impl From<i32> for Id<'_> {
+    fn from(id: i32) -> Self {
+        Id::I32(id)
+    }
+}
+
+impl From<&i64> for Id<'_> {
+    fn from(id: &i64) -> Self {
+        Id::I64(*id)
+    }
+}
+
+impl From<&i32> for Id<'_> {
+    fn from(id: &i32) -> Self {
+        Id::I32(*id)
+    }
+}
+
+impl<'a> From<&'a str> for Id<'a> {
+    fn from(id: &'a str) -> Self {
+        match id.parse::<i32>() {
+            Ok(id) => Id::I32(id),
+            Err(_) => match id.parse::<i64>() {
+                Ok(id) => Id::I64(id),
+                Err(_) => Id::String(id),
+            },
+        }
+    }
+}
+
+impl<'a> From<&'a String> for Id<'a> {
+    fn from(id: &'a String) -> Self {
+        id.as_str().into()
+    }
 }
