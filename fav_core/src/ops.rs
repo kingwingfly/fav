@@ -75,20 +75,17 @@ where
     /// Request the api, which is returned by `Api::api(api_kind)`,
     /// and with the method, which is returned `Api::method()`.
     /// Use the provided params, and client with default headers `Config::headers()`.
-    fn request<'a>(
+    fn request(
         &self,
         api_kind: K,
-        params: impl IntoIterator<Item = &'a str> + Send,
+        params: &[&str], // Todo make this arg more generic
     ) -> impl Future<Output = FavCoreResult<Response>> {
         async {
             let client = self.client();
             let api = self.api(api_kind);
             let cookie = self.cookie_value(api.cookie_keys());
             let resp = client
-                .request(
-                    api.method(),
-                    api.url(api.params().iter().copied().zip(params).collect()),
-                )
+                .request(api.method(), api.url(params))
                 .header(header::COOKIE, cookie)
                 .send()
                 .await?;

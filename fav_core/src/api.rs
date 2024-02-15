@@ -54,8 +54,7 @@ pub enum DefaultApiKind {
 /// # fn main() {
 /// let remote = Remote;
 /// let api = remote.api(DefaultApiKind::Login);
-/// let params = api.params().iter().copied().zip(["Jake", "123"]).collect();
-/// let url = api.url(params);
+/// let url = api.url(&["Jake", "123"]);
 /// let expected = Url::parse_with_params("http://abc.com", vec![("id", "Jake"), ("pwd", "123")]).unwrap();
 /// assert_eq!(url, expected);
 /// # }
@@ -79,8 +78,8 @@ pub trait Api {
     }
 
     /// Return a `Url` parsed with the API endpoint and the given params.
-    fn url(&self, params: Vec<(&str, &str)>) -> Url {
-        Url::parse_with_params(self.endpoint(), params).unwrap()
+    fn url(&self, params: &[&str]) -> Url {
+        Url::parse_with_params(self.endpoint(), self.params().iter().zip(params.iter())).unwrap()
     }
 
     /// Return `Method::GET` by default.
@@ -114,13 +113,5 @@ mod tests {
         fn params(&self) -> &[&str] {
             &["id", "pwd"]
         }
-    }
-
-    #[test]
-    #[should_panic]
-    fn params_panic_test() {
-        let remote = Remote;
-        let api = remote.api(DefaultApiKind::Login);
-        let _ = api.url(vec![("wrong_key", "")]);
     }
 }
