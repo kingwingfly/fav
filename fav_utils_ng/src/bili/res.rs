@@ -1,5 +1,26 @@
 use crate::proto::bili::{BiliRes, BiliSet, BiliSets};
 use fav_core::prelude::*;
+use std::ops::BitOrAssign;
+
+impl BitOrAssign for BiliSets {
+    fn bitor_assign(&mut self, rhs: Self) {
+        rhs.list.into_iter().for_each(|s| {
+            if self.iter().all(|s1| s1.id != s.id) {
+                self.list.push(s);
+            }
+        })
+    }
+}
+
+impl BitOrAssign for BiliSet {
+    fn bitor_assign(&mut self, rhs: Self) {
+        rhs.medias.into_iter().for_each(|r| {
+            if self.iter().all(|r1| r1.bvid != r.bvid) {
+                self.medias.push(r);
+            }
+        });
+    }
+}
 
 impl ResSets<BiliSet, BiliRes> for BiliSets {
     fn sets<'a>(&'a self) -> impl IntoIterator<Item = &'a BiliSet>

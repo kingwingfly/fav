@@ -7,16 +7,13 @@ use crate::{
     },
     FavUtilsError, FavUtilsResult,
 };
-use fav_core::prelude::*;
+use fav_core::{prelude::*, status::SetStatusExt as _};
 use reqwest::Response;
 use std::collections::HashMap;
 use tokio::time::{sleep, Duration};
 
 const POLL_INTERVAL: u64 = 3;
-#[cfg(not(test))]
 const EXPIRED_DURATION: u64 = 120;
-#[cfg(test)]
-const EXPIRED_DURATION: u64 = 3;
 const HINT: &str = "Never Login";
 
 impl Operations<BiliSets, BiliSet, BiliRes, ApiKind> for Bili {
@@ -24,7 +21,6 @@ impl Operations<BiliSets, BiliSet, BiliRes, ApiKind> for Bili {
         let resp = self.request(ApiKind::Qr, &[]).await?;
         let QrInfo { url, qrcode_key } = resp2serde(resp, "/data").await?;
         show_qr_code(url)?;
-        // Expired after 120s
         for _ in 0..EXPIRED_DURATION / POLL_INTERVAL {
             sleep(Duration::from_secs(POLL_INTERVAL)).await;
             let resp = self
@@ -49,26 +45,22 @@ impl Operations<BiliSets, BiliSet, BiliRes, ApiKind> for Bili {
         }
     }
 
-    async fn fetch_sets(&self) -> FavCoreResult<BiliSets> {
+    async fn fetch_sets(&self, sets: &mut BiliSets) -> FavCoreResult<()> {
         let params = &[self.cookies().get("DedeUserID").expect(HINT).as_str()];
         let resp = self.request(ApiKind::FetchSets, params).await?;
-        resp2proto::<BiliSets>(resp, "/data").await
+        *sets |= resp2proto(resp, "/data").await?;
+        Ok(())
     }
 
     async fn fetch_set(&self, set: &mut BiliSet) -> FavCoreResult<()> {
         let id = set.id.to_string();
-
         for pn in 1..=set.media_count.saturating_sub(1) / 20 + 1 {
             let pn = pn.to_string();
             let params = &[id.as_str(), pn.as_str(), "20"];
             let resp = self.request(ApiKind::FetchSet, params).await?;
-            let res: BiliSet = resp2proto(resp, "/data").await?;
-            res.medias.into_iter().for_each(|mut r| {
-                if !set.medias.iter().any(|r1| r1.bvid == r.bvid) {
-                    r.on_status(StatusFlags::FAV);
-                    set.medias.push(r);
-                }
-            });
+            *set |= resp2proto::<BiliSet>(resp, "/data")
+                .await?
+                .with_res_status_on(StatusFlags::FAV);
         }
         Ok(())
     }
@@ -105,7 +97,7 @@ mod tests {
     use crate::proto::bili::BiliSets;
 
     #[tokio::test]
-    #[should_panic(expected = "Expired")]
+    #[ignore = "need to scan qr code manually"]
     async fn login_test() {
         let mut bili = Bili::default();
         bili.login().await.unwrap();
@@ -113,9 +105,10 @@ mod tests {
 
     #[tokio::test]
     async fn fetch_test() {
-        let bili = Bili::read();
-        let mut sets: BiliSets = bili.fetch_sets().await.unwrap();
-        let set = sets.iter_mut().next().unwrap();
+        let bili = Bili::read().unwrap();
+        let mut sets = BiliSets::default();
+        bili.fetch_sets(&mut sets).await.unwrap();
+        let set = sets.iter_mut().min_by_key(|s| s.media_count).unwrap();
         bili.fetch_set(set).await.unwrap();
         dbg!(set);
     }

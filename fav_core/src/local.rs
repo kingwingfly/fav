@@ -3,6 +3,8 @@
 
 use protobuf::MessageFull;
 
+use crate::FavCoreResult;
+
 /// Refer to a path on disk;
 /// impl `PathInfo` for `T: MessageFull` will auto implement [`ProtoLocal`].
 pub trait PathInfo {
@@ -23,29 +25,26 @@ pub trait PathInfo {
 ///     const PATH: &'static str = "temp/msg";
 /// }
 /// // trait `ProtoLocal` will be auto implemented for `T: PathInfo + MessageFull`
-/// # fn main() {
 /// let msg = Msg::default();
 /// msg.clone().write();   // The Msg will be write to `.fav/msg`
-/// let msg_read: Msg = Msg::read();
+/// let msg_read: Msg = Msg::read().unwrap();
 /// assert_eq!(msg, msg_read);
 /// Msg::remove();
-/// # }
 /// ```
 pub trait ProtoLocal: PathInfo + MessageFull {
     /// Write the protobuf to file, which is at `PathInfo::PATH`
-    /// # Why &mut?
-    /// For implementing `Drop` trait.
-    fn write(&mut self) {
+    fn write(self) -> FavCoreResult<()> {
         let path = std::path::PathBuf::from(Self::PATH);
-        let mut file = std::fs::File::create(path).unwrap();
-        self.write_to_writer(&mut file).unwrap();
+        let mut file = std::fs::File::create(path)?;
+        self.write_to_writer(&mut file)?;
+        Ok(())
     }
 
     /// Read the protobuf from file, which is at `PathInfo::PATH`
-    fn read() -> Self {
+    fn read() -> FavCoreResult<Self> {
         let path = std::path::PathBuf::from(Self::PATH);
-        let mut file = std::fs::File::open(path).unwrap();
-        Self::parse_from_reader(&mut file).unwrap()
+        let mut file = std::fs::File::open(path)?;
+        Ok(Self::parse_from_reader(&mut file)?)
     }
 
     /// Remove the resource, which is at `PathInfo::PATH`

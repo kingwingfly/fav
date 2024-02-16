@@ -67,7 +67,7 @@ pub trait ApiProvider<K> {
 /// This trait should be object-safe.
 /// # Example
 /// See [`ApiProvider`].
-/// For derive example, see [`fav_derive::Api`].g
+/// For derive example, see [`fav_derive::Api`].
 pub trait Api {
     /// Provide the api endpoint
     fn endpoint(&self) -> &'static str;

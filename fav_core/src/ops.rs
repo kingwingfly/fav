@@ -5,8 +5,7 @@ use crate::{
     api::ApiProvider,
     config::Config,
     error::FavCoreError,
-    prelude::ResSets,
-    res::{Res, ResSet},
+    res::{Res, ResSet, ResSets},
     FavCoreResult,
 };
 use core::future::Future;
@@ -52,7 +51,7 @@ where
     async fn login(&mut self) -> FavCoreResult<()>;
     async fn logout(&mut self) -> FavCoreResult<()>;
     /// Fetch all resource sets
-    async fn fetch_sets(&self) -> FavCoreResult<SS>;
+    async fn fetch_sets(&self, sets: &mut SS) -> FavCoreResult<()>;
     /// Fetch one resource set
     async fn fetch_set(&self, set: &mut S) -> FavCoreResult<()>;
     /// Fetch one resource

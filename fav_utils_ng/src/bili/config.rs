@@ -13,13 +13,13 @@ impl HttpConfig for Bili {
         headers.insert(header::REFERER, REFERER.parse().unwrap());
         headers
     }
-
+    #[inline]
     fn cookies(&self) -> &HashMap<String, String> {
         &self.cookies
     }
-
-    fn extend_cookies(&mut self, cookies: HashMap<String, String>) {
-        self.cookies.extend(cookies);
+    #[inline]
+    fn cookies_mut(&mut self) -> &mut HashMap<String, String> {
+        &mut self.cookies
     }
 }
 
@@ -37,7 +37,7 @@ mod tests {
             assert_eq!(bili.cookies().len(), 1);
             assert_eq!(bili.cookies().get("1").unwrap(), "1");
         }
-        let mut bili = Bili::read();
+        let mut bili = Bili::read().unwrap();
         assert_eq!(bili.cookies().len(), 1);
         assert_eq!(bili.cookies().get("1").unwrap(), "1");
         let mut cookies = HashMap::new();

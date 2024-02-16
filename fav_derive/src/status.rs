@@ -28,24 +28,12 @@ pub(crate) fn derive_status(input: TokenStream) -> TokenStream {
     let expanded = quote! {
         impl #impl_generics fav_core::status::Status for #name #ty_generics #where_clause {
             #[inline]
-            fn status(&self) -> fav_core::status::StatusFlags {
-                self.#status.into()
+            fn status(&self) -> i32 {
+                self.#status
             }
             #[inline]
-            fn check_status(&self, status: fav_core::status::StatusFlags) -> bool {
-                self.#status & status.bits() != 0
-            }
-            #[inline]
-            fn set_status(&mut self, status: fav_core::status::StatusFlags) {
-                self.#status = status.bits();
-            }
-            #[inline]
-            fn on_status(&mut self, status: fav_core::status::StatusFlags) {
-                self.#status |= status.bits();
-            }
-            #[inline]
-            fn off_status(&mut self, status: fav_core::status::StatusFlags) {
-                self.#status &= !status.bits();
+            fn status_mut(&mut self) -> &mut i32 {
+                &mut self.#status
             }
         }
     };

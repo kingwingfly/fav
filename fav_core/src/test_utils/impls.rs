@@ -23,7 +23,7 @@ impl HttpConfig for App {
         todo!()
     }
 
-    fn extend_cookies(&mut self, cookies: HashMap<String, String>) {
+    fn cookies_mut(&mut self) -> &mut HashMap<String, String> {
         todo!()
     }
 }
@@ -91,7 +91,7 @@ impl Operations<TestResSets, TestResSet, TestRes, DefaultApiKind> for App {
         todo!()
     }
 
-    async fn fetch_sets(&self) -> FavCoreResult<TestResSets> {
+    async fn fetch_sets(&self, sets: &mut TestResSets) -> FavCoreResult<()> {
         todo!()
     }
 
@@ -127,24 +127,12 @@ impl Attr for TestRes {
 }
 
 impl Status for TestRes {
-    fn status(&self) -> StatusFlags {
-        self.status.into()
+    fn status(&self) -> i32 {
+        self.status
     }
 
-    fn check_status(&self, status: StatusFlags) -> bool {
-        self.status & status.bits() != 0
-    }
-
-    fn set_status(&mut self, status: StatusFlags) {
-        self.status = status.bits();
-    }
-
-    fn on_status(&mut self, status: StatusFlags) {
-        self.status |= status.bits();
-    }
-
-    fn off_status(&mut self, status: StatusFlags) {
-        self.status &= !status.bits();
+    fn status_mut(&mut self) -> &mut i32 {
+        &mut self.status
     }
 }
 
@@ -191,23 +179,11 @@ impl Res for TestRes {
 }
 
 impl Status for TestResSet {
-    fn status(&self) -> StatusFlags {
+    fn status(&self) -> i32 {
         todo!()
     }
 
-    fn check_status(&self, status: StatusFlags) -> bool {
-        todo!()
-    }
-
-    fn set_status(&mut self, status: StatusFlags) {
-        todo!()
-    }
-
-    fn on_status(&mut self, status: StatusFlags) {
-        todo!()
-    }
-
-    fn off_status(&mut self, status: StatusFlags) {
+    fn status_mut(&mut self) -> &mut i32 {
         todo!()
     }
 }

@@ -14,15 +14,3 @@ impl PathInfo for BiliSets {
     #[cfg(not(test))]
     const PATH: &'static str = ".fav/sets";
 }
-
-impl Drop for Bili {
-    fn drop(&mut self) {
-        self.write();
-    }
-}
-
-impl Drop for BiliSets {
-    fn drop(&mut self) {
-        self.write();
-    }
-}

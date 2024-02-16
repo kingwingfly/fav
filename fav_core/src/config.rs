@@ -27,8 +27,8 @@ use reqwest::header::{HeaderMap, HeaderValue};
 ///         &self.cookies
 ///     }
 ///
-///     fn extend_cookies(&mut self, cookies: HashMap<String, String>) {
-///         self.cookies.extend(cookies);
+///     fn cookies_mut(&mut self) -> &mut HashMap<String, String> {
+///         &mut self.cookies
 ///     }
 /// }
 /// ```
@@ -40,8 +40,12 @@ pub trait HttpConfig {
     /// `HttpConfig::cookie_value` will omit the keys that are not in the cookies
     /// without any warning.
     fn cookies(&self) -> &HashMap<String, String>;
+    /// The mutable reference to the cookies
+    fn cookies_mut(&mut self) -> &mut HashMap<String, String>;
     /// Set the cookies
-    fn extend_cookies(&mut self, cookies: HashMap<String, String>);
+    fn extend_cookies(&mut self, cookies: HashMap<String, String>) {
+        self.cookies_mut().extend(cookies);
+    }
     /// Acquire the cookie value by keys
     fn cookie_value(&self, keys: impl IntoIterator<Item = impl AsRef<str>>) -> HeaderValue {
         let cookies = self.cookies();

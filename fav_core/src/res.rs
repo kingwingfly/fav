@@ -1,6 +1,6 @@
 //! Relations between resources, resource sets, and uppers
 
-use crate::{attr::Attr, meta::Meta, prelude::Id};
+use crate::{attr::Attr, attr::Id, meta::Meta};
 
 /// Relations owned by a resource.
 pub trait Res: Meta {
