@@ -37,8 +37,8 @@ use reqwest::{header, Client, Response};
 /// Since [`LocalOperations`] is not `Send`, one should use it in a single-threaded runtime.
 /// If you need async operations in a multi-threaded runtime, use [`Operations`].
 ///
-/// To generate `Operations` required methods, use `LocalOperations` first,
-/// after your editor generating the methods, change `LocalOperations` to `Operations`.
+/// To let your editor generate `Operations` required methods signatures, use `LocalOperations` first,
+/// after your editor generating the signatures, change `LocalOperations` to `Operations`.
 #[allow(missing_docs)]
 #[trait_variant::make(Operations: Send)]
 pub trait LocalOperations<SS, S, R, K>: ApiProvider<K> + Config
@@ -56,13 +56,13 @@ where
     async fn fetch_set(&self, set: &mut S) -> FavCoreResult<()>;
     /// Fetch one resource
     /// # Caution
-    /// One needs to handle Ctrl-C with `tokio::signal::ctrl_c` and `tokio::select!`,
-    /// and return [`FavCoreError::Cancel`]
+    /// One could handle Ctrl-C with `tokio::signal::ctrl_c` and `tokio::select!`,
+    /// and return [`FavCoreError::Cancel`]. This error will be handled by `OperationsExt::fetch_all`.
     async fn fetch(&self, resource: &mut R) -> FavCoreResult<()>;
     /// Pull one resource.
     /// # Caution
     /// One needs to handle Ctrl-C with `tokio::signal::ctrl_c` and `tokio::select!`,
-    /// and return [`FavCoreError::Cancel`]
+    /// and return [`FavCoreError::Cancel`]. This error will be handled by `OperationsExt::pull_all`.
     async fn pull(&self, resource: &mut R) -> FavCoreResult<()>;
 
     /// Return a `&'static reqwest::Client`, use it to perform operations during the lifetime of the client.
@@ -186,7 +186,13 @@ where
                     .collect();
                 for jh in jhs {
                     if let Err(e) = jh.await.unwrap() {
-                        println!("{e}");
+                        match e {
+                            FavCoreError::Cancel => {
+                                println!("{e}");
+                                break;
+                            }
+                            _ => println!("{e}"),
+                        }
                     }
                 }
             }
