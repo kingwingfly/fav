@@ -5,7 +5,10 @@ export TERM=xterm-256color
 
 # Statements waiting to be executed
 statements=(
-    "cargo publish -p $1"
+    "cargo clippy --all-features --target $1 -- -D warnings"
+    "cargo test -p $1"
+    "cargo doc --no-deps -p $1"
+    "cargo publish -p $1 --dry-run"
 )
 
 # loop echo and executing statements

@@ -32,25 +32,22 @@ jobs:
       - name: install cargo components
         run: rustup component add clippy
 
-      - name: Extract version
-        id: extract-version
-        run: echo "VERSION=$(grep -oP '^version = "\K[^"]+' Cargo.toml | awk '{$1=$1;print}')" >> $GITHUB_OUTPUT
-
-      - name: run tests
-        run: .github/scripts/test.sh
-
       - name: login to crates.io
         run: cargo login ${{ secrets.CRATESIO }}
 
       - name: publish fav_derive
         if: ${{ inputs.fav_derive }}
-        run: .github/scripts/publish.sh fav_derive
+        run: .github/scripts/publish_test.sh fav_derive
+          .github/scripts/publish.sh fav_derive
       - name: publish fav_core
         if: ${{ inputs.fav_core }}
-        run: .github/scripts/publish.sh fav_core
+        run: .github/scripts/publish_test.sh fav_core
+          .github/scripts/publish.sh fav_core
       - name: publish fav_utils
         if: ${{ inputs.fav_utils }}
-        run: .github/scripts/publish.sh fav_utils
+        run: .github/scripts/publish_test.sh fav_utils
+          .github/scripts/publish.sh fav_utils
       - name: publish fav_cli
         if: ${{ inputs.fav_cli }}
-        run: .github/scripts/publish.sh fav_cli
+        run: .github/scripts/publish_test.sh fav_cli
+          .github/scripts/publish.sh fav_cli

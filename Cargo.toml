@@ -22,7 +22,7 @@ documentation = ""
 
 [workspace.dependencies]
 fav_core = { path = "fav_core" }
-fav_derive = { path = "fav_derive", version = "0.0.1-alpha4" }
+fav_derive = { path = "fav_derive", version = "0.0.1-alpha5" }
 fav_utils = { path = "fav_utils" }
 fav_cli = { path = "fav_cli" }
 fav_utils_ng = { path = "fav_utils_ng" }

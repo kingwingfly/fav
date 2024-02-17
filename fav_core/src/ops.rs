@@ -255,6 +255,7 @@ where
 }
 
 /// A function to print a warning message, influenced by `tracing` feature.
+/// This needn't be `inline` since warning message is not so frequent.
 pub fn print_warn<T>(e: T)
 where
     T: std::fmt::Display,
@@ -266,6 +267,7 @@ where
 }
 
 /// A function to print a err message, influenced by `tracing` feature.
+/// This needn't be `inline` since error message is not so frequent.
 pub fn print_err<E>(e: E)
 where
     E: std::error::Error,
