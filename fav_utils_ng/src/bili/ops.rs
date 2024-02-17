@@ -106,6 +106,5 @@ mod tests {
         bili.fetch_sets(&mut sets).await.unwrap();
         let set = sets.iter_mut().min_by_key(|s| s.media_count).unwrap();
         bili.fetch_set(set).await.unwrap();
-        dbg!(set);
     }
 }

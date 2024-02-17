@@ -166,11 +166,11 @@ where
     R: Res,
     K: Send,
 {
-    /// **Synchronously** fetch all resources using [`LocalOperations::fetch_res`],
+    /// **Synchronously** fetch all resources in set using [`LocalOperations::fetch_res`],
     /// since `async trait` is not Send in rust by now.
-    fn fetch_all(&self, resources: &mut S) -> impl Future<Output = FavCoreResult<()>> {
+    fn fetch_all(&self, set: &mut S) -> impl Future<Output = FavCoreResult<()>> {
         async {
-            for r in resources.iter_mut() {
+            for r in set.iter_mut() {
                 if let Err(e) = self.fetch_res(r).await {
                     match e {
                         FavCoreError::Cancel => {
@@ -185,11 +185,11 @@ where
         }
     }
 
-    /// **Synchronously** pull all resources using [`LocalOperations::pull`],
+    /// **Synchronously** pull all resources in set using [`LocalOperations::pull`],
     /// since `async trait` is not Send in rust by now.
-    fn pull_all(&self, resources: &mut S) -> impl Future<Output = FavCoreResult<()>> {
+    fn pull_all(&self, set: &mut S) -> impl Future<Output = FavCoreResult<()>> {
         async {
-            for r in resources.iter_mut() {
+            for r in set.iter_mut() {
                 if let Err(e) = self.pull(r).await {
                     match e {
                         FavCoreError::Cancel => {
@@ -223,13 +223,10 @@ where
     R: Res + 'static,
     K: Send + 'static,
 {
-    /// **Asynchronously** fetch resourses using [`Operations::fetch_res`].
-    fn fetch_all(
-        &'static self,
-        resources: &'static mut S,
-    ) -> impl Future<Output = FavCoreResult<()>> {
+    /// **Asynchronously** fetch resourses in set using [`Operations::fetch_res`].
+    fn fetch_all(&'static self, set: &'static mut S) -> impl Future<Output = FavCoreResult<()>> {
         async {
-            let mut rs = resources.iter_mut();
+            let mut rs = set.iter_mut();
             loop {
                 let batch: Vec<_> = rs.by_ref().take(10).collect();
                 if batch.is_empty() {
@@ -237,7 +234,8 @@ where
                 }
                 let jhs: Vec<_> = batch
                     .into_iter()
-                    .map(|r| tokio::spawn(self.fetch_res(r)))
+                    .map(|r| self.fetch_res(r))
+                    .map(|f| tokio::spawn(f))
                     .collect();
                 for jh in jhs {
                     if let Err(e) = jh.await.unwrap() {
@@ -255,13 +253,10 @@ where
         }
     }
 
-    /// **Asynchronously** pull resourses using [`Operations::pull`].
-    fn pull_all(
-        &'static self,
-        resources: &'static mut S,
-    ) -> impl Future<Output = FavCoreResult<()>> {
+    /// **Asynchronously** pull resourses in set using [`Operations::pull`].
+    fn pull_all(&'static self, set: &'static mut S) -> impl Future<Output = FavCoreResult<()>> {
         async {
-            let mut rs = resources.iter_mut();
+            let mut rs = set.iter_mut();
             loop {
                 let batch: Vec<_> = rs.by_ref().take(10).collect();
                 if batch.is_empty() {
@@ -290,7 +285,7 @@ where
 
 impl<T, SS, S, R, K> OperationsExt<SS, S, R, K> for T
 where
-    T: Operations<SS, S, R, K>,
+    T: Operations<SS, S, R, K> + Send,
     SS: ResSets<S, R> + 'static,
     S: ResSet<R> + 'static,
     R: Res + 'static,
