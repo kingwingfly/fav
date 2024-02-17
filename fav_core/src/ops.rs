@@ -124,8 +124,11 @@ where
             for r in resources.iter_mut() {
                 if let Err(e) = self.fetch(r).await {
                     match e {
-                        FavCoreError::Cancel => break,
-                        _ => println!("{e}"),
+                        FavCoreError::Cancel => {
+                            print_warn(e);
+                            break;
+                        }
+                        _ => print_err(e),
                     }
                 }
             }
@@ -140,8 +143,11 @@ where
             for r in resources.iter_mut() {
                 if let Err(e) = self.pull(r).await {
                     match e {
-                        FavCoreError::Cancel => break,
-                        _ => println!("{e}"),
+                        FavCoreError::Cancel => {
+                            print_warn(e);
+                            break;
+                        }
+                        _ => print_err(e),
                     }
                 }
             }
@@ -188,10 +194,10 @@ where
                     if let Err(e) = jh.await.unwrap() {
                         match e {
                             FavCoreError::Cancel => {
-                                println!("{e}");
+                                print_warn(e);
                                 break;
                             }
-                            _ => println!("{e}"),
+                            _ => print_err(e),
                         }
                     }
                 }
@@ -220,10 +226,10 @@ where
                     if let Err(e) = jh.await.unwrap() {
                         match e {
                             FavCoreError::Cancel => {
-                                println!("{e}");
+                                print_warn(e);
                                 break;
                             }
-                            _ => println!("{e}"),
+                            _ => print_err(e),
                         }
                     }
                 }
@@ -241,4 +247,26 @@ where
     R: Res + 'static,
     K: Send + 'static,
 {
+}
+
+/// A function to print a warning message, influenced by `tracing` feature.
+pub fn print_warn<T>(e: T)
+where
+    T: std::fmt::Display,
+{
+    #[cfg(not(feature = "tracing"))]
+    println!("{}", e);
+    #[cfg(feature = "tracing")]
+    tracing::warn!("{}", e);
+}
+
+/// A function to print a err message, influenced by `tracing` feature.
+pub fn print_err<E>(e: E)
+where
+    E: std::error::Error,
+{
+    #[cfg(not(feature = "tracing"))]
+    println!("{}", e);
+    #[cfg(feature = "tracing")]
+    tracing::error!("{}", e);
 }

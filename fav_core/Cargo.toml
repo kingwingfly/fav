@@ -31,6 +31,9 @@ tokio = { version = "1", features = ["rt-multi-thread", "signal", "macros"] }
 bitflags = "2.4"
 # derive
 fav_derive = { workspace = true, optional = true }
+# tracing
+tracing = { version = "0.1", optional = true }
+
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }
@@ -42,3 +45,4 @@ protobuf-codegen = { version = "3" }
 [features]
 default = ["derive"]
 derive = ["dep:fav_derive"]
+tracing = ["dep:tracing"]
