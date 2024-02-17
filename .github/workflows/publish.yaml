@@ -35,19 +35,16 @@ jobs:
       - name: login to crates.io
         run: cargo login ${{ secrets.CRATESIO }}
 
-      - name: publish fav_derive
-        if: ${{ inputs.fav_derive }}
-        run: .github/scripts/publish_test.sh fav_derive
-          .github/scripts/publish.sh fav_derive
-      - name: publish fav_core
-        if: ${{ inputs.fav_core }}
-        run: .github/scripts/publish_test.sh fav_core
-          .github/scripts/publish.sh fav_core
-      - name: publish fav_utils
-        if: ${{ inputs.fav_utils }}
-        run: .github/scripts/publish_test.sh fav_utils
-          .github/scripts/publish.sh fav_utils
-      - name: publish fav_cli
-        if: ${{ inputs.fav_cli }}
-        run: .github/scripts/publish_test.sh fav_cli
-          .github/scripts/publish.sh fav_cli
+      - name: Publish packages
+        run: |
+          PACKAGES=("fav_derive" "fav_core" "fav_utils" "fav_cli")
+          for PACKAGE in "${PACKAGES[@]}"; do
+            if [[ "${{ inputs.${PACKAGE} }}" == "true" ]]; then
+              .github/scripts/publish_test.sh "${PACKAGE}"
+              if [[ $? -eq 0 ]]; then
+                .github/scripts/publish.sh "${PACKAGE}"
+              else
+                echo "Tests failed for ${PACKAGE}. Skipping publishing."
+              fi
+            fi
+          done
