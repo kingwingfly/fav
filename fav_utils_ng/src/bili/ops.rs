@@ -1,10 +1,7 @@
 use super::api::ApiKind;
 use crate::{
     proto::bili::{Bili, BiliRes, BiliSet, BiliSets},
-    utils::{
-        parse::{resp2proto, resp2serde},
-        qr::show_qr_code,
-    },
+    utils::qr::show_qr_code,
     FavUtilsError, FavUtilsResult,
 };
 use fav_core::{prelude::*, status::SetStatusExt as _};
@@ -18,8 +15,7 @@ const HINT: &str = "Never Login";
 
 impl Operations<BiliSets, BiliSet, BiliRes, ApiKind> for Bili {
     async fn login(&mut self) -> FavCoreResult<()> {
-        let resp = self.request(ApiKind::Qr, &[]).await?;
-        let QrInfo { url, qrcode_key } = resp2serde(resp, "/data").await?;
+        let QrInfo { url, qrcode_key } = self.request_json(ApiKind::Qr, &[], "/data").await?;
         show_qr_code(url)?;
         for _ in 0..EXPIRED_DURATION / POLL_INTERVAL {
             sleep(Duration::from_secs(POLL_INTERVAL)).await;
@@ -36,8 +32,7 @@ impl Operations<BiliSets, BiliSet, BiliRes, ApiKind> for Bili {
 
     async fn logout(&mut self) -> FavCoreResult<()> {
         let params = &[self.cookies().get("bili_jct").expect(HINT).as_str()];
-        let resp = self.request(ApiKind::Logout, params).await?;
-        match resp2serde::<i32>(resp, "/code").await? {
+        match self.request_json(ApiKind::Logout, params, "/code").await? {
             0 => Ok(()),
             _ => Err(FavCoreError::UtilsError(Box::new(
                 FavUtilsError::LogoutError,
@@ -47,8 +42,9 @@ impl Operations<BiliSets, BiliSet, BiliRes, ApiKind> for Bili {
 
     async fn fetch_sets(&self, sets: &mut BiliSets) -> FavCoreResult<()> {
         let params = &[self.cookies().get("DedeUserID").expect(HINT).as_str()];
-        let resp = self.request(ApiKind::FetchSets, params).await?;
-        *sets |= resp2proto(resp, "/data").await?;
+        *sets |= self
+            .request_proto(ApiKind::FetchSets, params, "/data")
+            .await?;
         Ok(())
     }
 
@@ -57,15 +53,15 @@ impl Operations<BiliSets, BiliSet, BiliRes, ApiKind> for Bili {
         for pn in 1..=set.media_count.saturating_sub(1) / 20 + 1 {
             let pn = pn.to_string();
             let params = &[id.as_str(), pn.as_str(), "20"];
-            let resp = self.request(ApiKind::FetchSet, params).await?;
-            *set |= resp2proto::<BiliSet>(resp, "/data")
+            *set |= self
+                .request_proto::<BiliSet>(ApiKind::FetchSet, params, "/data")
                 .await?
                 .with_res_status_on(StatusFlags::FAV);
         }
         Ok(())
     }
 
-    async fn fetch(&self, _resource: &mut BiliRes) -> FavCoreResult<()> {
+    async fn fetch_res(&self, _resource: &mut BiliRes) -> FavCoreResult<()> {
         Ok(())
     }
 

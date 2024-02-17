@@ -17,6 +17,8 @@ pub enum FavCoreError {
     UtilsError(Box<dyn std::error::Error + Send>),
     /// The error from serde_json
     SerdeError(serde_json::Error),
+    /// PointerNotFound
+    SerdePointerNotFound,
     /// The error from protobuf_json_mapping
     Json2ProtobufError(protobuf_json_mapping::ParseError),
     /// The error from protobuf
@@ -34,6 +36,7 @@ impl std::fmt::Display for FavCoreError {
             FavCoreError::Cancel => write!(f, "Ctrl-C cancelled"),
             FavCoreError::UtilsError(source) => write!(f, "UtilsErr: {}", source),
             FavCoreError::SerdeError(source) => write!(f, "SerdeErr:: {}", source),
+            FavCoreError::SerdePointerNotFound => write!(f, "SerdeErr:: pointer not found"),
             FavCoreError::Json2ProtobufError(source) => write!(f, "ProtobufParseErr: {}", source),
             FavCoreError::ProtobufError(source) => write!(f, "ProtobufError: {}", source),
             FavCoreError::IoError(source) => write!(f, "IOErr: {}", source),

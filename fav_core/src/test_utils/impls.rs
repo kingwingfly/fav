@@ -99,7 +99,7 @@ impl Operations<TestResSets, TestResSet, TestRes, DefaultApiKind> for App {
         todo!()
     }
 
-    async fn fetch(&self, set: &mut TestRes) -> FavCoreResult<()> {
+    async fn fetch_res(&self, set: &mut TestRes) -> FavCoreResult<()> {
         todo!()
     }
 

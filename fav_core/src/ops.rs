@@ -9,7 +9,16 @@ use crate::{
     FavCoreResult,
 };
 use core::future::Future;
+use protobuf::MessageFull;
+use protobuf_json_mapping::{parse_from_str_with_options, ParseOptions};
 use reqwest::{header, Client, Response};
+use serde::de::DeserializeOwned;
+use serde_json::Value;
+
+const PARSE_OPTIONS: ParseOptions = ParseOptions {
+    ignore_unknown_fields: true,
+    _future_options: (),
+};
 
 /// Making a client able to perform operations.
 ///
@@ -63,7 +72,7 @@ where
     /// # Caution
     /// One could handle Ctrl-C with `tokio::signal::ctrl_c` and `tokio::select!`,
     /// and return [`FavCoreError::Cancel`]. This error will be handled by `OperationsExt::fetch_all`.
-    async fn fetch(&self, resource: &mut R) -> FavCoreResult<()>;
+    async fn fetch_res(&self, resource: &mut R) -> FavCoreResult<()>;
     /// Pull one resource.
     /// # Caution
     /// One needs to handle Ctrl-C with `tokio::signal::ctrl_c` and `tokio::select!`,
@@ -110,6 +119,41 @@ where
             Ok(resp)
         }
     }
+
+    /// Serde json response from [`Self::request`] to json through [`resp2json`].
+    /// pointer is the pointer to the json, see [RFC6901](https://tools.ietf.org/html/rfc6901).
+    fn request_json<T>(
+        &self,
+        api_kind: K,
+        params: &[&str],
+        pointer: &str,
+    ) -> impl Future<Output = FavCoreResult<T>>
+    where
+        T: DeserializeOwned,
+    {
+        async {
+            let resp = self.request(api_kind, params).await?;
+            resp2json(resp, pointer).await
+        }
+    }
+
+    /// Serde json response from [`Self::request_json`] to json first,
+    /// then map it to protobuf msg through [`json2proto`].
+    /// pointer is the pointer to the json, see [RFC6901](https://tools.ietf.org/html/rfc6901).
+    fn request_proto<T>(
+        &self,
+        api_kind: K,
+        params: &[&str],
+        pointer: &str,
+    ) -> impl Future<Output = FavCoreResult<T>>
+    where
+        T: MessageFull,
+    {
+        async {
+            let json = self.request_json(api_kind, params, pointer).await?;
+            json2proto(&json)
+        }
+    }
 }
 
 /// `LocalOperationsExt`, including methods to batch fetch and pull, however,
@@ -122,12 +166,12 @@ where
     R: Res,
     K: Send,
 {
-    /// **Synchronously** fetch all resources using [`LocalOperations::fetch`],
+    /// **Synchronously** fetch all resources using [`LocalOperations::fetch_res`],
     /// since `async trait` is not Send in rust by now.
     fn fetch_all(&self, resources: &mut S) -> impl Future<Output = FavCoreResult<()>> {
         async {
             for r in resources.iter_mut() {
-                if let Err(e) = self.fetch(r).await {
+                if let Err(e) = self.fetch_res(r).await {
                     match e {
                         FavCoreError::Cancel => {
                             print_warn(e);
@@ -179,7 +223,7 @@ where
     R: Res + 'static,
     K: Send + 'static,
 {
-    /// **Asynchronously** fetch resourses using [`Operations::fetch`].
+    /// **Asynchronously** fetch resourses using [`Operations::fetch_res`].
     fn fetch_all(
         &'static self,
         resources: &'static mut S,
@@ -193,7 +237,7 @@ where
                 }
                 let jhs: Vec<_> = batch
                     .into_iter()
-                    .map(|r| tokio::spawn(self.fetch(r)))
+                    .map(|r| tokio::spawn(self.fetch_res(r)))
                     .collect();
                 for jh in jhs {
                     if let Err(e) = jh.await.unwrap() {
@@ -276,4 +320,36 @@ where
     println!("{}", e);
     #[cfg(feature = "tracing")]
     tracing::error!("{}", e);
+}
+
+/// Serde [`Response`] to json.
+pub async fn resp2json<T>(resp: Response, pointer: &str) -> FavCoreResult<T>
+where
+    T: DeserializeOwned,
+{
+    match resp.json::<Value>().await?.pointer_mut(pointer) {
+        Some(json) => {
+            let ret = serde_json::from_value(json.clone())?;
+            Ok(ret)
+        }
+        None => Err(FavCoreError::SerdePointerNotFound),
+    }
+}
+
+/// Map json to proto message.
+pub fn json2proto<T>(json: &Value) -> FavCoreResult<T>
+where
+    T: MessageFull,
+{
+    let json = json.to_string();
+    Ok(parse_from_str_with_options(&json, &PARSE_OPTIONS)?)
+}
+
+/// Map [`Response`] to proto message.
+pub async fn resp2proto<T>(resp: Response, pointer: &str) -> FavCoreResult<T>
+where
+    T: MessageFull,
+{
+    let json = resp2json::<Value>(resp, pointer).await?;
+    json2proto(&json)
 }
