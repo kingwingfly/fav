@@ -9,6 +9,7 @@ use crate::{
     FavCoreResult,
 };
 use core::future::Future;
+use futures::StreamExt;
 use protobuf::MessageFull;
 use protobuf_json_mapping::{parse_from_str_with_options, ParseOptions};
 use reqwest::{header, Client, Response};
@@ -99,7 +100,8 @@ where
     }
 
     /// Request the api returned by [`ApiProvider::api`],
-    /// and with the method returned by `Api::method` and cookie returned by `HttpConfig::cookie_value`.
+    /// and with the method returned by [`Api::method`](crate::api::Api::method)
+    /// and cookie returned by [`HttpConfig::cookie_value`](crate::config::HttpConfig::cookie_value).
     ///
     /// Use the provided params, and client with `HttpConfig::headers`.
     fn request(
@@ -156,140 +158,62 @@ where
     }
 }
 
-/// `LocalOperationsExt`, including methods to batch fetch and pull, however,
-/// it is synchronize since methods in [`LocalOperations`] is not `Send`.
-/// See [`Operations`] and [`OperationsExt`] for asynchronous version.
-pub trait LocalOperationsExt<SS, S, R, K>: LocalOperations<SS, S, R, K>
-where
-    SS: ResSets<S, R>,
-    S: ResSet<R>,
-    R: Res,
-    K: Send,
-{
-    /// **Synchronously** fetch all resources in set using [`LocalOperations::fetch_res`],
-    /// since `async trait` is not Send in rust by now.
-    fn fetch_all(&self, set: &mut S) -> impl Future<Output = FavCoreResult<()>> {
-        async {
-            for r in set.iter_mut() {
-                if let Err(e) = self.fetch_res(r).await {
-                    match e {
-                        FavCoreError::Cancel => {
-                            print_warn(e);
-                            break;
-                        }
-                        _ => print_err(e),
-                    }
-                }
-            }
-            Ok(())
-        }
-    }
-
-    /// **Synchronously** pull all resources in set using [`LocalOperations::pull`],
-    /// since `async trait` is not Send in rust by now.
-    fn pull_all(&self, set: &mut S) -> impl Future<Output = FavCoreResult<()>> {
-        async {
-            for r in set.iter_mut() {
-                if let Err(e) = self.pull(r).await {
-                    match e {
-                        FavCoreError::Cancel => {
-                            print_warn(e);
-                            break;
-                        }
-                        _ => print_err(e),
-                    }
-                }
-            }
-            Ok(())
-        }
-    }
-}
-
-impl<T, SS, S, R, K> LocalOperationsExt<SS, S, R, K> for T
-where
-    T: LocalOperations<SS, S, R, K>,
-    SS: ResSets<S, R>,
-    S: ResSet<R>,
-    R: Res,
-    K: Send,
-{
-}
-
 /// `OperationsExt`, including methods to batch fetch and pull.
 pub trait OperationsExt<SS, S, R, K>: Operations<SS, S, R, K>
 where
-    SS: ResSets<S, R> + 'static,
-    S: ResSet<R> + 'static,
-    R: Res + 'static,
-    K: Send + 'static,
+    SS: ResSets<S, R>,
+    S: ResSet<R>,
+    R: Res,
+    K: Send,
 {
     /// **Asynchronously** fetch resourses in set using [`Operations::fetch_res`].
-    fn fetch_all(&'static self, set: &'static mut S) -> impl Future<Output = FavCoreResult<()>> {
-        async {
-            let mut rs = set.iter_mut();
-            loop {
-                let batch: Vec<_> = rs.by_ref().take(10).collect();
-                if batch.is_empty() {
-                    break;
-                }
-                let jhs: Vec<_> = batch
-                    .into_iter()
-                    .map(|r| self.fetch_res(r))
-                    .map(|f| tokio::spawn(f))
-                    .collect();
-                for jh in jhs {
-                    if let Err(e) = jh.await.unwrap() {
-                        match e {
-                            FavCoreError::Cancel => {
-                                print_warn(e);
-                                break;
-                            }
-                            _ => print_err(e),
-                        }
-                    }
-                }
-            }
-            Ok(())
-        }
+    fn fetch_all<'a>(&self, set: &'a mut S) -> impl Future<Output = FavCoreResult<()>>
+    where
+        R: 'a,
+    {
+        batch_process(set, |r| self.fetch_res(r))
     }
 
     /// **Asynchronously** pull resourses in set using [`Operations::pull`].
-    fn pull_all(&'static self, set: &'static mut S) -> impl Future<Output = FavCoreResult<()>> {
-        async {
-            let mut rs = set.iter_mut();
-            loop {
-                let batch: Vec<_> = rs.by_ref().take(10).collect();
-                if batch.is_empty() {
+    fn pull_all<'a>(&self, set: &'a mut S) -> impl Future<Output = FavCoreResult<()>>
+    where
+        R: 'a,
+    {
+        batch_process(set, |r| self.pull(r))
+    }
+}
+
+async fn batch_process<'a, R, F, T, S>(set: &'a mut S, f: F) -> FavCoreResult<()>
+where
+    R: Res + 'a,
+    F: FnMut(&'a mut R) -> T,
+    T: Future<Output = FavCoreResult<()>>,
+    S: ResSet<R>,
+{
+    let mut stream = tokio_stream::iter(set.iter_mut())
+        .map(f)
+        .buffer_unordered(10);
+    while let Some(r) = stream.next().await {
+        if let Err(e) = r {
+            match e {
+                FavCoreError::Cancel => {
+                    print_warn(e);
                     break;
                 }
-                let jhs: Vec<_> = batch
-                    .into_iter()
-                    .map(|r| tokio::spawn(self.pull(r)))
-                    .collect();
-                for jh in jhs {
-                    if let Err(e) = jh.await.unwrap() {
-                        match e {
-                            FavCoreError::Cancel => {
-                                print_warn(e);
-                                break;
-                            }
-                            _ => print_err(e),
-                        }
-                    }
-                }
+                _ => print_err(e),
             }
-            Ok(())
         }
     }
+    Ok(())
 }
 
 impl<T, SS, S, R, K> OperationsExt<SS, S, R, K> for T
 where
-    T: Operations<SS, S, R, K> + Send,
-    SS: ResSets<S, R> + 'static,
-    S: ResSet<R> + 'static,
-    R: Res + 'static,
-    K: Send + 'static,
+    T: Operations<SS, S, R, K>,
+    SS: ResSets<S, R>,
+    S: ResSet<R>,
+    R: Res,
+    K: Send,
 {
 }
 
@@ -317,7 +241,7 @@ where
     tracing::error!("{}", e);
 }
 
-/// Serde [`Response`] to json.
+/// Serde `Response` to json.
 pub async fn resp2json<T>(resp: Response, pointer: &str) -> FavCoreResult<T>
 where
     T: DeserializeOwned,
@@ -340,7 +264,7 @@ where
     Ok(parse_from_str_with_options(&json, &PARSE_OPTIONS)?)
 }
 
-/// Map [`Response`] to proto message.
+/// Map `Response` to proto message.
 pub async fn resp2proto<T>(resp: Response, pointer: &str) -> FavCoreResult<T>
 where
     T: MessageFull,

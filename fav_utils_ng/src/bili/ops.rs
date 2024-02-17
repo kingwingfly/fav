@@ -61,7 +61,8 @@ impl Operations<BiliSets, BiliSet, BiliRes, ApiKind> for Bili {
         Ok(())
     }
 
-    async fn fetch_res(&self, _resource: &mut BiliRes) -> FavCoreResult<()> {
+    async fn fetch_res(&self, resource: &mut BiliRes) -> FavCoreResult<()> {
+        dbg!(resource);
         Ok(())
     }
 
@@ -89,6 +90,8 @@ fn try_extract_cookie(resp: &Response) -> FavUtilsResult<HashMap<String, String>
 
 #[cfg(test)]
 mod tests {
+    use fav_core::ops::OperationsExt;
+
     use super::*;
     use crate::proto::bili::BiliSets;
 
@@ -106,5 +109,6 @@ mod tests {
         bili.fetch_sets(&mut sets).await.unwrap();
         let set = sets.iter_mut().min_by_key(|s| s.media_count).unwrap();
         bili.fetch_set(set).await.unwrap();
+        bili.fetch_all(set).await.unwrap();
     }
 }
