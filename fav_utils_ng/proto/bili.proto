@@ -9,7 +9,15 @@ message BiliRes {
     string bvid = 1;
     string title = 2;
     int32 status = 3;
-    Upper upper = 15;
+    int64 cid = 4;
+    Upper owner = 5;
+    repeated BiliPage pages = 15;
+}
+
+message BiliPage {
+    int64 cid = 1;
+    int32 page = 2;
+    string part = 3;
 }
 
 message Upper {

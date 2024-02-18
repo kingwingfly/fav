@@ -62,11 +62,40 @@ impl Operations<BiliSets, BiliSet, BiliRes, ApiKind> for Bili {
     }
 
     async fn fetch_res(&self, resource: &mut BiliRes) -> FavCoreResult<()> {
-        dbg!(resource);
+        let id = resource.bvid.clone();
+        let params = &[id.as_str()];
+        tokio::select! {
+            res = self.request_proto::<BiliRes>(ApiKind::FetchRes, params, "/data") => {
+                    *resource |= res?;
+                    resource.on_status(StatusFlags::FETCHED);
+                },
+            _ = tokio::signal::ctrl_c() => {
+                return Err(FavCoreError::Cancel);
+            }
+        }
         Ok(())
     }
 
-    async fn pull(&self, _resource: &mut BiliRes) -> FavCoreResult<()> {
+    async fn pull(&self, resource: &mut BiliRes) -> FavCoreResult<()> {
+        let Wbi { img_url, sub_url } = self
+            .request_json::<Wbi>(ApiKind::Wbi, &[], "/data/wbi_img")
+            .await?;
+        let bvid = resource.bvid.as_str();
+        let cid = resource.cid.to_string();
+        let qn = "80";
+        let fnval = (16 | 1024).to_string();
+        let fourk = "1";
+        let params = &[
+            bvid,
+            cid.as_str(),
+            qn,
+            fnval.as_str(),
+            fourk,
+            sub_url.as_str(),
+            img_url.as_str(),
+        ];
+        let json: serde_json::Value = self.request_json(ApiKind::Pull, params, "").await?;
+        dbg!(json);
         Ok(())
     }
 }
@@ -75,6 +104,12 @@ impl Operations<BiliSets, BiliSet, BiliRes, ApiKind> for Bili {
 struct QrInfo {
     url: String,
     qrcode_key: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct Wbi {
+    img_url: String,
+    sub_url: String,
 }
 
 fn try_extract_cookie(resp: &Response) -> FavUtilsResult<HashMap<String, String>> {
@@ -103,12 +138,14 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn fetch_test() {
+    async fn ops_test() {
         let bili = Bili::read().unwrap();
         let mut sets = BiliSets::default();
         bili.fetch_sets(&mut sets).await.unwrap();
         let set = sets.iter_mut().min_by_key(|s| s.media_count).unwrap();
         bili.fetch_set(set).await.unwrap();
         bili.fetch_all(set).await.unwrap();
+        bili.pull_all(set).await.unwrap();
+        dbg!(set);
     }
 }

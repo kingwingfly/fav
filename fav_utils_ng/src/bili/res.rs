@@ -4,21 +4,34 @@ use std::ops::BitOrAssign;
 
 impl BitOrAssign for BiliSets {
     fn bitor_assign(&mut self, rhs: Self) {
-        rhs.list.into_iter().for_each(|s| {
-            if self.iter().all(|s1| s1.id != s.id) {
-                self.list.push(s);
-            }
-        })
+        let mut cache = vec![];
+        rhs.list
+            .into_iter()
+            .for_each(|s| match self.iter_mut().find(|s1| s1.id == s.id) {
+                Some(s1) => *s1 |= s,
+                None => cache.push(s),
+            });
+        self.list.extend(cache);
     }
 }
 
 impl BitOrAssign for BiliSet {
+    /// Merge two sets. Refresh the media_count, title and upper.
     fn bitor_assign(&mut self, rhs: Self) {
-        rhs.medias.into_iter().for_each(|r| {
-            if self.iter().all(|r1| r1.bvid != r.bvid) {
-                self.medias.push(r);
+        rhs.medias.into_iter().for_each(|s| {
+            if self.iter().all(|s1| s1.bvid != s.bvid) {
+                self.push(s);
             }
         });
+    }
+}
+
+impl BitOrAssign for BiliRes {
+    /// Merge two resources. The status of the left-hand side will be preserved.
+    fn bitor_assign(&mut self, rhs: Self) {
+        let status = self.status;
+        *self = rhs;
+        self.status = status;
     }
 }
 
@@ -71,6 +84,6 @@ impl ResSet<BiliRes> for BiliSet {
 
 impl Res for BiliRes {
     fn upper(&self) -> &impl Attr {
-        self.upper.as_ref().unwrap()
+        self.owner.as_ref().unwrap()
     }
 }

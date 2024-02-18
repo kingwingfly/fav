@@ -78,18 +78,39 @@ bitflags! {
 /// let res_set = res_set.with_res_status_on(StatusFlags::FETCHED);
 /// assert!(res_set.set[0].check_status(StatusFlags::FETCHED));
 /// ```
-pub trait SetStatusExt<R>: ResSet<R> + Status + Sized
+pub trait SetStatusExt<R>: ResSet<R>
 where
     R: Res,
 {
     /// turn on StatusFlags to all resources
-    fn with_res_status_on(mut self, status: StatusFlags) -> Self {
+    fn on_res_status(&mut self, status: StatusFlags) {
+        self.iter_mut().for_each(|r| r.on_status(status));
+    }
+
+    /// set StatusFlags to all resources
+    fn off_res_status(&mut self, status: StatusFlags) {
+        self.iter_mut().for_each(|r| r.off_status(status));
+    }
+
+    /// set StatusFlags to all resources
+    fn set_res_status(&mut self, status: StatusFlags) {
+        self.iter_mut().for_each(|r| r.set_status(status));
+    }
+
+    /// turn on StatusFlags to all resources from old
+    fn with_res_status_on(mut self, status: StatusFlags) -> Self
+    where
+        Self: Sized,
+    {
         self.iter_mut().for_each(|r| r.on_status(status));
         self
     }
 
-    /// set StatusFlags to all resources
-    fn with_res_status_set(mut self, status: StatusFlags) -> Self {
+    /// set StatusFlags to all resources from old
+    fn with_res_status_set(mut self, status: StatusFlags) -> Self
+    where
+        Self: Sized,
+    {
         self.iter_mut().for_each(|r| r.set_status(status));
         self
     }
@@ -98,7 +119,7 @@ where
 impl<S, R> SetStatusExt<R> for S
 where
     R: Res,
-    S: ResSet<R> + Status + Sized,
+    S: ResSet<R>,
 {
 }
 

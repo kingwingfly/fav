@@ -4,8 +4,8 @@
 use crate::{attr::Attr, status::Status};
 
 /// Making resource has the complete metadata needed
-/// This is an auto trait for `T: Attr + Status + Send + Sync`.
+/// This is an auto trait for `T: Attr + Status`.
 /// See [`Attr`] and [`Status`].
-pub trait Meta: Attr + Status + Send + Sync {}
+pub trait Meta: Attr + Status {}
 
-impl<T: Attr + Status + Send + Sync> Meta for T {}
+impl<T: Attr + Status> Meta for T {}
