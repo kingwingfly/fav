@@ -77,6 +77,9 @@ impl Operations<BiliSets, BiliSet, BiliRes, ApiKind> for Bili {
     }
 
     async fn pull(&self, resource: &mut BiliRes) -> FavCoreResult<()> {
+        if resource.check_status(StatusFlags::SAVED) {
+            return Ok(());
+        }
         let Wbi { img_url, sub_url } = self
             .request_json::<Wbi>(ApiKind::Wbi, vec![], "/data/wbi_img")
             .await?;
@@ -92,7 +95,7 @@ impl Operations<BiliSets, BiliSet, BiliRes, ApiKind> for Bili {
         let Dash { audio, video } = self
             .request_json(ApiKind::Pull, params, "/data/dash")
             .await?;
-        self.save(resource, vec![audio, video]).await?;
+        self.save(resource, vec![audio, video]).await?; // Ctrl-C will be caught in `save`
         resource.on_status(StatusFlags::SAVED);
         Ok(())
     }
@@ -118,6 +121,7 @@ struct Dash {
     video: Url,
 }
 
+/// Extract the url from the json value
 fn extract<'de, D>(d: D) -> Result<Url, D::Error>
 where
     D: serde::Deserializer<'de>,

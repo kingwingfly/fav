@@ -16,7 +16,7 @@ impl BitOrAssign for BiliSets {
 }
 
 impl BitOrAssign for BiliSet {
-    /// Merge two sets. Refresh the media_count, title and upper.
+    /// Merge two sets.
     fn bitor_assign(&mut self, rhs: Self) {
         rhs.medias.into_iter().for_each(|s| {
             if self.iter().all(|s1| s1.bvid != s.bvid) {
