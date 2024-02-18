@@ -107,7 +107,7 @@ where
     fn request(
         &self,
         api_kind: K,
-        params: &[&str], // Todo make this arg more generic
+        params: Vec<String>, // Todo make this arg more generic
     ) -> impl Future<Output = FavCoreResult<Response>> {
         async {
             let client = self.client();
@@ -127,7 +127,7 @@ where
     fn request_json<T>(
         &self,
         api_kind: K,
-        params: &[&str],
+        params: Vec<String>,
         pointer: &str,
     ) -> impl Future<Output = FavCoreResult<T>>
     where
@@ -145,7 +145,7 @@ where
     fn request_proto<T>(
         &self,
         api_kind: K,
-        params: &[&str],
+        params: Vec<String>,
         pointer: &str,
     ) -> impl Future<Output = FavCoreResult<T>>
     where

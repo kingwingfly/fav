@@ -15,12 +15,12 @@ const HINT: &str = "Never Login";
 
 impl Operations<BiliSets, BiliSet, BiliRes, ApiKind> for Bili {
     async fn login(&mut self) -> FavCoreResult<()> {
-        let QrInfo { url, qrcode_key } = self.request_json(ApiKind::Qr, &[], "/data").await?;
+        let QrInfo { url, qrcode_key } = self.request_json(ApiKind::Qr, vec![], "/data").await?;
         show_qr_code(url)?;
         for _ in 0..EXPIRED_DURATION / POLL_INTERVAL {
             sleep(Duration::from_secs(POLL_INTERVAL)).await;
             let resp = self
-                .request(ApiKind::QrPoll, &[qrcode_key.as_str()])
+                .request(ApiKind::QrPoll, vec![qrcode_key.clone()])
                 .await?;
             if let Ok(cookies) = try_extract_cookie(&resp) {
                 self.extend_cookies(cookies);
@@ -31,7 +31,7 @@ impl Operations<BiliSets, BiliSet, BiliRes, ApiKind> for Bili {
     }
 
     async fn logout(&mut self) -> FavCoreResult<()> {
-        let params = &[self.cookies().get("bili_jct").expect(HINT).as_str()];
+        let params = vec![self.cookies().get("bili_jct").expect(HINT).to_owned()];
         match self.request_json(ApiKind::Logout, params, "/code").await? {
             0 => Ok(()),
             _ => Err(FavCoreError::UtilsError(Box::new(
@@ -41,7 +41,7 @@ impl Operations<BiliSets, BiliSet, BiliRes, ApiKind> for Bili {
     }
 
     async fn fetch_sets(&self, sets: &mut BiliSets) -> FavCoreResult<()> {
-        let params = &[self.cookies().get("DedeUserID").expect(HINT).as_str()];
+        let params = vec![self.cookies().get("DedeUserID").expect(HINT).to_owned()];
         *sets |= self
             .request_proto(ApiKind::FetchSets, params, "/data")
             .await?;
@@ -52,7 +52,7 @@ impl Operations<BiliSets, BiliSet, BiliRes, ApiKind> for Bili {
         let id = set.id.to_string();
         for pn in 1..=set.media_count.saturating_sub(1) / 20 + 1 {
             let pn = pn.to_string();
-            let params = &[id.as_str(), pn.as_str(), "20"];
+            let params = vec![id.clone(), pn, "20".to_string()];
             *set |= self
                 .request_proto::<BiliSet>(ApiKind::FetchSet, params, "/data")
                 .await?
@@ -62,8 +62,7 @@ impl Operations<BiliSets, BiliSet, BiliRes, ApiKind> for Bili {
     }
 
     async fn fetch_res(&self, resource: &mut BiliRes) -> FavCoreResult<()> {
-        let id = resource.bvid.clone();
-        let params = &[id.as_str()];
+        let params = vec![resource.bvid.clone()];
         tokio::select! {
             res = self.request_proto::<BiliRes>(ApiKind::FetchRes, params, "/data") => {
                     *resource |= res?;
@@ -78,21 +77,16 @@ impl Operations<BiliSets, BiliSet, BiliRes, ApiKind> for Bili {
 
     async fn pull(&self, resource: &mut BiliRes) -> FavCoreResult<()> {
         let Wbi { img_url, sub_url } = self
-            .request_json::<Wbi>(ApiKind::Wbi, &[], "/data/wbi_img")
+            .request_json::<Wbi>(ApiKind::Wbi, vec![], "/data/wbi_img")
             .await?;
-        let bvid = resource.bvid.as_str();
-        let cid = resource.cid.to_string();
-        let qn = "80";
-        let fnval = (16 | 1024).to_string();
-        let fourk = "1";
-        let params = &[
-            bvid,
-            cid.as_str(),
-            qn,
-            fnval.as_str(),
-            fourk,
-            sub_url.as_str(),
-            img_url.as_str(),
+        let params = vec![
+            resource.bvid.clone(),
+            resource.cid.to_string(),
+            "80".to_string(),
+            (16 | 1024).to_string(),
+            "1".to_string(),
+            sub_url,
+            img_url,
         ];
         let json: serde_json::Value = self.request_json(ApiKind::Pull, params, "").await?;
         dbg!(json);

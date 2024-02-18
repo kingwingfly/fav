@@ -81,8 +81,8 @@ pub trait Api {
     /// Return a `Url` parsed with the API endpoint and the given params.
     ///
     /// The number and order of the params should match the keys provided by [`Api::params`].
-    fn url(&self, params: &[&str]) -> Url {
-        Url::parse_with_params(self.endpoint(), self.params().iter().zip(params.iter())).unwrap()
+    fn url(&self, params: Vec<String>) -> Url {
+        Url::parse_with_params(self.endpoint(), self.params().iter().zip(params)).unwrap()
     }
 
     /// Return `Method::GET` by default.

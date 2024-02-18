@@ -79,13 +79,13 @@ impl Api for PullApi {
         &["SESSDATA"]
     }
 
-    fn url(&self, params: &[&str]) -> reqwest::Url {
-        let mut params = self
+    fn url(&self, params: Vec<String>) -> reqwest::Url {
+        let mut params: Vec<_> = self
             .params()
             .to_vec()
             .into_iter()
-            .zip(params.iter().map(|s| s.to_string()))
-            .collect::<Vec<_>>();
+            .zip(params.into_iter())
+            .collect();
         let key = format!("{}{}", params.pop().unwrap().1, params.pop().unwrap().1);
         let url = format!("{}?{}", self.endpoint(), encode_wbi(params, key));
         reqwest::Url::parse(&url).unwrap()
