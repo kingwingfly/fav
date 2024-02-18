@@ -3,7 +3,7 @@
 
 use crate::{
     api::ApiProvider,
-    config::Config,
+    config::{Config, HttpConfig},
     error::FavCoreError,
     res::{Res, ResSet, ResSets},
     FavCoreResult,
@@ -56,7 +56,7 @@ const PARSE_OPTIONS: ParseOptions = ParseOptions {
 /// after your editor generating the signatures, change `LocalOperations` to `Operations`.
 #[allow(missing_docs)]
 #[trait_variant::make(Operations: Send)]
-pub trait LocalOperations<SS, S, R, K>: ApiProvider<K> + Config
+pub trait LocalOperations<SS, S, R, K>: Net<K> + Config
 where
     SS: ResSets<S, R>,
     S: ResSet<R>,
@@ -79,7 +79,13 @@ where
     /// One needs to handle Ctrl-C with `tokio::signal::ctrl_c` and `tokio::select!`,
     /// and return [`FavCoreError::Cancel`]. This error will be handled by `OperationsExt::pull_all`.
     async fn pull(&self, resource: &mut R) -> FavCoreResult<()>;
+}
 
+/// Making it able to perform network operations.
+pub trait Net<K>: HttpConfig + ApiProvider<K>
+where
+    K: Send,
+{
     /// Return a `&'static reqwest::Client`, use it to perform operations during the lifetime of the client.
     /// # Example
     /// ```no_run
@@ -156,6 +162,13 @@ where
             json2proto(&json)
         }
     }
+}
+
+impl<T, K> Net<K> for T
+where
+    T: HttpConfig + ApiProvider<K>,
+    K: Send,
+{
 }
 
 /// `OperationsExt`, including methods to batch fetch and pull.

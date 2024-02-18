@@ -15,12 +15,7 @@ publish = false
 # Core
 fav_core.workspace = true
 # CLI
-clap = { version = "4.4", features = ["derive"] }
-tabled = "0.15"
 indicatif = { version = "0.17", features = ["tokio"] }
-clap_complete = { version = "4" }
-# Error
-snafu = { version = "0.8" }
 # Serde
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
@@ -29,6 +24,7 @@ protobuf = { version = "3", features = ["with-bytes"] }
 protobuf-json-mapping = { version = "3" }
 # Net
 reqwest = { version = "0.11", features = ["json", "cookies"] }
+url = "2.5"
 # Runtime
 tokio = { version = "1", features = [
     "macros",
@@ -38,7 +34,6 @@ tokio = { version = "1", features = [
 ] }
 # tracing
 tracing = { version = "0.1" }
-tracing-subscriber = { version = "0.3" }
 # Tools
 qrcode = { version = "0.13", default-features = false }
 rand = "0.8"

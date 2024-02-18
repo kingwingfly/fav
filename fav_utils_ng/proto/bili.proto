@@ -11,6 +11,7 @@ message BiliRes {
     int32 status = 3;
     int64 cid = 4;
     Upper owner = 5;
+    Qn qn = 6;
     repeated BiliPage pages = 15;
 }
 
@@ -36,4 +37,32 @@ message BiliSet {
 
 message BiliSets {
     repeated BiliSet list = 15;
+}
+
+enum Qn {
+    Default = 0;
+    // 8k
+    EightK = 127;
+    // Dolby Vision
+    Dolby = 126;
+    // HDR
+    HDR = 125;
+    // 4K
+    FourK = 120;
+    // 1080P60
+    FullHDHighFrame = 116;
+    // 1080+
+    FullHDHighCode = 112;
+    // 1080P
+    FullHD = 80;
+    // 720P60
+    HDHighFrame = 74;
+    // 720P
+    HD = 64;
+    // 480P
+    SD = 32;
+    // 360P
+    LD = 16;
+    // 240P
+    VLD = 6;
 }

@@ -181,6 +181,8 @@ pub struct BiliRes {
     pub cid: i64,
     // @@protoc_insertion_point(field:bili.BiliRes.owner)
     pub owner: ::protobuf::MessageField<Upper>,
+    // @@protoc_insertion_point(field:bili.BiliRes.qn)
+    pub qn: ::protobuf::EnumOrUnknown<Qn>,
     // @@protoc_insertion_point(field:bili.BiliRes.pages)
     pub pages: ::std::vec::Vec<BiliPage>,
     // special fields
@@ -200,7 +202,7 @@ impl BiliRes {
     }
 
     fn generated_message_descriptor_data() -> ::protobuf::reflect::GeneratedMessageDescriptorData {
-        let mut fields = ::std::vec::Vec::with_capacity(6);
+        let mut fields = ::std::vec::Vec::with_capacity(7);
         let mut oneofs = ::std::vec::Vec::with_capacity(0);
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
             "bvid",
@@ -226,6 +228,11 @@ impl BiliRes {
             "owner",
             |m: &BiliRes| { &m.owner },
             |m: &mut BiliRes| { &mut m.owner },
+        ));
+        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
+            "qn",
+            |m: &BiliRes| { &m.qn },
+            |m: &mut BiliRes| { &mut m.qn },
         ));
         fields.push(::protobuf::reflect::rt::v2::make_vec_simpler_accessor::<_, _>(
             "pages",
@@ -265,6 +272,9 @@ impl ::protobuf::Message for BiliRes {
                 42 => {
                     ::protobuf::rt::read_singular_message_into_field(is, &mut self.owner)?;
                 },
+                48 => {
+                    self.qn = is.read_enum_or_unknown()?;
+                },
                 122 => {
                     self.pages.push(is.read_message()?);
                 },
@@ -296,6 +306,9 @@ impl ::protobuf::Message for BiliRes {
             let len = v.compute_size();
             my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
         }
+        if self.qn != ::protobuf::EnumOrUnknown::new(Qn::Default) {
+            my_size += ::protobuf::rt::int32_size(6, self.qn.value());
+        }
         for value in &self.pages {
             let len = value.compute_size();
             my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
@@ -320,6 +333,9 @@ impl ::protobuf::Message for BiliRes {
         }
         if let Some(v) = self.owner.as_ref() {
             ::protobuf::rt::write_message_field_with_cached_size(5, v, os)?;
+        }
+        if self.qn != ::protobuf::EnumOrUnknown::new(Qn::Default) {
+            os.write_enum(6, ::protobuf::EnumOrUnknown::value(&self.qn))?;
         }
         for v in &self.pages {
             ::protobuf::rt::write_message_field_with_cached_size(15, v, os)?;
@@ -346,6 +362,7 @@ impl ::protobuf::Message for BiliRes {
         self.status = 0;
         self.cid = 0;
         self.owner.clear();
+        self.qn = ::protobuf::EnumOrUnknown::new(Qn::Default);
         self.pages.clear();
         self.special_fields.clear();
     }
@@ -357,6 +374,7 @@ impl ::protobuf::Message for BiliRes {
             status: 0,
             cid: 0,
             owner: ::protobuf::MessageField::none(),
+            qn: ::protobuf::EnumOrUnknown::from_i32(0),
             pages: ::std::vec::Vec::new(),
             special_fields: ::protobuf::SpecialFields::new(),
         };
@@ -1019,26 +1037,162 @@ impl ::protobuf::reflect::ProtobufValue for BiliSets {
     type RuntimeType = ::protobuf::reflect::rt::RuntimeTypeMessage<Self>;
 }
 
+#[derive(Clone,Copy,PartialEq,Eq,Debug,Hash)]
+// @@protoc_insertion_point(enum:bili.Qn)
+pub enum Qn {
+    // @@protoc_insertion_point(enum_value:bili.Qn.Default)
+    Default = 0,
+    // @@protoc_insertion_point(enum_value:bili.Qn.EightK)
+    EightK = 127,
+    // @@protoc_insertion_point(enum_value:bili.Qn.Dolby)
+    Dolby = 126,
+    // @@protoc_insertion_point(enum_value:bili.Qn.HDR)
+    HDR = 125,
+    // @@protoc_insertion_point(enum_value:bili.Qn.FourK)
+    FourK = 120,
+    // @@protoc_insertion_point(enum_value:bili.Qn.FullHDHighFrame)
+    FullHDHighFrame = 116,
+    // @@protoc_insertion_point(enum_value:bili.Qn.FullHDHighCode)
+    FullHDHighCode = 112,
+    // @@protoc_insertion_point(enum_value:bili.Qn.FullHD)
+    FullHD = 80,
+    // @@protoc_insertion_point(enum_value:bili.Qn.HDHighFrame)
+    HDHighFrame = 74,
+    // @@protoc_insertion_point(enum_value:bili.Qn.HD)
+    HD = 64,
+    // @@protoc_insertion_point(enum_value:bili.Qn.SD)
+    SD = 32,
+    // @@protoc_insertion_point(enum_value:bili.Qn.LD)
+    LD = 16,
+    // @@protoc_insertion_point(enum_value:bili.Qn.VLD)
+    VLD = 6,
+}
+
+impl ::protobuf::Enum for Qn {
+    const NAME: &'static str = "Qn";
+
+    fn value(&self) -> i32 {
+        *self as i32
+    }
+
+    fn from_i32(value: i32) -> ::std::option::Option<Qn> {
+        match value {
+            0 => ::std::option::Option::Some(Qn::Default),
+            127 => ::std::option::Option::Some(Qn::EightK),
+            126 => ::std::option::Option::Some(Qn::Dolby),
+            125 => ::std::option::Option::Some(Qn::HDR),
+            120 => ::std::option::Option::Some(Qn::FourK),
+            116 => ::std::option::Option::Some(Qn::FullHDHighFrame),
+            112 => ::std::option::Option::Some(Qn::FullHDHighCode),
+            80 => ::std::option::Option::Some(Qn::FullHD),
+            74 => ::std::option::Option::Some(Qn::HDHighFrame),
+            64 => ::std::option::Option::Some(Qn::HD),
+            32 => ::std::option::Option::Some(Qn::SD),
+            16 => ::std::option::Option::Some(Qn::LD),
+            6 => ::std::option::Option::Some(Qn::VLD),
+            _ => ::std::option::Option::None
+        }
+    }
+
+    fn from_str(str: &str) -> ::std::option::Option<Qn> {
+        match str {
+            "Default" => ::std::option::Option::Some(Qn::Default),
+            "EightK" => ::std::option::Option::Some(Qn::EightK),
+            "Dolby" => ::std::option::Option::Some(Qn::Dolby),
+            "HDR" => ::std::option::Option::Some(Qn::HDR),
+            "FourK" => ::std::option::Option::Some(Qn::FourK),
+            "FullHDHighFrame" => ::std::option::Option::Some(Qn::FullHDHighFrame),
+            "FullHDHighCode" => ::std::option::Option::Some(Qn::FullHDHighCode),
+            "FullHD" => ::std::option::Option::Some(Qn::FullHD),
+            "HDHighFrame" => ::std::option::Option::Some(Qn::HDHighFrame),
+            "HD" => ::std::option::Option::Some(Qn::HD),
+            "SD" => ::std::option::Option::Some(Qn::SD),
+            "LD" => ::std::option::Option::Some(Qn::LD),
+            "VLD" => ::std::option::Option::Some(Qn::VLD),
+            _ => ::std::option::Option::None
+        }
+    }
+
+    const VALUES: &'static [Qn] = &[
+        Qn::Default,
+        Qn::EightK,
+        Qn::Dolby,
+        Qn::HDR,
+        Qn::FourK,
+        Qn::FullHDHighFrame,
+        Qn::FullHDHighCode,
+        Qn::FullHD,
+        Qn::HDHighFrame,
+        Qn::HD,
+        Qn::SD,
+        Qn::LD,
+        Qn::VLD,
+    ];
+}
+
+impl ::protobuf::EnumFull for Qn {
+    fn enum_descriptor() -> ::protobuf::reflect::EnumDescriptor {
+        static descriptor: ::protobuf::rt::Lazy<::protobuf::reflect::EnumDescriptor> = ::protobuf::rt::Lazy::new();
+        descriptor.get(|| file_descriptor().enum_by_package_relative_name("Qn").unwrap()).clone()
+    }
+
+    fn descriptor(&self) -> ::protobuf::reflect::EnumValueDescriptor {
+        let index = match self {
+            Qn::Default => 0,
+            Qn::EightK => 1,
+            Qn::Dolby => 2,
+            Qn::HDR => 3,
+            Qn::FourK => 4,
+            Qn::FullHDHighFrame => 5,
+            Qn::FullHDHighCode => 6,
+            Qn::FullHD => 7,
+            Qn::HDHighFrame => 8,
+            Qn::HD => 9,
+            Qn::SD => 10,
+            Qn::LD => 11,
+            Qn::VLD => 12,
+        };
+        Self::enum_descriptor().value_by_index(index)
+    }
+}
+
+impl ::std::default::Default for Qn {
+    fn default() -> Self {
+        Qn::Default
+    }
+}
+
+impl Qn {
+    fn generated_enum_descriptor_data() -> ::protobuf::reflect::GeneratedEnumDescriptorData {
+        ::protobuf::reflect::GeneratedEnumDescriptorData::new::<Qn>("Qn")
+    }
+}
+
 static file_descriptor_proto_data: &'static [u8] = b"\
     \n\nbili.proto\x12\x04bili\"u\n\x04Bili\x121\n\x07cookies\x18\x01\x20\
     \x03(\x0b2\x17.bili.Bili.CookiesEntryR\x07cookies\x1a:\n\x0cCookiesEntry\
     \x12\x10\n\x03key\x18\x01\x20\x01(\tR\x03key\x12\x14\n\x05value\x18\x02\
-    \x20\x01(\tR\x05value:\x028\x01\"\xa6\x01\n\x07BiliRes\x12\x12\n\x04bvid\
+    \x20\x01(\tR\x05value:\x028\x01\"\xc0\x01\n\x07BiliRes\x12\x12\n\x04bvid\
     \x18\x01\x20\x01(\tR\x04bvid\x12\x14\n\x05title\x18\x02\x20\x01(\tR\x05t\
     itle\x12\x16\n\x06status\x18\x03\x20\x01(\x05R\x06status\x12\x10\n\x03ci\
     d\x18\x04\x20\x01(\x03R\x03cid\x12!\n\x05owner\x18\x05\x20\x01(\x0b2\x0b\
-    .bili.UpperR\x05owner\x12$\n\x05pages\x18\x0f\x20\x03(\x0b2\x0e.bili.Bil\
-    iPageR\x05pages\"D\n\x08BiliPage\x12\x10\n\x03cid\x18\x01\x20\x01(\x03R\
-    \x03cid\x12\x12\n\x04page\x18\x02\x20\x01(\x05R\x04page\x12\x12\n\x04par\
-    t\x18\x03\x20\x01(\tR\x04part\"-\n\x05Upper\x12\x10\n\x03mid\x18\x01\x20\
-    \x01(\x03R\x03mid\x12\x12\n\x04name\x18\x02\x20\x01(\tR\x04name\"\xb2\
-    \x01\n\x07BiliSet\x12\x0e\n\x02id\x18\x01\x20\x01(\x03R\x02id\x12\x14\n\
-    \x05title\x18\x02\x20\x01(\tR\x05title\x12\x16\n\x06status\x18\x03\x20\
-    \x01(\x05R\x06status\x12\x1f\n\x0bmedia_count\x18\x04\x20\x01(\x05R\nmed\
-    iaCount\x12!\n\x05upper\x18\x0e\x20\x01(\x0b2\x0b.bili.UpperR\x05upper\
-    \x12%\n\x06medias\x18\x0f\x20\x03(\x0b2\r.bili.BiliResR\x06medias\"-\n\
-    \x08BiliSets\x12!\n\x04list\x18\x0f\x20\x03(\x0b2\r.bili.BiliSetR\x04lis\
-    tb\x06proto3\
+    .bili.UpperR\x05owner\x12\x18\n\x02qn\x18\x06\x20\x01(\x0e2\x08.bili.QnR\
+    \x02qn\x12$\n\x05pages\x18\x0f\x20\x03(\x0b2\x0e.bili.BiliPageR\x05pages\
+    \"D\n\x08BiliPage\x12\x10\n\x03cid\x18\x01\x20\x01(\x03R\x03cid\x12\x12\
+    \n\x04page\x18\x02\x20\x01(\x05R\x04page\x12\x12\n\x04part\x18\x03\x20\
+    \x01(\tR\x04part\"-\n\x05Upper\x12\x10\n\x03mid\x18\x01\x20\x01(\x03R\
+    \x03mid\x12\x12\n\x04name\x18\x02\x20\x01(\tR\x04name\"\xb2\x01\n\x07Bil\
+    iSet\x12\x0e\n\x02id\x18\x01\x20\x01(\x03R\x02id\x12\x14\n\x05title\x18\
+    \x02\x20\x01(\tR\x05title\x12\x16\n\x06status\x18\x03\x20\x01(\x05R\x06s\
+    tatus\x12\x1f\n\x0bmedia_count\x18\x04\x20\x01(\x05R\nmediaCount\x12!\n\
+    \x05upper\x18\x0e\x20\x01(\x0b2\x0b.bili.UpperR\x05upper\x12%\n\x06media\
+    s\x18\x0f\x20\x03(\x0b2\r.bili.BiliResR\x06medias\"-\n\x08BiliSets\x12!\
+    \n\x04list\x18\x0f\x20\x03(\x0b2\r.bili.BiliSetR\x04list*\xa3\x01\n\x02Q\
+    n\x12\x0b\n\x07Default\x10\0\x12\n\n\x06EightK\x10\x7f\x12\t\n\x05Dolby\
+    \x10~\x12\x07\n\x03HDR\x10}\x12\t\n\x05FourK\x10x\x12\x13\n\x0fFullHDHig\
+    hFrame\x10t\x12\x12\n\x0eFullHDHighCode\x10p\x12\n\n\x06FullHD\x10P\x12\
+    \x0f\n\x0bHDHighFrame\x10J\x12\x06\n\x02HD\x10@\x12\x06\n\x02SD\x10\x20\
+    \x12\x06\n\x02LD\x10\x10\x12\x07\n\x03VLD\x10\x06b\x06proto3\
 ";
 
 /// `FileDescriptorProto` object which was a source for this generated file
@@ -1063,7 +1217,8 @@ pub fn file_descriptor() -> &'static ::protobuf::reflect::FileDescriptor {
             messages.push(Upper::generated_message_descriptor_data());
             messages.push(BiliSet::generated_message_descriptor_data());
             messages.push(BiliSets::generated_message_descriptor_data());
-            let mut enums = ::std::vec::Vec::with_capacity(0);
+            let mut enums = ::std::vec::Vec::with_capacity(1);
+            enums.push(Qn::generated_enum_descriptor_data());
             ::protobuf::reflect::GeneratedFileDescriptor::new_generated(
                 file_descriptor_proto(),
                 deps,

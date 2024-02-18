@@ -8,6 +8,7 @@ use fav_core::{prelude::*, status::SetStatusExt as _};
 use reqwest::Response;
 use std::collections::HashMap;
 use tokio::time::{sleep, Duration};
+use url::Url;
 
 const POLL_INTERVAL: u64 = 3;
 const EXPIRED_DURATION: u64 = 120;
@@ -82,14 +83,17 @@ impl Operations<BiliSets, BiliSet, BiliRes, ApiKind> for Bili {
         let params = vec![
             resource.bvid.clone(),
             resource.cid.to_string(),
-            "80".to_string(),
+            resource.qn.unwrap().into(), // Dash format, no effect
             (16 | 1024).to_string(),
             "1".to_string(),
             sub_url,
             img_url,
         ];
-        let json: serde_json::Value = self.request_json(ApiKind::Pull, params, "").await?;
-        dbg!(json);
+        let Dash { audio, video } = self
+            .request_json(ApiKind::Pull, params, "/data/dash")
+            .await?;
+        self.save(resource, vec![audio, video]).await?;
+        resource.on_status(StatusFlags::SAVED);
         Ok(())
     }
 }
@@ -104,6 +108,23 @@ struct QrInfo {
 struct Wbi {
     img_url: String,
     sub_url: String,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct Dash {
+    #[serde(deserialize_with = "extract")]
+    audio: Url,
+    #[serde(deserialize_with = "extract")]
+    video: Url,
+}
+
+fn extract<'de, D>(d: D) -> Result<Url, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let v: serde_json::Value = serde::Deserialize::deserialize(d)?;
+    let url = v[0]["base_url"].as_str().unwrap().to_string();
+    Ok(Url::parse(&url).unwrap())
 }
 
 fn try_extract_cookie(resp: &Response) -> FavUtilsResult<HashMap<String, String>> {
@@ -140,6 +161,5 @@ mod tests {
         bili.fetch_set(set).await.unwrap();
         bili.fetch_all(set).await.unwrap();
         bili.pull_all(set).await.unwrap();
-        dbg!(set);
     }
 }

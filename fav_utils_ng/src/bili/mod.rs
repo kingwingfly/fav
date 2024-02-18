@@ -6,4 +6,13 @@ mod local;
 mod ops;
 mod res;
 
-pub use crate::proto::bili::Bili;
+pub use crate::proto::bili::{Bili, Qn};
+
+impl From<Qn> for String {
+    fn from(qn: Qn) -> Self {
+        match qn {
+            Qn::Default => Qn::EightK.into(),
+            _ => (qn as i32).to_string(),
+        }
+    }
+}

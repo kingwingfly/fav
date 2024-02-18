@@ -1,9 +1,10 @@
 //! Local,
 //! helping persisting protobuf
 
+use crate::{ops::Net, res::Res, FavCoreResult};
+use core::future::Future;
 use protobuf::MessageFull;
-
-use crate::FavCoreResult;
+use url::Url;
 
 /// Refer to a path on disk;
 /// impl `PathInfo` for `T: MessageFull` will auto implement [`ProtoLocal`].
@@ -55,3 +56,12 @@ pub trait ProtoLocal: PathInfo + MessageFull {
 }
 
 impl<T> ProtoLocal for T where T: PathInfo + MessageFull {}
+
+/// Make it able to save the resource to local
+pub trait SaveLocal<K>: Net<K>
+where
+    K: Send,
+{
+    /// Save the resource to local
+    fn save<R: Res>(&self, res: &mut R, urls: Vec<Url>) -> impl Future<Output = FavCoreResult<()>>;
+}

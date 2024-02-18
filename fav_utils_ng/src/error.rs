@@ -13,6 +13,8 @@ pub enum FavUtilsError {
     NoCookie,
     /// Qr code expired
     QrExpired,
+    /// FFMPEG merge failed
+    MergeFailed,
 }
 
 impl std::error::Error for FavUtilsError {}
@@ -24,6 +26,7 @@ impl std::fmt::Display for FavUtilsError {
             FavUtilsError::LogoutError => write!(f, "Logout error"),
             FavUtilsError::NoCookie => write!(f, "No cookie"),
             FavUtilsError::QrExpired => write!(f, "Qr code expired"),
+            FavUtilsError::MergeFailed => write!(f, "FFMPEG merge failed"),
         }
     }
 }
