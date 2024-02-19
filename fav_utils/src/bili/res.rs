@@ -16,10 +16,13 @@ impl BitOrAssign for BiliSets {
 }
 
 impl BitOrAssign for BiliSet {
-    /// Merge two sets.
+    /// Merge two sets. If the left set is track, the resources merged into will be track
     fn bitor_assign(&mut self, rhs: Self) {
-        rhs.medias.into_iter().for_each(|s| {
+        rhs.medias.into_iter().for_each(|mut s| {
             if self.iter().all(|s1| s1.bvid != s.bvid) {
+                if self.check_status(StatusFlags::TRACK) {
+                    s.on_status(StatusFlags::TRACK);
+                }
                 self.medias.push(s);
             }
         });

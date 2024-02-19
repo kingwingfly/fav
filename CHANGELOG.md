@@ -9,6 +9,15 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 -->
 
 ## [Unreleased]
+## [0.2.0] - 2024-02-20
+- Broken upgrade: the new `fav` is not compatible with the old `fav`. You need to delete `.fav` dir and re-`init` your `fav` after upgrading to `0.2.0`.
+- Refactor: `fav` is completely rewritten in rusty style, and is now more generic and more maintainable.
+- Simplify: Only `fetch` `pull` `status` `track` `init` `auth` `daemon` `completion` commands are supported now. The `modify` command is removed, since it's too tedious to modify status through a CLI tool.
+- Status: Now `status` only show id, title and few status.
+- Track: Now `track` does not support resource not in remote favorite sets. (In other words, there's no data only in local, but not in remote.)
+- Pull: Now `pull` will call `fetch` first, and resources not tracked and pulled will never able to be pulled.
+- Init: Only support bilibili now, so no args needed after `init`.
+- Daemon: Now iterval less that 15min will only show a warning, and won't exit.
 
 ## [0.1.13] - 2024-02-08
 - Fix: `fav completion` generate the wrong script.

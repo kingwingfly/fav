@@ -99,14 +99,17 @@ pub(super) async fn pull_all() -> FavCoreResult<()> {
     let mut sets = BiliSets::read()?;
     let mut sub = sets.subset(|s| s.check_status(StatusFlags::TRACK));
     for set in sub.iter_mut() {
-        let mut sub = set
-            .subset(|r| !r.check_status(StatusFlags::SAVED) & r.check_status(StatusFlags::TRACK));
+        let mut sub = set.subset(|r| {
+            !r.check_status(StatusFlags::SAVED)
+                & r.check_status(StatusFlags::TRACK | StatusFlags::FETCHED)
+        });
         bili.batch_pull_res(&mut sub).await?;
     }
     sets.write()
 }
 
 pub(super) async fn pull(id: String) -> FavCoreResult<()> {
+    fetch().await?;
     let bili = Bili::read()?;
     let mut sets = BiliSets::read()?;
     let id_ = Id::from(&id);
@@ -115,7 +118,9 @@ pub(super) async fn pull(id: String) -> FavCoreResult<()> {
             s.subset(|r| !r.check_status(StatusFlags::SAVED) & r.check_status(StatusFlags::TRACK));
         bili.batch_pull_res(&mut sub).await?;
     } else if let Some(r) = try_find_res(&mut sets, &id_) {
-        if !r.check_status(StatusFlags::SAVED) & r.check_status(StatusFlags::TRACK) {
+        if !r.check_status(StatusFlags::SAVED)
+            & r.check_status(StatusFlags::TRACK | StatusFlags::FETCHED)
+        {
             bili.pull_res(r).await?;
         }
     } else {
