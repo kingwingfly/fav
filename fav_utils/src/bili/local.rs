@@ -24,6 +24,7 @@ impl PathInfo for BiliSets {
 impl SaveLocal for Bili {
     async fn download<R: Res>(&self, res: &mut R, urls: Vec<reqwest::Url>) -> FavCoreResult<()> {
         let title = res.title();
+        let id = String::from(res.id());
         let mut urls = urls;
         let mut resp_v = self.client().get(urls.pop().unwrap()).send().await?;
         let mut resp_a = self.client().get(urls.pop().unwrap()).send().await?;
@@ -80,6 +81,7 @@ impl SaveLocal for Bili {
         pb.finish();
         merge(
             title,
+            &id,
             file_v.into_inner().unwrap().path().to_str().unwrap(),
             file_a.into_inner().unwrap().path().to_str().unwrap(),
         )
@@ -89,7 +91,11 @@ impl SaveLocal for Bili {
     }
 }
 
-async fn merge(title: &str, path_v: &str, path_a: &str) -> FavCoreResult<()> {
+async fn merge(title: &str, id: &str, path_v: &str, path_a: &str) -> FavCoreResult<()> {
+    let mut title = sanitize_filename::sanitize(title);
+    if std::path::Path::new(&title).exists() {
+        title.push_str(id);
+    }
     let status = tokio::process::Command::new("ffmpeg")
         .args([
             "-y",
@@ -101,7 +107,7 @@ async fn merge(title: &str, path_v: &str, path_a: &str) -> FavCoreResult<()> {
             "copy",
             "-f",
             "mp4",
-            &format!("./{}.mp4", sanitize_filename::sanitize(title)),
+            &format!("./{}.mp4", title),
         ])
         .stderr(std::process::Stdio::null())
         .status()
