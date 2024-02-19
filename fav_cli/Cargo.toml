@@ -14,7 +14,21 @@ all-features = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-fav_utils.workspace = true
+fav_utils = { workspace = true }
+fav_core.workspace = true
+# CLI
+clap = { version = "4.4", features = ["derive"] }
+clap_complete = { version = "4" }
+# Async
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+# Tracing
+tracing = { version = "0.1" }
+# utils
+chrono = "0.4.34"
 
 [build-dependencies]
 rustc_version = "0.4.0"
+
+[features]
+default = ["bili"]
+bili = []

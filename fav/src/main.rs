@@ -1,11 +1,13 @@
-use fav_utils_old::Cli;
-use tracing::Level;
+use fav_cli::bili::Cli;
+use tracing::{error, Level};
 use tracing_subscriber::{filter, prelude::*};
 
 #[tokio::main]
 async fn main() {
     let filter = filter::Targets::new()
         // Enable the `INFO` level for anything in `fav`
+        .with_target("fav_core", Level::INFO)
+        .with_target("fav_utils", Level::INFO)
         .with_target("fav", Level::INFO);
     tracing_subscriber::registry()
         .with(
@@ -16,5 +18,7 @@ async fn main() {
         .with(filter)
         .init();
 
-    Cli::run().await;
+    if let Err(e) = Cli::run().await {
+        error!("{e}");
+    }
 }

@@ -181,7 +181,7 @@ impl Cli {
                 (Some(_), true) => Cli::command()
                     .error(
                         ErrorKind::ArgumentConflict,
-                        "The -a, options to 'git branch' does not take a id.",
+                        "The -a, options to 'fav like' does not take a id.",
                     )
                     .exit(),
             },

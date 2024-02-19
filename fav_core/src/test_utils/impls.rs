@@ -41,12 +41,42 @@ impl AuthOps for App {
 impl ResOps for App {
     type Res = TestRes;
 
-    async fn fetch(&self, resource: &mut Self::Res) -> FavCoreResult<()> {
+    async fn fetch_res(&self, resource: &mut Self::Res) -> FavCoreResult<()> {
         todo!()
     }
 
-    async fn pull(&self, resource: &mut Self::Res) -> FavCoreResult<()> {
+    async fn pull_res(&self, resource: &mut Self::Res) -> FavCoreResult<()> {
         todo!()
+    }
+}
+
+impl SetOps for App {
+    type Set = TestSet;
+
+    async fn fetch_set(&self, set: &mut Self::Set) -> FavCoreResult<()> {
+        todo!()
+    }
+}
+
+impl Sets for TestSets {
+    type Set = TestSet;
+
+    fn iter(&self) -> impl Iterator<Item = &Self::Set> {
+        self.sets.iter()
+    }
+
+    fn iter_mut(&mut self) -> impl Iterator<Item = &mut Self::Set> {
+        self.sets.iter_mut()
+    }
+}
+
+impl Status for TestSet {
+    fn status(&self) -> i32 {
+        self.status
+    }
+
+    fn status_mut(&mut self) -> &mut i32 {
+        &mut self.status
     }
 }
 
@@ -56,14 +86,6 @@ impl Attr for TestRes {
     }
 
     fn title(&self) -> &str {
-        todo!()
-    }
-
-    fn set_id(&mut self, id: Id) {
-        todo!()
-    }
-
-    fn set_title(&mut self, title: &str) {
         todo!()
     }
 }

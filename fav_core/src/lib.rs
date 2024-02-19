@@ -14,6 +14,8 @@ pub mod ops;
 pub mod remote;
 pub mod res;
 pub mod status;
+#[cfg(feature = "visual")]
+pub mod visual;
 
 /// Proto data structures used for `fav_core`'s test
 #[cfg(test)]
@@ -29,7 +31,7 @@ pub mod prelude {
     pub use crate::error::*;
     pub use crate::local::{PathInfo, ProtoLocal, SaveLocal};
     pub use crate::meta::Meta;
-    pub use crate::ops::{AuthOps, Net, Ops, ResOps, SetOps, SetOpsExt, SetsOps};
+    pub use crate::ops::{AuthOps, Net, Ops, ResOps, ResOpsExt, SetOps, SetsOps};
     pub use crate::res::{Res, Set, Sets};
     pub use crate::status::{Status, StatusFlags};
 }

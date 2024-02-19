@@ -8,7 +8,7 @@ mod proto;
 #[cfg(feature = "bili")]
 pub mod bili;
 #[cfg(feature = "bili")]
-pub use bili::Bili;
+pub use bili::*;
 
 pub mod error;
 mod utils;

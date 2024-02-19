@@ -20,12 +20,12 @@ pub trait Set {
     /// # #[path = "test_utils/mod.rs"]
     /// # mod test_utils;
     /// # use test_utils::data::{App, TestSet};
-    /// # use fav_core::{status::{Status, StatusFlags}, res::Set, ops::SetOpsExt};
+    /// # use fav_core::{status::{Status, StatusFlags}, res::Set, ops::ResOpsExt};
     /// # async {
     /// let app = App::default();
     /// let mut set = TestSet::default();
     /// let mut sub = set.subset(|r| r.check_status(StatusFlags::TRACK));
-    /// app.fetch_all(&mut sub);
+    /// app.batch_fetch_res(&mut sub);
     /// # };
     /// ```
     fn subset<F>(&mut self, filter: F) -> SubSet<Self, F>
@@ -45,6 +45,28 @@ pub trait Sets {
     fn iter(&self) -> impl Iterator<Item = &Self::Set>;
     /// The &mut set that the resource sets contains.
     fn iter_mut(&mut self) -> impl Iterator<Item = &mut Self::Set>;
+
+    /// Get a subset of the resource sets.
+    /// # Example
+    /// ```no_run
+    /// # #[path = "test_utils/mod.rs"]
+    /// # mod test_utils;
+    /// # use test_utils::data::{App, TestSets};
+    /// # use fav_core::{status::{Status, StatusFlags}, res::Sets, ops::SetOpsExt};
+    /// # async {
+    /// let app = App::default();
+    /// let mut sets = TestSets::default();
+    /// let mut sub = sets.subset(|r| r.check_status(StatusFlags::TRACK));
+    /// app.batch_fetch_set(&mut sub);
+    /// # };
+    /// ```
+    fn subset<F>(&mut self, filter: F) -> SubSets<Self, F>
+    where
+        F: Fn(&Self::Set) -> bool,
+        Self: Sized,
+    {
+        SubSets { sets: self, filter }
+    }
 }
 
 /// A subset of a resource set.
@@ -70,5 +92,31 @@ where
 
     fn iter_mut(&mut self) -> impl Iterator<Item = &mut Self::Res> {
         self.set.iter_mut().filter(|r| (self.filter)(*r))
+    }
+}
+
+/// A subset of a resource sets.
+pub struct SubSets<'a, SS, F>
+where
+    SS: Sets + 'a,
+    F: Fn(&SS::Set) -> bool,
+{
+    sets: &'a mut SS,
+    filter: F,
+}
+
+impl<'a, SS, F> Sets for SubSets<'a, SS, F>
+where
+    SS: Sets + 'a,
+    F: Fn(&SS::Set) -> bool,
+{
+    type Set = SS::Set;
+
+    fn iter(&self) -> impl Iterator<Item = &Self::Set> {
+        self.sets.iter().filter(|s| (self.filter)(*s))
+    }
+
+    fn iter_mut(&mut self) -> impl Iterator<Item = &mut Self::Set> {
+        self.sets.iter_mut().filter(|s| (self.filter)(*s))
     }
 }

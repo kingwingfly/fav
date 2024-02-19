@@ -8,6 +8,7 @@ use fav_core::{prelude::*, status::SetStatusExt as _};
 use reqwest::Response;
 use std::collections::HashMap;
 use tokio::time::{sleep, Duration};
+use tracing::info;
 use url::Url;
 
 const POLL_INTERVAL: u64 = 3;
@@ -16,6 +17,7 @@ const HINT: &str = "Never Login";
 
 impl AuthOps for Bili {
     async fn login(&mut self) -> FavCoreResult<()> {
+        info!("Scan the QR code to login.");
         let QrInfo { url, qrcode_key } = self.request_json(ApiKind::Qr, vec![], "/data").await?;
         show_qr_code(url)?;
         for _ in 0..EXPIRED_DURATION / POLL_INTERVAL {
@@ -25,6 +27,7 @@ impl AuthOps for Bili {
                 .await?;
             if let Ok(cookies) = try_extract_cookie(&resp) {
                 self.extend_cookies(cookies);
+                info!("Login successfully.");
                 return Ok(());
             }
         }
@@ -32,9 +35,13 @@ impl AuthOps for Bili {
     }
 
     async fn logout(&mut self) -> FavCoreResult<()> {
+        info!("Logging out...");
         let params = vec![self.cookies().get("bili_jct").expect(HINT).to_owned()];
         match self.request_json(ApiKind::Logout, params, "/code").await? {
-            0 => Ok(()),
+            0 => {
+                info!("Logout successfully.");
+                Ok(())
+            }
             _ => Err(FavCoreError::UtilsError(Box::new(
                 FavUtilsError::LogoutError,
             ))),
@@ -46,10 +53,12 @@ impl SetsOps for Bili {
     type Sets = BiliSets;
 
     async fn fetch_sets(&self, sets: &mut BiliSets) -> FavCoreResult<()> {
+        info!("Fetching sets...");
         let params = vec![self.cookies().get("DedeUserID").expect(HINT).to_owned()];
         *sets |= self
             .request_proto(ApiKind::FetchSets, params, "/data")
             .await?;
+        info!("Fetched sets successfully.");
         Ok(())
     }
 }
@@ -59,6 +68,7 @@ impl SetOps for Bili {
 
     async fn fetch_set(&self, set: &mut BiliSet) -> FavCoreResult<()> {
         let id = set.id.to_string();
+        info!("Fetching set<{}>", id);
         for pn in 1..=set.media_count.saturating_sub(1) / 20 + 1 {
             let pn = pn.to_string();
             let params = vec![id.clone(), pn, "20".to_string()];
@@ -67,6 +77,7 @@ impl SetOps for Bili {
                 .await?
                 .with_res_status_on(StatusFlags::FAV);
         }
+        info!("Fetching set<{}> successfully.", id);
         Ok(())
     }
 }
@@ -74,7 +85,7 @@ impl SetOps for Bili {
 impl ResOps for Bili {
     type Res = BiliRes;
 
-    async fn fetch(&self, resource: &mut BiliRes) -> FavCoreResult<()> {
+    async fn fetch_res(&self, resource: &mut BiliRes) -> FavCoreResult<()> {
         let params = vec![resource.bvid.clone()];
         tokio::select! {
             res = self.request_proto::<BiliRes>(ApiKind::FetchRes, params, "/data") => {
@@ -88,7 +99,7 @@ impl ResOps for Bili {
         Ok(())
     }
 
-    async fn pull(&self, resource: &mut BiliRes) -> FavCoreResult<()> {
+    async fn pull_res(&self, resource: &mut BiliRes) -> FavCoreResult<()> {
         let Wbi { img_url, sub_url } = self
             .request_json::<Wbi>(ApiKind::Wbi, vec![], "/data/wbi_img")
             .await?;
@@ -155,7 +166,7 @@ fn try_extract_cookie(resp: &Response) -> FavUtilsResult<HashMap<String, String>
 mod tests {
     use super::*;
     use crate::proto::bili::BiliSets;
-    use fav_core::ops::SetOpsExt;
+    use fav_core::ops::ResOpsExt;
 
     #[test]
     fn print_data() {
@@ -181,8 +192,8 @@ mod tests {
         bili.fetch_sets(&mut sets).await.unwrap();
         let set = sets.iter_mut().min_by_key(|s| s.media_count).unwrap();
         bili.fetch_set(set).await.unwrap();
-        bili.fetch_all(set).await.unwrap();
-        bili.pull_all(set).await.unwrap();
+        bili.batch_fetch_res(set).await.unwrap();
+        bili.batch_pull_res(set).await.unwrap();
         sets.write().unwrap();
     }
 
@@ -196,6 +207,6 @@ mod tests {
         bili.fetch_set(set).await.unwrap();
         set.on_res_status(StatusFlags::TRACK);
         let mut sub = set.subset(|r| r.check_status(StatusFlags::TRACK));
-        bili.fetch_all(&mut sub).await.unwrap();
+        bili.batch_fetch_res(&mut sub).await.unwrap();
     }
 }

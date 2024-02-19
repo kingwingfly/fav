@@ -6,7 +6,7 @@ description = "Fav's utils crate; A collection of utilities and data structures 
 license.workspace = true
 edition.workspace = true
 repository.workspace = true
-documentation = "https://docs.rs/fav_utils_ng"
+documentation = "https://docs.rs/fav_utils"
 publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -36,12 +36,9 @@ tokio = { version = "1", features = [
 tracing = { version = "0.1" }
 # Tools
 qrcode = { version = "0.13", default-features = false }
-rand = "0.8"
-base64 = "0.21"
 tempfile = "3.9.0"
 sanitize-filename = "0.5.0"
 md5 = "0.7.0"
-chrono = "0.4"
 
 [build-dependencies]
 protobuf = { version = "3", features = ["with-bytes"] }

@@ -18,11 +18,24 @@ pub use fav_derive::Attr;
 /// assert_eq!(id, Id::String("abc"));
 /// ```
 #[allow(missing_docs)]
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum Id<'a> {
     I64(i64),
     I32(i32),
     String(&'a str),
+}
+
+impl PartialEq for Id<'_> {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Id::I64(a), Id::I64(b)) => a == b,
+            (Id::I32(a), Id::I32(b)) => a == b,
+            (Id::I64(a), Id::I32(b)) => *a == *b as i64,
+            (Id::I32(a), Id::I64(b)) => *a as i64 == *b,
+            (Id::String(a), Id::String(b)) => a == b,
+            _ => false,
+        }
+    }
 }
 
 /// Attributes managing trait.
@@ -41,14 +54,6 @@ pub enum Id<'a> {
 ///
 ///     fn title(&self) -> &str {
 ///         &self.title
-///     }
-///
-///     fn set_id(&mut self, id: Id) {
-///         self.id = id.into();
-///     }
-///
-///     fn set_title(&mut self, title: &str) {
-///         self.title = title.into()
 ///     }
 /// }
 ///
@@ -73,8 +78,6 @@ pub trait Attr {
     fn id(&self) -> Id;
     /// Return the title of the target
     fn title(&self) -> &str;
-    fn set_id(&mut self, id: Id);
-    fn set_title(&mut self, title: &str);
 }
 
 impl From<i64> for Id<'_> {

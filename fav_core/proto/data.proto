@@ -17,6 +17,7 @@ message TestSet {
     int32 id = 1;
     string title = 2;
     repeated TestRes set = 3;
+    int32 status = 4;
 }
 
 message TestRes {

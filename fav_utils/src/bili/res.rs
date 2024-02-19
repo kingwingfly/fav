@@ -47,8 +47,6 @@ impl Sets for BiliSets {
     }
 }
 
-impl Res for BiliSet {}
-
 impl Set for BiliSet {
     type Res = BiliRes;
 

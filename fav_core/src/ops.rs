@@ -15,6 +15,7 @@ use protobuf_json_mapping::{parse_from_str_with_options, ParseOptions};
 use reqwest::{header, Client, Response};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
+use tracing::warn;
 
 const PARSE_OPTIONS: ParseOptions = ParseOptions {
     ignore_unknown_fields: true,
@@ -95,13 +96,13 @@ pub trait LocalResOps: Net + HttpConfig {
     /// Fetch one resource
     /// # Caution
     /// One could handle Ctrl-C with `tokio::signal::ctrl_c` and `tokio::select!`,
-    /// and return [`FavCoreError::Cancel`]. This error will be handled by `OperationsExt::fetch_all`.
-    async fn fetch(&self, resource: &mut Self::Res) -> FavCoreResult<()>;
+    /// and return [`FavCoreError::Cancel`]. This error will be handled by [`ResOps::batch_fetch_res`].
+    async fn fetch_res(&self, resource: &mut Self::Res) -> FavCoreResult<()>;
     /// Pull one resource.
     /// # Caution
     /// One needs to handle Ctrl-C with `tokio::signal::ctrl_c` and `tokio::select!`,
-    /// and return [`FavCoreError::Cancel`]. This error will be handled by `OperationsExt::pull_all`.
-    async fn pull(&self, resource: &mut Self::Res) -> FavCoreResult<()>;
+    /// and return [`FavCoreError::Cancel`]. This error will be handled by [`ResOps::batch_pull_res`].
+    async fn pull_res(&self, resource: &mut Self::Res) -> FavCoreResult<()>;
 }
 
 /// Making it able to perform network operations.
@@ -186,33 +187,99 @@ pub trait Net: HttpConfig + ApiProvider {
 
 impl<T> Net for T where T: HttpConfig + ApiProvider {}
 
-/// `OperationsExt`, including methods to batch fetch and pull.
-pub trait SetOpsExt: ResOps {
-    /// **Asynchronously** fetch resourses in set using [`ResOps::fetch`].
-    fn fetch_all<'a, S>(&self, set: &'a mut S) -> impl Future<Output = FavCoreResult<()>>
+/// `SetsOpsExt`, including methods to batch fetch set in sets.
+/// # Example
+/// ```no_run
+/// # #[path = "test_utils/mod.rs"]
+/// # mod test_utils;
+/// # use test_utils::data::{App, TestSets};
+/// # use fav_core::{status::{Status, StatusFlags}, res::Sets, ops::SetOpsExt};
+/// # async {
+/// let app = App::default();
+/// let mut sets = TestSets::default();
+/// let mut sub = sets.subset(|r| r.check_status(StatusFlags::TRACK));
+/// app.batch_fetch_set(&mut sub);
+/// # };
+/// ```
+pub trait SetOpsExt: SetOps {
+    /// **Asynchronously** fetch sets in sets using [`SetOps::fetch_set`].
+    fn batch_fetch_set<'a, SS>(&self, sets: &'a mut SS) -> impl Future<Output = FavCoreResult<()>>
     where
-        S: Set<Res = Self::Res>,
+        SS: Sets<Set = Self::Set>,
     {
-        batch_process(set, |r| self.fetch(r))
-    }
-
-    /// **Asynchronously** pull resourses in set using [`ResOps::pull`].
-    fn pull_all<'a, S>(&self, set: &'a mut S) -> impl Future<Output = FavCoreResult<()>>
-    where
-        S: Set<Res = Self::Res>,
-    {
-        batch_process(set, |r| self.pull(r))
+        batch_op_set(sets, |r| self.fetch_set(r))
     }
 }
 
-/// A helper function to batch process resources.
+/// A helper function to batch do operation on sets.
+/// You can use it like [`batch_op_set`]
+/// However, it's better to use [`Sets::subset`] and [`SetOpsExt`] instead.
+/// See [`SetOpsExt`] for more information.
+pub async fn batch_op_set<'a, SS, F, T>(set: &'a mut SS, f: F) -> FavCoreResult<()>
+where
+    SS: Sets + 'a,
+    F: FnMut(&'a mut SS::Set) -> T,
+    T: Future<Output = FavCoreResult<()>>,
+{
+    let mut stream = tokio_stream::iter(set.iter_mut())
+        .map(f)
+        .buffer_unordered(10);
+    while let Some(r) = stream.next().await {
+        if let Err(e) = r {
+            match e {
+                FavCoreError::Cancel => {
+                    warn!("{e}");
+                    break;
+                }
+                _ => err(e),
+            }
+        }
+    }
+    Ok(())
+}
+
+impl<T> SetOpsExt for T where T: SetOps {}
+
+/// `SetOpsExt`, including methods to batch fetch and pull resources in set.
+/// # Example
+/// ```no_run
+/// # #[path = "test_utils/mod.rs"]
+/// # mod test_utils;
+/// # use test_utils::data::{App, TestSet};
+/// # use fav_core::{status::{Status, StatusFlags}, res::Set, ops::ResOpsExt};
+/// # async {
+/// let app = App::default();
+/// let mut set = TestSet::default();
+/// let mut sub = set.subset(|r| r.check_status(StatusFlags::TRACK));
+/// app.batch_fetch_res(&mut sub);
+/// # };
+/// ```
+pub trait ResOpsExt: ResOps {
+    /// **Asynchronously** fetch resourses in set using [`ResOps::fetch`].
+    fn batch_fetch_res<'a, S>(&self, set: &'a mut S) -> impl Future<Output = FavCoreResult<()>>
+    where
+        S: Set<Res = Self::Res>,
+    {
+        batch_op_res(set, |r| self.fetch_res(r))
+    }
+
+    /// **Asynchronously** pull resourses in set using [`ResOps::pull`].
+    fn batch_pull_res<'a, S>(&self, set: &'a mut S) -> impl Future<Output = FavCoreResult<()>>
+    where
+        S: Set<Res = Self::Res>,
+    {
+        batch_op_res(set, |r| self.pull_res(r))
+    }
+}
+
+/// A helper function to batch do operation on resources.
 ///
 /// # Example
 /// ```no_run
 /// # #[path = "test_utils/mod.rs"]
 /// # mod test_utils;
 /// # use test_utils::data::{App, TestSet, TestRes};
-/// # use fav_core::{status::{Status, StatusFlags}, res::{Set, Res}, ops::{batch_process, ResOps}};
+/// # use fav_core::{status::{Status, StatusFlags}, res::{Set, Res}, ops::{batch_op_res, ResOps}};
 /// struct Sub<'a, F: Fn(&dyn Res) -> bool> {
 ///     set: &'a mut TestSet,
 ///     f: F,
@@ -234,23 +301,12 @@ pub trait SetOpsExt: ResOps {
 ///     set: &mut set,
 ///     f: |r| r.check_status(StatusFlags::TRACK)
 /// };
-/// batch_process(&mut sub, |r| app.fetch(r)).await.unwrap();
+/// batch_op_res(&mut sub, |r| app.fetch_res(r)).await.unwrap();
 /// # };
 /// ```
-/// However, it's better to use [`Set::subset`] and [`SetOpsExt`] instead.
-/// ```no_run
-/// # #[path = "test_utils/mod.rs"]
-/// # mod test_utils;
-/// # use test_utils::data::{App, TestSet};
-/// # use fav_core::{status::{Status, StatusFlags}, res::Set, ops::SetOpsExt};
-/// # async {
-/// let app = App::default();
-/// let mut set = TestSet::default();
-/// let mut sub = set.subset(|r| r.check_status(StatusFlags::TRACK));
-/// app.fetch_all(&mut sub);
-/// # };
-/// ```
-pub async fn batch_process<'a, S, F, T>(set: &'a mut S, f: F) -> FavCoreResult<()>
+/// However, it's better to use [`Set::subset`] and [`ResOpsExt`] instead.
+/// See [`ResOpsExt`] for more information.
+pub async fn batch_op_res<'a, S, F, T>(set: &'a mut S, f: F) -> FavCoreResult<()>
 where
     S: Set + 'a,
     F: FnMut(&'a mut S::Res) -> T,
@@ -263,33 +319,22 @@ where
         if let Err(e) = r {
             match e {
                 FavCoreError::Cancel => {
-                    print_warn(e);
+                    warn!("{e}");
                     break;
                 }
-                _ => print_err(e),
+                _ => err(e),
             }
         }
     }
     Ok(())
 }
 
-impl<T> SetOpsExt for T where T: ResOps {}
-
-/// A function to print a warning message, influenced by `tracing` feature.
-/// This needn't be `inline` since warning message is not so frequent.
-pub fn print_warn<T>(e: T)
-where
-    T: std::fmt::Display,
-{
-    #[cfg(not(feature = "tracing"))]
-    println!("{}", e);
-    #[cfg(feature = "tracing")]
-    tracing::warn!("{}", e);
-}
+impl<T> ResOpsExt for T where T: ResOps {}
 
 /// A function to print a err message, influenced by `tracing` feature.
 /// This needn't be `inline` since error message is not so frequent.
-pub fn print_err<E>(e: E)
+#[inline]
+pub fn err<E>(e: E)
 where
     E: std::error::Error,
 {

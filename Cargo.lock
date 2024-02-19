@@ -169,9 +169,9 @@ checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
 name = "chrono"
-version = "0.4.33"
+version = "0.4.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9f13690e35a5e4ace198e7beea2895d29f3a9cc55015fcebe6336bd2010af9eb"
+checksum = "5bc015644b92d5890fab7489e49d21f879d5c990186827d42ec511919404f38b"
 dependencies = [
  "android-tzdata",
  "iana-time-zone",
@@ -349,8 +349,7 @@ checksum = "25cbce373ec4653f1a01a31e8a5e5ec0c622dc27ff9c4e6606eefef5cbbed4a5"
 name = "fav"
 version = "0.1.13"
 dependencies = [
- "fav_core",
- "fav_utils_old",
+ "fav_cli",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -360,8 +359,14 @@ dependencies = [
 name = "fav_cli"
 version = "0.0.1-alpha1"
 dependencies = [
+ "chrono",
+ "clap",
+ "clap_complete",
+ "fav_core",
  "fav_utils",
  "rustc_version",
+ "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -379,6 +384,7 @@ dependencies = [
  "rustc_version",
  "serde",
  "serde_json",
+ "tabled",
  "tokio",
  "tokio-stream",
  "tracing",
@@ -401,8 +407,6 @@ dependencies = [
 name = "fav_utils"
 version = "0.0.1-alpha5"
 dependencies = [
- "base64",
- "chrono",
  "fav_core",
  "indicatif",
  "md5",
@@ -410,7 +414,6 @@ dependencies = [
  "protobuf-codegen",
  "protobuf-json-mapping",
  "qrcode",
- "rand",
  "reqwest",
  "rustc_version",
  "sanitize-filename",

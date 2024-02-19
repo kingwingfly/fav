@@ -504,6 +504,8 @@ pub struct TestSet {
     pub title: ::std::string::String,
     // @@protoc_insertion_point(field:data.TestSet.set)
     pub set: ::std::vec::Vec<TestRes>,
+    // @@protoc_insertion_point(field:data.TestSet.status)
+    pub status: i32,
     // special fields
     // @@protoc_insertion_point(special_field:data.TestSet.special_fields)
     pub special_fields: ::protobuf::SpecialFields,
@@ -521,7 +523,7 @@ impl TestSet {
     }
 
     fn generated_message_descriptor_data() -> ::protobuf::reflect::GeneratedMessageDescriptorData {
-        let mut fields = ::std::vec::Vec::with_capacity(3);
+        let mut fields = ::std::vec::Vec::with_capacity(4);
         let mut oneofs = ::std::vec::Vec::with_capacity(0);
         fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
             "id",
@@ -537,6 +539,11 @@ impl TestSet {
             "set",
             |m: &TestSet| { &m.set },
             |m: &mut TestSet| { &mut m.set },
+        ));
+        fields.push(::protobuf::reflect::rt::v2::make_simpler_field_accessor::<_, _>(
+            "status",
+            |m: &TestSet| { &m.status },
+            |m: &mut TestSet| { &mut m.status },
         ));
         ::protobuf::reflect::GeneratedMessageDescriptorData::new_2::<TestSet>(
             "TestSet",
@@ -565,6 +572,9 @@ impl ::protobuf::Message for TestSet {
                 26 => {
                     self.set.push(is.read_message()?);
                 },
+                32 => {
+                    self.status = is.read_int32()?;
+                },
                 tag => {
                     ::protobuf::rt::read_unknown_or_skip_group(tag, is, self.special_fields.mut_unknown_fields())?;
                 },
@@ -587,6 +597,9 @@ impl ::protobuf::Message for TestSet {
             let len = value.compute_size();
             my_size += 1 + ::protobuf::rt::compute_raw_varint64_size(len) + len;
         };
+        if self.status != 0 {
+            my_size += ::protobuf::rt::int32_size(4, self.status);
+        }
         my_size += ::protobuf::rt::unknown_fields_size(self.special_fields.unknown_fields());
         self.special_fields.cached_size().set(my_size as u32);
         my_size
@@ -602,6 +615,9 @@ impl ::protobuf::Message for TestSet {
         for v in &self.set {
             ::protobuf::rt::write_message_field_with_cached_size(3, v, os)?;
         };
+        if self.status != 0 {
+            os.write_int32(4, self.status)?;
+        }
         os.write_unknown_fields(self.special_fields.unknown_fields())?;
         ::std::result::Result::Ok(())
     }
@@ -622,6 +638,7 @@ impl ::protobuf::Message for TestSet {
         self.id = 0;
         self.title.clear();
         self.set.clear();
+        self.status = 0;
         self.special_fields.clear();
     }
 
@@ -630,6 +647,7 @@ impl ::protobuf::Message for TestSet {
             id: 0,
             title: ::std::string::String::new(),
             set: ::std::vec::Vec::new(),
+            status: 0,
             special_fields: ::protobuf::SpecialFields::new(),
         };
         &instance
@@ -1114,16 +1132,17 @@ static file_descriptor_proto_data: &'static [u8] = b"\
     \x18\x01\x20\x03(\x0b2\x17.data.Conf.CookiesEntryR\x07cookies\x1a:\n\x0c\
     CookiesEntry\x12\x10\n\x03key\x18\x01\x20\x01(\tR\x03key\x12\x14\n\x05va\
     lue\x18\x02\x20\x01(\tR\x05value:\x028\x01\"\x05\n\x03App\"-\n\x08TestSe\
-    ts\x12!\n\x04sets\x18\x01\x20\x03(\x0b2\r.data.TestSetR\x04sets\"P\n\x07\
+    ts\x12!\n\x04sets\x18\x01\x20\x03(\x0b2\r.data.TestSetR\x04sets\"h\n\x07\
     TestSet\x12\x0e\n\x02id\x18\x01\x20\x01(\x05R\x02id\x12\x14\n\x05title\
     \x18\x02\x20\x01(\tR\x05title\x12\x1f\n\x03set\x18\x03\x20\x03(\x0b2\r.d\
-    ata.TestResR\x03set\"G\n\x07TestRes\x12\x0e\n\x02id\x18\x01\x20\x01(\x05\
-    R\x02id\x12\x14\n\x05title\x18\x02\x20\x01(\tR\x05title\x12\x16\n\x06sta\
-    tus\x18\x03\x20\x01(\x05R\x06status\"J\n\nStatusTest\x12\x0e\n\x02id\x18\
-    \x01\x20\x01(\x05R\x02id\x12\x14\n\x05title\x18\x02\x20\x01(\tR\x05title\
-    \x12\x16\n\x06status\x18\x03\x20\x01(\x05R\x06status\"0\n\x08AttrTest\
-    \x12\x0e\n\x02id\x18\x01\x20\x01(\x05R\x02id\x12\x14\n\x05title\x18\x02\
-    \x20\x01(\tR\x05titleb\x06proto3\
+    ata.TestResR\x03set\x12\x16\n\x06status\x18\x04\x20\x01(\x05R\x06status\
+    \"G\n\x07TestRes\x12\x0e\n\x02id\x18\x01\x20\x01(\x05R\x02id\x12\x14\n\
+    \x05title\x18\x02\x20\x01(\tR\x05title\x12\x16\n\x06status\x18\x03\x20\
+    \x01(\x05R\x06status\"J\n\nStatusTest\x12\x0e\n\x02id\x18\x01\x20\x01(\
+    \x05R\x02id\x12\x14\n\x05title\x18\x02\x20\x01(\tR\x05title\x12\x16\n\
+    \x06status\x18\x03\x20\x01(\x05R\x06status\"0\n\x08AttrTest\x12\x0e\n\
+    \x02id\x18\x01\x20\x01(\x05R\x02id\x12\x14\n\x05title\x18\x02\x20\x01(\t\
+    R\x05titleb\x06proto3\
 ";
 
 /// `FileDescriptorProto` object which was a source for this generated file

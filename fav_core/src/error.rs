@@ -25,6 +25,8 @@ pub enum FavCoreError {
     ProtobufError(protobuf::Error),
     /// IO error
     IoError(std::io::Error),
+    /// Id not found
+    IdNotFound(String),
 }
 
 impl std::fmt::Display for FavCoreError {
@@ -39,7 +41,12 @@ impl std::fmt::Display for FavCoreError {
             FavCoreError::SerdePointerNotFound => write!(f, "SerdeErr:: pointer not found"),
             FavCoreError::Json2ProtobufError(source) => write!(f, "ProtobufParseErr: {}", source),
             FavCoreError::ProtobufError(source) => write!(f, "ProtobufError: {}", source),
-            FavCoreError::IoError(source) => write!(f, "IOErr: {}", source),
+            FavCoreError::IoError(source) => {
+                write!(f, "IOErr: {}; Maybe you didn't run `fav init`", source)
+            }
+            FavCoreError::IdNotFound(source) => {
+                write!(f, "Id<{}> not found", source)
+            }
         }
     }
 }

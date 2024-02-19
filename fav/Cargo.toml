@@ -11,8 +11,7 @@ documentation.workspace = true
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-fav_core.workspace = true
-fav_utils_old.workspace = true
+fav_cli.workspace = true
 # runtime
 tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 # tracing

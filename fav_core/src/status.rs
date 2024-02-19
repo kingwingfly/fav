@@ -1,8 +1,7 @@
 //! Status of resource
 
+use crate::res::{Res, Set, Sets};
 use bitflags::bitflags;
-
-use crate::res::{Res, Set};
 #[cfg(feature = "derive")]
 pub use fav_derive::Status;
 
@@ -64,6 +63,63 @@ bitflags! {
         #[allow(missing_docs)]
         const EXPIRED = 0b10000;
     }
+}
+
+/// Status Extension for [`Sets`]
+/// # Example
+/// ```
+/// # #[path = "test_utils/mod.rs"]
+/// # mod test_utils;
+/// # use test_utils::data::{TestSet, TestRes};
+/// use fav_core::status::{Status, SetStatusExt, StatusFlags};
+/// let mut res_set = TestSet::default();
+/// res_set.set.push(TestRes::default());
+/// let res_set = res_set.with_res_status_on(StatusFlags::FETCHED);
+/// assert!(res_set.set[0].check_status(StatusFlags::FETCHED));
+/// ```
+pub trait SetsStatusExt: Sets
+where
+    Self::Set: Status,
+{
+    /// turn on StatusFlags to all resources
+    fn on_set_status(&mut self, status: StatusFlags) {
+        self.iter_mut().for_each(|s| s.on_status(status));
+    }
+
+    /// set StatusFlags to all resources
+    fn off_set_status(&mut self, status: StatusFlags) {
+        self.iter_mut().for_each(|s| s.off_status(status));
+    }
+
+    /// set StatusFlags to all resources
+    fn set_set_status(&mut self, status: StatusFlags) {
+        self.iter_mut().for_each(|s| s.set_status(status));
+    }
+
+    /// turn on StatusFlags to all resources from old
+    fn with_set_status_on(mut self, status: StatusFlags) -> Self
+    where
+        Self: Sized,
+    {
+        self.iter_mut().for_each(|s| s.on_status(status));
+        self
+    }
+
+    /// set StatusFlags to all resources from old
+    fn with_set_status_set(mut self, status: StatusFlags) -> Self
+    where
+        Self: Sized,
+    {
+        self.iter_mut().for_each(|s| s.set_status(status));
+        self
+    }
+}
+
+impl<T> SetsStatusExt for T
+where
+    T: Sets,
+    T::Set: Status,
+{
 }
 
 /// Status Extension for [`Set`]
