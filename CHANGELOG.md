@@ -9,6 +9,9 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 -->
 
 ## [Unreleased]
+## [0.2.2] - 2024-02-20
+- Fix: overwriting the same file when pulling resources with the same name.
+
 ## [0.2.1] - 2024-02-20
 - Handle Expired.
 - Pull: If `pull bvid`, `fav` will force to pull it, as long as it's tracked and not expired.
