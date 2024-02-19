@@ -3,7 +3,7 @@ members = [
     "fav",
     "fav_cli",
     "fav_core",
-    "fav_utils_ng",
+    "fav_utils_old",
     "fav_utils",
     "fav_derive",
 ]
@@ -25,7 +25,7 @@ fav_core = { path = "fav_core" }
 fav_derive = { path = "fav_derive", version = "0.0.1-alpha5" }
 fav_utils = { path = "fav_utils" }
 fav_cli = { path = "fav_cli" }
-fav_utils_ng = { path = "fav_utils_ng" }
+fav_utils_old = { path = "fav_utils_old" }
 
 [profile.release]
 lto = true

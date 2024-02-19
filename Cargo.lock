@@ -350,7 +350,7 @@ name = "fav"
 version = "0.1.13"
 dependencies = [
  "fav_core",
- "fav_utils",
+ "fav_utils_old",
  "tokio",
  "tracing",
  "tracing-subscriber",
@@ -366,7 +366,7 @@ dependencies = [
 
 [[package]]
 name = "fav_core"
-version = "0.0.1-alpha9"
+version = "0.0.1-beta1"
 dependencies = [
  "bitflags 2.4.2",
  "fav_derive",
@@ -403,6 +403,31 @@ version = "0.0.1-alpha5"
 dependencies = [
  "base64",
  "chrono",
+ "fav_core",
+ "indicatif",
+ "md5",
+ "protobuf",
+ "protobuf-codegen",
+ "protobuf-json-mapping",
+ "qrcode",
+ "rand",
+ "reqwest",
+ "rustc_version",
+ "sanitize-filename",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "url",
+]
+
+[[package]]
+name = "fav_utils_old"
+version = "0.0.1-alpha1"
+dependencies = [
+ "base64",
+ "chrono",
  "clap",
  "clap_complete",
  "indicatif",
@@ -423,31 +448,6 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
-]
-
-[[package]]
-name = "fav_utils_ng"
-version = "0.0.1-alpha1"
-dependencies = [
- "base64",
- "chrono",
- "fav_core",
- "indicatif",
- "md5",
- "protobuf",
- "protobuf-codegen",
- "protobuf-json-mapping",
- "qrcode",
- "rand",
- "reqwest",
- "rustc_version",
- "sanitize-filename",
- "serde",
- "serde_json",
- "tempfile",
- "tokio",
- "tracing",
- "url",
 ]
 
 [[package]]

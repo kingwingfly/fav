@@ -15,9 +15,22 @@ pub trait Set {
     fn iter_mut(&mut self) -> impl Iterator<Item = &mut Self::Res>;
 
     /// Get a subset of the resource set.
+    /// # Example
+    /// ```no_run
+    /// # #[path = "test_utils/mod.rs"]
+    /// # mod test_utils;
+    /// # use test_utils::data::{App, TestSet};
+    /// # use fav_core::{status::{Status, StatusFlags}, res::Set, ops::SetOpsExt};
+    /// # async {
+    /// let app = App::default();
+    /// let mut set = TestSet::default();
+    /// let mut sub = set.subset(|r| r.check_status(StatusFlags::TRACK));
+    /// app.fetch_all(&mut sub);
+    /// # };
+    /// ```
     fn subset<F>(&mut self, filter: F) -> SubSet<Self, F>
     where
-        F: Fn(&dyn Res) -> bool,
+        F: Fn(&Self::Res) -> bool,
         Self: Sized,
     {
         SubSet { set: self, filter }
@@ -38,7 +51,7 @@ pub trait Sets {
 pub struct SubSet<'a, S, F>
 where
     S: Set + 'a,
-    F: Fn(&dyn Res) -> bool,
+    F: Fn(&S::Res) -> bool,
 {
     set: &'a mut S,
     filter: F,
@@ -47,7 +60,7 @@ where
 impl<'a, S, F> Set for SubSet<'a, S, F>
 where
     S: Set + 'a,
-    F: Fn(&dyn Res) -> bool,
+    F: Fn(&S::Res) -> bool,
 {
     type Res = S::Res;
 

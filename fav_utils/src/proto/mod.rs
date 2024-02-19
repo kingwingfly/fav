@@ -1,3 +1,3 @@
 // @generated
 
-pub mod data;
+pub mod bili;

@@ -206,7 +206,50 @@ pub trait SetOpsExt: ResOps {
 }
 
 /// A helper function to batch process resources.
+///
+/// # Example
+/// ```no_run
+/// # #[path = "test_utils/mod.rs"]
+/// # mod test_utils;
+/// # use test_utils::data::{App, TestSet, TestRes};
+/// # use fav_core::{status::{Status, StatusFlags}, res::{Set, Res}, ops::{batch_process, ResOps}};
+/// struct Sub<'a, F: Fn(&dyn Res) -> bool> {
+///     set: &'a mut TestSet,
+///     f: F,
+/// }
+/// impl<F: Fn(&dyn Res) -> bool> Set for Sub<'_, F> {
+///     type Res = TestRes;
+///     fn iter(&self) -> impl Iterator<Item = &Self::Res> {
+///         self.set.iter().filter(|r| (self.f)(*r))
+///     }
+///
+///     fn iter_mut(&mut self) -> impl Iterator<Item = &mut Self::Res> {
+///         self.set.iter_mut().filter(|r| (self.f)(*r))
+///     }
+/// }
+/// # async {
+/// let app = App::default();
+/// let mut set = TestSet::default();
+/// let mut sub = Sub {
+///     set: &mut set,
+///     f: |r| r.check_status(StatusFlags::TRACK)
+/// };
+/// batch_process(&mut sub, |r| app.fetch(r)).await.unwrap();
+/// # };
+/// ```
 /// However, it's better to use [`Set::subset`] and [`SetOpsExt`] instead.
+/// ```no_run
+/// # #[path = "test_utils/mod.rs"]
+/// # mod test_utils;
+/// # use test_utils::data::{App, TestSet};
+/// # use fav_core::{status::{Status, StatusFlags}, res::Set, ops::SetOpsExt};
+/// # async {
+/// let app = App::default();
+/// let mut set = TestSet::default();
+/// let mut sub = set.subset(|r| r.check_status(StatusFlags::TRACK));
+/// app.fetch_all(&mut sub);
+/// # };
+/// ```
 pub async fn batch_process<'a, S, F, T>(set: &'a mut S, f: F) -> FavCoreResult<()>
 where
     S: Set + 'a,

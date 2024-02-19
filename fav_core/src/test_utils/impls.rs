@@ -38,6 +38,18 @@ impl AuthOps for App {
     }
 }
 
+impl ResOps for App {
+    type Res = TestRes;
+
+    async fn fetch(&self, resource: &mut Self::Res) -> FavCoreResult<()> {
+        todo!()
+    }
+
+    async fn pull(&self, resource: &mut Self::Res) -> FavCoreResult<()> {
+        todo!()
+    }
+}
+
 impl Attr for TestRes {
     fn id(&self) -> Id {
         todo!()

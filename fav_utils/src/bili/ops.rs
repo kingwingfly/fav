@@ -89,9 +89,6 @@ impl ResOps for Bili {
     }
 
     async fn pull(&self, resource: &mut BiliRes) -> FavCoreResult<()> {
-        if resource.check_status(StatusFlags::SAVED) {
-            return Ok(());
-        }
         let Wbi { img_url, sub_url } = self
             .request_json::<Wbi>(ApiKind::Wbi, vec![], "/data/wbi_img")
             .await?;
@@ -160,6 +157,14 @@ mod tests {
     use crate::proto::bili::BiliSets;
     use fav_core::ops::SetOpsExt;
 
+    #[test]
+    fn print_data() {
+        let bili = Bili::read().unwrap();
+        let sets = BiliSets::read().unwrap();
+        println!("{:#?}", bili);
+        println!("{:#?}", sets);
+    }
+
     #[tokio::test]
     #[ignore = "need to scan qr code manually"]
     async fn login_test() {
@@ -181,21 +186,16 @@ mod tests {
         sets.write().unwrap();
     }
 
-    #[test]
-    fn print_data() {
-        let bili = Bili::read().unwrap();
-        let sets = BiliSets::read().unwrap();
-        println!("{:#?}", bili);
-        println!("{:#?}", sets);
-    }
-
     #[tokio::test]
+    #[ignore = "need to login"]
     async fn sub_set() {
         let bili = Bili::read().unwrap();
         let mut sets = BiliSets::read().unwrap();
+        bili.fetch_sets(&mut sets).await.unwrap();
         let set = sets.iter_mut().min_by_key(|s| s.media_count).unwrap();
+        bili.fetch_set(set).await.unwrap();
+        set.on_res_status(StatusFlags::TRACK);
         let mut sub = set.subset(|r| r.check_status(StatusFlags::TRACK));
         bili.fetch_all(&mut sub).await.unwrap();
-        dbg!(set);
     }
 }

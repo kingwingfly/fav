@@ -1,21 +1,26 @@
 [package]
-name = "fav_utils_ng"
+name = "fav_utils_old"
 version = "0.0.1-alpha1"
 authors.workspace = true
 description = "Fav's utils crate; A collection of utilities and data structures for the fav project"
 license.workspace = true
 edition.workspace = true
 repository.workspace = true
-documentation = "https://docs.rs/fav_utils_ng"
-publish = false
+documentation = "https://docs.rs/fav_utils"
+
+[package.metadata.docs.rs]
+all-features = true
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-# Core
-fav_core.workspace = true
 # CLI
+clap = { version = "4.4", features = ["derive"] }
+tabled = "0.15.0"
 indicatif = { version = "0.17", features = ["tokio"] }
+clap_complete = { version = "4" }
+# Error
+snafu = { version = "0.8" }
 # Serde
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
@@ -24,7 +29,6 @@ protobuf = { version = "3", features = ["with-bytes"] }
 protobuf-json-mapping = { version = "3" }
 # Net
 reqwest = { version = "0.11", features = ["json", "cookies"] }
-url = "2.5"
 # Runtime
 tokio = { version = "1", features = [
     "macros",
@@ -34,17 +38,17 @@ tokio = { version = "1", features = [
 ] }
 # tracing
 tracing = { version = "0.1" }
+tracing-subscriber = { version = "0.3" }
 # Tools
 qrcode = { version = "0.13", default-features = false }
-rand = "0.8"
-base64 = "0.21"
+rand = "0.8.5"
+base64 = "0.21.7"
 tempfile = "3.9.0"
 sanitize-filename = "0.5.0"
 md5 = "0.7.0"
-chrono = "0.4"
+chrono = "0.4.33"
 
 [build-dependencies]
-protobuf = { version = "3", features = ["with-bytes"] }
 protobuf-codegen = { version = "3" }
 rustc_version = "0.4.0"
 

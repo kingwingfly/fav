@@ -1,4 +1,4 @@
-use fav_utils::Cli;
+use fav_utils_old::Cli;
 use tracing::Level;
 use tracing_subscriber::{filter, prelude::*};
 
