@@ -15,7 +15,7 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 - Simplify: Only `fetch` `pull` `status` `track` `init` `auth` `daemon` `completion` commands are supported now. The `modify` command is removed, since it's too tedious to modify status through a CLI tool.
 - Status: Now `status` only show id, title and few status.
 - Track: Now `track` does not support resource not in remote favorite sets. (In other words, there's no data only in local, but not in remote.)
-- Pull: Now `pull` will call `fetch` first, and resources not tracked and pulled will never able to be pulled.
+- Pull: Now `pull` will call `fetch` first, and resources not tracked and fetched will never able to be pulled.
 - Init: Only support bilibili now, so no args needed after `init`.
 - Daemon: Now iterval less that 15min will only show a warning, and won't exit.
 

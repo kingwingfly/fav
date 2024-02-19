@@ -169,6 +169,7 @@ mod tests {
     use fav_core::ops::ResOpsExt;
 
     #[test]
+    #[ignore = "need data"]
     fn print_data() {
         let bili = Bili::read().unwrap();
         let sets = BiliSets::read().unwrap();
