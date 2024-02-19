@@ -96,12 +96,12 @@ pub trait LocalResOps: Net + HttpConfig {
     /// Fetch one resource
     /// # Caution
     /// One could handle Ctrl-C with `tokio::signal::ctrl_c` and `tokio::select!`,
-    /// and return [`FavCoreError::Cancel`]. This error will be handled by [`ResOps::batch_fetch_res`].
+    /// and return [`FavCoreError::Cancel`]. This error will be handled by [`ResOpsExt::batch_fetch_res`].
     async fn fetch_res(&self, resource: &mut Self::Res) -> FavCoreResult<()>;
     /// Pull one resource.
     /// # Caution
     /// One needs to handle Ctrl-C with `tokio::signal::ctrl_c` and `tokio::select!`,
-    /// and return [`FavCoreError::Cancel`]. This error will be handled by [`ResOps::batch_pull_res`].
+    /// and return [`FavCoreError::Cancel`]. This error will be handled by [`ResOpsExt::batch_pull_res`].
     async fn pull_res(&self, resource: &mut Self::Res) -> FavCoreResult<()>;
 }
 
@@ -255,7 +255,7 @@ impl<T> SetOpsExt for T where T: SetOps {}
 /// # };
 /// ```
 pub trait ResOpsExt: ResOps {
-    /// **Asynchronously** fetch resourses in set using [`ResOps::fetch`].
+    /// **Asynchronously** fetch resourses in set using [`ResOps::fetch_res`].
     fn batch_fetch_res<'a, S>(&self, set: &'a mut S) -> impl Future<Output = FavCoreResult<()>>
     where
         S: Set<Res = Self::Res>,
@@ -263,7 +263,7 @@ pub trait ResOpsExt: ResOps {
         batch_op_res(set, |r| self.fetch_res(r))
     }
 
-    /// **Asynchronously** pull resourses in set using [`ResOps::pull`].
+    /// **Asynchronously** pull resourses in set using [`ResOps::pull_res`].
     fn batch_pull_res<'a, S>(&self, set: &'a mut S) -> impl Future<Output = FavCoreResult<()>>
     where
         S: Set<Res = Self::Res>,
