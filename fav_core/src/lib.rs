@@ -26,7 +26,7 @@ pub use error::*;
 /// Re-export the most important traits and types
 pub mod prelude {
     pub use crate::api::{Api, ApiProvider};
-    pub use crate::attr::{Attr, Id};
+    pub use crate::attr::{Attr, Count, Id};
     pub use crate::config::{Config, HttpConfig};
     pub use crate::error::*;
     pub use crate::local::{PathInfo, ProtoLocal, SaveLocal};

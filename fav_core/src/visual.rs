@@ -1,5 +1,5 @@
 //! Data visualize
-use crate::attr::Attr;
+use crate::attr::{Attr, Count};
 use crate::res::{Res, Set, Sets};
 use crate::status::{Status, StatusFlags};
 use tabled::{
@@ -26,14 +26,14 @@ pub trait TableRes: Res {
 impl<T> TableSets for T
 where
     T: Sets,
-    T::Set: Attr + Status,
+    T::Set: Attr + Count + Status,
 {
     fn table(&self) {
         let header = vec!["ID", "Title", "Count", "Track"];
         let rows = self.iter().map(|set| {
             let id = String::from(set.id());
             let title = set.title().to_string();
-            let count = set.iter().count().to_string();
+            let count = set.count().to_string();
             let track = set.check_status(StatusFlags::TRACK).to_string();
             vec![id, title, count, track]
         });

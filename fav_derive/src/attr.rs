@@ -6,7 +6,7 @@ use syn::{parenthesized, parse_macro_input, DeriveInput, Ident};
 
 pub(crate) fn derive_attr(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
-    let name_ = input.ident;
+    let name = input.ident;
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
 
     let mut id: Ident = syn::parse_str("id").unwrap();
@@ -37,7 +37,7 @@ pub(crate) fn derive_attr(input: TokenStream) -> TokenStream {
     };
 
     let expanded = quote! {
-        impl #impl_generics fav_core::attr::Attr for #name_ #ty_generics #where_clause {
+        impl #impl_generics fav_core::attr::Attr for #name #ty_generics #where_clause {
             #[inline]
             fn id(&self) -> fav_core::attr::Id {
                 (&self.#id).into()

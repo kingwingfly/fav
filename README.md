@@ -111,11 +111,11 @@ Back up your favorite bilibili online resources with CLI.
 <!-- USAGE EXAMPLES -->
 ## Usage
 
-Need `ffmpeg` usable.
+Need `ffmpeg` usable, and able to be directly called in cli.
 
 ```
 $ fav -h
-Back up your favorite online resources with CLI.
+Fav's CLI, helping persist the remote source. Repo: https://github.com/kingwingfly/fav
 
 Usage: fav <COMMAND>
 
@@ -123,15 +123,11 @@ Commands:
   init        Initialize the folder for fav
   auth        Login your account
   fetch       Fetch from remote
-  status      Show status of local, default to show video status
+  status      Show status of local, default to show resource status
   track       Track a remote source
   untrack     Untrack a remote source
-  pull        Pull remote data
-  push        Push local data
-  like        Like a video
-  ffmpeg      Set the path of ffmpeg
+  pull        Pull remote resource to local
   daemon      Interval fetch and pull
-  modify      Modify resource status
   completion  Completions for the shell
   help        Print this message or the help of the given subcommand(s)
 
@@ -152,37 +148,24 @@ Options:
 # auto complete is supported; e.g:
 $ fav completion fish > ~/.config/fish/completions/fav.fish
 # init for bilibili
-$ fav init bili
+$ fav init
 # scan code to login
 $ fav auth login
 # fetch favorite list
 $ fav fetch
 # show status
-$ fav status -l
+$ fav status -s
 # track list (just like `git add`, by the way, commit is not needed)
 $ fav track <list_id/bvid>
 # fetch
 $ fav fetch
-# set ffmpeg path
-$ fav ffmpeg /usr/bin/ffmpeg
 # pull videos (support dry-run)
 $ fav pull
-# push videos (support dry-run)
-$ fav push
-# ignore list or video
-$ fav ignore <list_id/bvid>
 # untrack list or video (just like `git rm`)
 $ fav untrack <list_id/bvid>
-# like
-$ fav like --all
 # daemon
 $ fav daemon 30
-# mark as saved
-$ fav modify <list_id/bvid> --saved true
-# modify clarity
-$ fav modify <list_id/bvid> --clarity 1080p
 ```
-
 
 _For more examples, please refer to the [Documentation](https://github.com/kingwingfly/fav)_
 

@@ -59,4 +59,10 @@ impl Set for BiliSet {
     }
 }
 
+impl Count for BiliSet {
+    fn count(&self) -> i32 {
+        self.media_count
+    }
+}
+
 impl Res for BiliRes {}

@@ -26,7 +26,7 @@ enum Commands {
     },
     /// Fetch from remote
     Fetch,
-    /// Show status of local, default to show video status
+    /// Show status of local, default to show resource status
     Status {
         /// Show resource status
         #[arg(value_hint = ValueHint::Other)]
@@ -53,17 +53,11 @@ enum Commands {
         #[arg(value_hint = ValueHint::Other)]
         id: Vec<String>,
     },
-    /// Pull remote data
+    /// Pull remote resource to local
     Pull {
         /// The id of the source to pull
         #[arg(value_hint = ValueHint::Other)]
         id: Option<Vec<String>>,
-    },
-    /// Set the path of ffmpeg
-    Ffmpeg {
-        /// Set the path of ffmpeg
-        #[arg(value_hint = ValueHint::FilePath)]
-        path: String,
     },
     /// Interval fetch and pull
     Daemon {
@@ -116,7 +110,7 @@ impl Cli {
                         status(id)?;
                     }
                     None => match (sets, res) {
-                        (false, false) => status_all(true, res, track)?,
+                        (false, false) => status_all(sets, true, track)?,
                         _ => status_all(sets, res, track)?,
                     },
                 },
@@ -144,7 +138,6 @@ impl Cli {
                     let mut cmd = Cli::command();
                     clap_complete::generate(shell, &mut cmd, "fav", &mut std::io::stdout());
                 }
-
                 _ => unreachable!(),
             },
         }

@@ -72,12 +72,17 @@ impl PartialEq for Id<'_> {
 /// }
 /// ```
 /// More examples in [`fav_derive::Attr`].
-#[allow(missing_docs)]
 pub trait Attr {
     /// Return the id of the target
     fn id(&self) -> Id;
     /// Return the title of the target
     fn title(&self) -> &str;
+}
+
+/// Counting trait
+pub trait Count {
+    /// Return the count of resources in set
+    fn count(&self) -> i32;
 }
 
 impl From<i64> for Id<'_> {
