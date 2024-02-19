@@ -12,7 +12,7 @@ resolver = "2"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [workspace.package]
-version = "0.1.13"
+version = "0.2.0"
 authors = ["Louis <836250617@qq.com>"]
 description = "Back up your favorite online resources with CLI."
 license = "MIT"
@@ -22,7 +22,7 @@ documentation = ""
 
 [workspace.dependencies]
 fav_core = { path = "fav_core" }
-fav_derive = { path = "fav_derive", version = "0.0.1-alpha5" }
+fav_derive = { path = "fav_derive", version = "0.0.1-beta1" }
 fav_utils = { path = "fav_utils" }
 fav_cli = { path = "fav_cli" }
 fav_utils_old = { path = "fav_utils_old" }

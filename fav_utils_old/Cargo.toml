@@ -7,6 +7,7 @@ license.workspace = true
 edition.workspace = true
 repository.workspace = true
 documentation = "https://docs.rs/fav_utils"
+publish = false
 
 [package.metadata.docs.rs]
 all-features = true

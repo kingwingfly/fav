@@ -347,7 +347,7 @@ checksum = "25cbce373ec4653f1a01a31e8a5e5ec0c622dc27ff9c4e6606eefef5cbbed4a5"
 
 [[package]]
 name = "fav"
-version = "0.1.13"
+version = "0.2.0"
 dependencies = [
  "fav_cli",
  "tokio",
@@ -371,7 +371,7 @@ dependencies = [
 
 [[package]]
 name = "fav_core"
-version = "0.0.1-beta1"
+version = "0.0.1-beta2"
 dependencies = [
  "bitflags 2.4.2",
  "fav_derive",
@@ -394,7 +394,7 @@ dependencies = [
 
 [[package]]
 name = "fav_derive"
-version = "0.0.1-alpha5"
+version = "0.0.1-beta1"
 dependencies = [
  "fav_core",
  "quote",
@@ -405,7 +405,7 @@ dependencies = [
 
 [[package]]
 name = "fav_utils"
-version = "0.0.1-alpha5"
+version = "0.0.1-beta1"
 dependencies = [
  "fav_core",
  "indicatif",
