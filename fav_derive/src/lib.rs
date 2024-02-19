@@ -1,5 +1,4 @@
-//! `fav_derive` is a crate for [fav_core](https://docs.rs/fav_core) to derive traits.
-
+#![doc = include_str!("../README.md")]
 #![deny(missing_docs, rustdoc::broken_intra_doc_links)]
 #![cfg_attr(all(doc, CHANNEL_NIGHTLY), feature(doc_auto_cfg))]
 
