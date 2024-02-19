@@ -7,38 +7,28 @@ message Conf {
     map<string, string> cookies = 1;
 }
 
-message App {
-    repeated TestResSet sets = 1;
+message App {}
+
+message TestSets {
+    repeated TestSet sets = 1;
 }
 
-message TestResSets {
-    repeated TestResSet sets = 1;
-}
-
-message TestResSet {
+message TestSet {
     int32 id = 1;
     string title = 2;
     repeated TestRes set = 3;
-    TestUpper upper = 4;
 }
 
 message TestRes {
     int32 id = 1;
     string title = 2;
     int32 status = 3;
-    TestUpper upper = 4;
-}
-
-message TestUpper {
-    int32 id = 1;
-    string title = 2;
 }
 
 message StatusTest {
     int32 id = 1;
     string title = 2;
     int32 status = 3;
-    TestUpper upper = 4;
 }
 
 message AttrTest {

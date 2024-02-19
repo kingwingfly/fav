@@ -14,7 +14,7 @@ const POLL_INTERVAL: u64 = 3;
 const EXPIRED_DURATION: u64 = 120;
 const HINT: &str = "Never Login";
 
-impl Operations<BiliSets, BiliSet, BiliRes, ApiKind> for Bili {
+impl AuthOps for Bili {
     async fn login(&mut self) -> FavCoreResult<()> {
         let QrInfo { url, qrcode_key } = self.request_json(ApiKind::Qr, vec![], "/data").await?;
         show_qr_code(url)?;
@@ -40,6 +40,10 @@ impl Operations<BiliSets, BiliSet, BiliRes, ApiKind> for Bili {
             ))),
         }
     }
+}
+
+impl SetsOps for Bili {
+    type Sets = BiliSets;
 
     async fn fetch_sets(&self, sets: &mut BiliSets) -> FavCoreResult<()> {
         let params = vec![self.cookies().get("DedeUserID").expect(HINT).to_owned()];
@@ -48,6 +52,10 @@ impl Operations<BiliSets, BiliSet, BiliRes, ApiKind> for Bili {
             .await?;
         Ok(())
     }
+}
+
+impl SetOps for Bili {
+    type Set = BiliSet;
 
     async fn fetch_set(&self, set: &mut BiliSet) -> FavCoreResult<()> {
         let id = set.id.to_string();
@@ -61,8 +69,12 @@ impl Operations<BiliSets, BiliSet, BiliRes, ApiKind> for Bili {
         }
         Ok(())
     }
+}
 
-    async fn fetch_res(&self, resource: &mut BiliRes) -> FavCoreResult<()> {
+impl ResOps for Bili {
+    type Res = BiliRes;
+
+    async fn fetch(&self, resource: &mut BiliRes) -> FavCoreResult<()> {
         let params = vec![resource.bvid.clone()];
         tokio::select! {
             res = self.request_proto::<BiliRes>(ApiKind::FetchRes, params, "/data") => {
@@ -95,7 +107,7 @@ impl Operations<BiliSets, BiliSet, BiliRes, ApiKind> for Bili {
         let Dash { audio, video } = self
             .request_json(ApiKind::Pull, params, "/data/dash")
             .await?;
-        self.save(resource, vec![audio, video]).await?; // Ctrl-C will be caught in `save`
+        self.download(resource, vec![audio, video]).await?; // Ctrl-C will be caught in `save`
         resource.on_status(StatusFlags::SAVED);
         Ok(())
     }
@@ -144,19 +156,20 @@ fn try_extract_cookie(resp: &Response) -> FavUtilsResult<HashMap<String, String>
 
 #[cfg(test)]
 mod tests {
-    use fav_core::ops::OperationsExt;
-
     use super::*;
     use crate::proto::bili::BiliSets;
+    use fav_core::ops::SetOpsExt;
 
     #[tokio::test]
     #[ignore = "need to scan qr code manually"]
     async fn login_test() {
         let mut bili = Bili::default();
         bili.login().await.unwrap();
+        bili.write().unwrap();
     }
 
     #[tokio::test]
+    #[ignore = "need to login"]
     async fn ops_test() {
         let bili = Bili::read().unwrap();
         let mut sets = BiliSets::default();
@@ -165,5 +178,24 @@ mod tests {
         bili.fetch_set(set).await.unwrap();
         bili.fetch_all(set).await.unwrap();
         bili.pull_all(set).await.unwrap();
+        sets.write().unwrap();
+    }
+
+    #[test]
+    fn print_data() {
+        let bili = Bili::read().unwrap();
+        let sets = BiliSets::read().unwrap();
+        println!("{:#?}", bili);
+        println!("{:#?}", sets);
+    }
+
+    #[tokio::test]
+    async fn sub_set() {
+        let bili = Bili::read().unwrap();
+        let mut sets = BiliSets::read().unwrap();
+        let set = sets.iter_mut().min_by_key(|s| s.media_count).unwrap();
+        let mut sub = set.subset(|r| r.check_status(StatusFlags::TRACK));
+        bili.fetch_all(&mut sub).await.unwrap();
+        dbg!(set);
     }
 }

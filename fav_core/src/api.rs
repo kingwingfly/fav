@@ -24,7 +24,7 @@ pub enum DefaultApiKind {
 /// ```
 /// # use fav_core::api::{ApiProvider, Api, DefaultApiKind};
 /// # use url::Url;
-/// struct Remote;
+/// struct App;
 /// struct LoginApi;
 ///
 /// impl Api for LoginApi {
@@ -41,7 +41,8 @@ pub enum DefaultApiKind {
 /// #[api(endpoint("http://abc.com"), params(&["id", "pwd"]))]
 /// struct LogoutApi;
 ///
-/// impl ApiProvider<DefaultApiKind> for Remote {
+/// impl ApiProvider for App {
+///     type ApiKind = DefaultApiKind;
 ///     fn api(&self, api_kind: DefaultApiKind) -> &dyn Api {
 ///         match api_kind {
 ///             DefaultApiKind::Login => &LoginApi,
@@ -51,16 +52,16 @@ pub enum DefaultApiKind {
 ///     }
 /// }
 ///
-/// # fn main() {
-/// let remote = Remote;
-/// let api = remote.api(DefaultApiKind::Login);
-/// let url = api.url(&["Jake", "123"]);
+/// let app = App;
+/// let api = app.api(DefaultApiKind::Login);
+/// let url = api.url(vec!["Jake".to_string(), "123".to_string()]);
 /// let expected = Url::parse_with_params("http://abc.com", vec![("id", "Jake"), ("pwd", "123")]).unwrap();
 /// assert_eq!(url, expected);
-/// # }
-pub trait ApiProvider<K> {
+pub trait ApiProvider {
+    /// The ApiKind this provider can provide
+    type ApiKind;
     /// Return the Api which implemented [`Api`]
-    fn api(&self, api_kind: K) -> &dyn Api;
+    fn api(&self, api_kind: Self::ApiKind) -> &dyn Api;
 }
 
 /// The trait `Api` is the base trait for all API endpoints.
@@ -97,7 +98,8 @@ mod tests {
 
     struct Remote;
 
-    impl ApiProvider<DefaultApiKind> for Remote {
+    impl ApiProvider for Remote {
+        type ApiKind = DefaultApiKind;
         fn api(&self, api_kind: DefaultApiKind) -> &dyn Api {
             match api_kind {
                 DefaultApiKind::Login => todo!(),

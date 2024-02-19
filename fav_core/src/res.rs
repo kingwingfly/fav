@@ -1,93 +1,61 @@
 //! Relations between resources, resource sets, and uppers
 
-use crate::{
-    attr::{Attr, Id},
-    meta::Meta,
-};
+use crate::meta::Meta;
 
 /// Relations owned by a resource.
-pub trait Res: Meta {
-    /// Resource upper.
-    fn upper(&self) -> &impl Attr;
-
-    /// Whether the resource belongs to the resource set.
-    fn belongs(&self, res_set: &impl ResSet<Self>) -> bool
-    where
-        Self: Sized,
-    {
-        let id = self.id();
-        res_set.iter().any(|r| r.id() == id)
-    }
-}
+pub trait Res: Meta {}
 
 /// Relations owned by a resource set.
-pub trait ResSet<R: Res>: Res {
+pub trait Set {
+    /// The resource type in this set
+    type Res: Res;
     /// The &resource that the resource set contains.
-    fn res<'a>(&'a self) -> impl IntoIterator<Item = &'a R>
-    where
-        R: 'a;
+    fn iter(&self) -> impl Iterator<Item = &Self::Res>;
     /// The &mut resource that the resource set contains.
-    fn res_mut<'a>(&'a mut self) -> impl IntoIterator<Item = &'a mut R>
-    where
-        R: 'a;
-    /// Push a resource to the set.
-    fn push(&mut self, resource: R);
-    /// Remove a resource from the set.
-    fn remove(&mut self, id: Id);
+    fn iter_mut(&mut self) -> impl Iterator<Item = &mut Self::Res>;
 
-    /// The &resource that the resource set contains.
-    fn iter<'a>(&'a self) -> impl Iterator<Item = &'a R>
+    /// Get a subset of the resource set.
+    fn subset<F>(&mut self, filter: F) -> SubSet<Self, F>
     where
-        R: 'a,
+        F: Fn(&dyn Res) -> bool,
+        Self: Sized,
     {
-        self.res().into_iter()
-    }
-    /// The &mut resource that the resource set contains.
-    fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut R>
-    where
-        R: 'a,
-    {
-        self.res_mut().into_iter()
-    }
-    /// Whether the set contains the resource.
-    fn contains(&self, resource: &R) -> bool {
-        let id = resource.id();
-        self.iter().any(|r| r.id() == id)
+        SubSet { set: self, filter }
     }
 }
 
 /// Relations owned by a resource sets.
-pub trait ResSets<S, R>
-where
-    S: ResSet<R>,
-    R: Res,
-{
+pub trait Sets {
+    /// The resource set type in this sets
+    type Set: Set;
     /// The &set that the resource sets contains.
-    fn sets<'a>(&'a self) -> impl IntoIterator<Item = &'a S>
-    where
-        S: 'a;
+    fn iter(&self) -> impl Iterator<Item = &Self::Set>;
     /// The &mut set that the resource sets contains.
-    fn sets_mut<'a>(&'a mut self) -> impl IntoIterator<Item = &'a mut S>
-    where
-        S: 'a;
+    fn iter_mut(&mut self) -> impl Iterator<Item = &mut Self::Set>;
+}
 
-    /// The &set that the resource sets contains.
-    fn iter<'a>(&'a self) -> impl Iterator<Item = &'a S>
-    where
-        S: 'a,
-    {
-        self.sets().into_iter()
+/// A subset of a resource set.
+pub struct SubSet<'a, S, F>
+where
+    S: Set + 'a,
+    F: Fn(&dyn Res) -> bool,
+{
+    set: &'a mut S,
+    filter: F,
+}
+
+impl<'a, S, F> Set for SubSet<'a, S, F>
+where
+    S: Set + 'a,
+    F: Fn(&dyn Res) -> bool,
+{
+    type Res = S::Res;
+
+    fn iter(&self) -> impl Iterator<Item = &Self::Res> {
+        self.set.iter().filter(|r| (self.filter)(*r))
     }
-    /// The &mut set that the resource sets contains.
-    fn iter_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut S>
-    where
-        S: 'a,
-    {
-        self.sets_mut().into_iter()
-    }
-    /// Whether the sets contains the resource set.
-    fn contains(&self, set: &S) -> bool {
-        let id = set.id();
-        self.iter().any(|r| r.id() == id)
+
+    fn iter_mut(&mut self) -> impl Iterator<Item = &mut Self::Res> {
+        self.set.iter_mut().filter(|r| (self.filter)(*r))
     }
 }

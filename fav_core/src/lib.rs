@@ -23,13 +23,13 @@ pub use error::*;
 
 /// Re-export the most important traits and types
 pub mod prelude {
-    pub use crate::api::{Api, ApiProvider, DefaultApiKind};
+    pub use crate::api::{Api, ApiProvider};
     pub use crate::attr::{Attr, Id};
     pub use crate::config::{Config, HttpConfig};
     pub use crate::error::*;
     pub use crate::local::{PathInfo, ProtoLocal, SaveLocal};
     pub use crate::meta::Meta;
-    pub use crate::ops::{Net, Operations};
-    pub use crate::res::{Res, ResSet, ResSets};
+    pub use crate::ops::{AuthOps, Net, Ops, ResOps, SetOps, SetOpsExt, SetsOps};
+    pub use crate::res::{Res, Set, Sets};
     pub use crate::status::{Status, StatusFlags};
 }

@@ -7,8 +7,6 @@ use fav_core::prelude::*;
 use reqwest::header::CONTENT_LENGTH;
 use std::io::{BufWriter, Write as _};
 
-use super::api::ApiKind;
-
 impl PathInfo for Bili {
     #[cfg(test)]
     const PATH: &'static str = "temp/temp.bili";
@@ -23,8 +21,8 @@ impl PathInfo for BiliSets {
     const PATH: &'static str = ".fav/sets";
 }
 
-impl SaveLocal<ApiKind> for Bili {
-    async fn save<R: Res>(&self, res: &mut R, urls: Vec<reqwest::Url>) -> FavCoreResult<()> {
+impl SaveLocal for Bili {
+    async fn download<R: Res>(&self, res: &mut R, urls: Vec<reqwest::Url>) -> FavCoreResult<()> {
         let title = res.title();
         let mut urls = urls;
         let mut resp_v = self.client().get(urls.pop().unwrap()).send().await?;

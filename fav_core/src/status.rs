@@ -2,7 +2,7 @@
 
 use bitflags::bitflags;
 
-use crate::res::{Res, ResSet};
+use crate::res::{Res, Set};
 #[cfg(feature = "derive")]
 pub use fav_derive::Status;
 
@@ -66,22 +66,19 @@ bitflags! {
     }
 }
 
-/// Status Extension for [`ResSet`]
+/// Status Extension for [`Set`]
 /// # Example
 /// ```
 /// # #[path = "test_utils/mod.rs"]
 /// # mod test_utils;
-/// # use test_utils::data::{TestResSet, TestRes};
+/// # use test_utils::data::{TestSet, TestRes};
 /// use fav_core::status::{Status, SetStatusExt, StatusFlags};
-/// let mut res_set = TestResSet::default();
+/// let mut res_set = TestSet::default();
 /// res_set.set.push(TestRes::default());
 /// let res_set = res_set.with_res_status_on(StatusFlags::FETCHED);
 /// assert!(res_set.set[0].check_status(StatusFlags::FETCHED));
 /// ```
-pub trait SetStatusExt<R>: ResSet<R>
-where
-    R: Res,
-{
+pub trait SetStatusExt: Set {
     /// turn on StatusFlags to all resources
     fn on_res_status(&mut self, status: StatusFlags) {
         self.iter_mut().for_each(|r| r.on_status(status));
@@ -116,12 +113,7 @@ where
     }
 }
 
-impl<S, R> SetStatusExt<R> for S
-where
-    R: Res,
-    S: ResSet<R>,
-{
-}
+impl<S> SetStatusExt for S where S: Set {}
 
 /// Status Extension for [`Res`]
 /// # Example

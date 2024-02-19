@@ -58,10 +58,11 @@ pub trait ProtoLocal: PathInfo + MessageFull {
 impl<T> ProtoLocal for T where T: PathInfo + MessageFull {}
 
 /// Make it able to save the resource to local
-pub trait SaveLocal<K>: Net<K>
-where
-    K: Send,
-{
+pub trait SaveLocal: Net {
     /// Save the resource to local
-    fn save<R: Res>(&self, res: &mut R, urls: Vec<Url>) -> impl Future<Output = FavCoreResult<()>>;
+    fn download<R: Res>(
+        &self,
+        res: &mut R,
+        urls: Vec<Url>,
+    ) -> impl Future<Output = FavCoreResult<()>>;
 }

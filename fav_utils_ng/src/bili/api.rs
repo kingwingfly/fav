@@ -1,7 +1,9 @@
 use crate::{proto::bili::Bili, utils::time::timestamp_sc};
 use fav_core::api::{Api, ApiProvider};
 
-impl ApiProvider<ApiKind> for Bili {
+impl ApiProvider for Bili {
+    type ApiKind = ApiKind;
+
     fn api(&self, api_kind: ApiKind) -> &dyn Api {
         match api_kind {
             ApiKind::Qr => &QrApi,
@@ -17,7 +19,7 @@ impl ApiProvider<ApiKind> for Bili {
 }
 
 /// The kinds of bilibili APIs, provided for `ApiProvider`
-pub(super) enum ApiKind {
+pub enum ApiKind {
     Qr,
     QrPoll,
     Logout,
@@ -80,12 +82,7 @@ impl Api for PullApi {
     }
 
     fn url(&self, params: Vec<String>) -> reqwest::Url {
-        let mut params: Vec<_> = self
-            .params()
-            .to_vec()
-            .into_iter()
-            .zip(params.into_iter())
-            .collect();
+        let mut params: Vec<_> = self.params().iter().copied().zip(params).collect();
         let key = format!("{}{}", params.pop().unwrap().1, params.pop().unwrap().1);
         let url = format!("{}?{}", self.endpoint(), encode_wbi(params, key));
         reqwest::Url::parse(&url).unwrap()
