@@ -36,7 +36,7 @@ mod tests {
             bili.extend_cookies(cookies);
             assert_eq!(bili.cookies().len(), 1);
             assert_eq!(bili.cookies().get("1").unwrap(), "1");
-            bili.write();
+            bili.write().unwrap();
         }
         let mut bili = Bili::read().unwrap();
         assert_eq!(bili.cookies().len(), 1);
