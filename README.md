@@ -139,7 +139,7 @@ Options:
 
 1. Init and Login first
 2. Fetch the favorite list
-3. Track the bvid or list_id you want to fav. You can see them through `fav status -l/v`
+3. Track the bvid or list_id you want to fav. You can see them through `fav status -s/r`
 4. Fetch tracked resources
 5. Pull the resources (Now only tracked resource can be pulled, since c_id need for pulling while only tracked resource has c_id fetched)
 
