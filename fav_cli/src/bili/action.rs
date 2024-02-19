@@ -32,7 +32,7 @@ pub fn status(id: String) -> FavCoreResult<()> {
     } else if let Some(r) = try_find_res(&mut sets, &id_) {
         r.table();
     } else {
-        return Err(FavCoreError::IdNotFound(id));
+        return Err(FavCoreError::IdNotUsable(id));
     }
     Ok(())
 }
@@ -59,7 +59,11 @@ pub(super) async fn fetch() -> FavCoreResult<()> {
     let mut sub = sets.subset(|s| s.check_status(StatusFlags::TRACK));
     bili.batch_fetch_set(&mut sub).await?;
     for set in sub.iter_mut() {
-        let mut sub = set.subset(|r| r.check_status(StatusFlags::TRACK));
+        let mut sub = set.subset(|r| {
+            r.check_status(StatusFlags::TRACK)
+                & !r.check_status(StatusFlags::FETCHED)
+                & !r.check_status(StatusFlags::EXPIRED)
+        });
         bili.batch_fetch_res(&mut sub).await?;
     }
     sets.write()
@@ -74,7 +78,7 @@ pub(super) fn track(id: String) -> FavCoreResult<()> {
     } else if let Some(r) = try_find_res(&mut sets, &id_) {
         r.on_status(StatusFlags::TRACK);
     } else {
-        return Err(FavCoreError::IdNotFound(id));
+        return Err(FavCoreError::IdNotUsable(id));
     }
     sets.write()
 }
@@ -88,7 +92,7 @@ pub(super) fn untrack(id: String) -> FavCoreResult<()> {
     } else if let Some(r) = try_find_res(&mut sets, &id_) {
         r.off_status(StatusFlags::TRACK);
     } else {
-        return Err(FavCoreError::IdNotFound(id));
+        return Err(FavCoreError::IdNotUsable(id));
     }
     sets.write()
 }
@@ -101,6 +105,7 @@ pub(super) async fn pull_all() -> FavCoreResult<()> {
     for set in sub.iter_mut() {
         let mut sub = set.subset(|r| {
             !r.check_status(StatusFlags::SAVED)
+                & !r.check_status(StatusFlags::EXPIRED)
                 & r.check_status(StatusFlags::TRACK | StatusFlags::FETCHED)
         });
         bili.batch_pull_res(&mut sub).await?;
@@ -114,17 +119,20 @@ pub(super) async fn pull(id: String) -> FavCoreResult<()> {
     let mut sets = BiliSets::read()?;
     let id_ = Id::from(&id);
     if let Some(s) = try_find_set(&mut sets, &id_) {
-        let mut sub =
-            s.subset(|r| !r.check_status(StatusFlags::SAVED) & r.check_status(StatusFlags::TRACK));
+        let mut sub = s.subset(|r| {
+            !r.check_status(StatusFlags::SAVED)
+                & !r.check_status(StatusFlags::EXPIRED)
+                & r.check_status(StatusFlags::TRACK | StatusFlags::FETCHED)
+        });
         bili.batch_pull_res(&mut sub).await?;
     } else if let Some(r) = try_find_res(&mut sets, &id_) {
-        if !r.check_status(StatusFlags::SAVED)
+        if !r.check_status(StatusFlags::EXPIRED)
             & r.check_status(StatusFlags::TRACK | StatusFlags::FETCHED)
         {
             bili.pull_res(r).await?;
         }
     } else {
-        return Err(FavCoreError::IdNotFound(id));
+        return Err(FavCoreError::IdNotUsable(id));
     }
     sets.write()
 }
@@ -140,7 +148,7 @@ pub(crate) async fn daemon(interval: u64) {
             .format("%Y-%m-%d %H:%M:%S")
             .to_string();
         info!(
-            "Next job will be {} minutes later at {}.",
+            "Next job will be {} minutes later at {}.\n",
             interval, next_ts_local
         );
         tokio::select! {

@@ -89,7 +89,10 @@ impl ResOps for Bili {
         let params = vec![resource.bvid.clone()];
         tokio::select! {
             res = self.request_proto::<BiliRes>(ApiKind::FetchRes, params, "/data") => {
-                    *resource |= res?;
+                    match res {
+                        Ok(res) => *resource |= res,
+                        Err(_) => resource.on_status(StatusFlags::EXPIRED),
+                    }
                     resource.on_status(StatusFlags::FETCHED);
                 },
             _ = tokio::signal::ctrl_c() => {

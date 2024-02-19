@@ -25,8 +25,8 @@ pub enum FavCoreError {
     ProtobufError(protobuf::Error),
     /// IO error
     IoError(std::io::Error),
-    /// Id not found
-    IdNotFound(String),
+    /// Id not usable
+    IdNotUsable(String),
 }
 
 impl std::fmt::Display for FavCoreError {
@@ -44,8 +44,12 @@ impl std::fmt::Display for FavCoreError {
             FavCoreError::IoError(source) => {
                 write!(f, "IOErr: {}; Maybe you didn't run `fav init`", source)
             }
-            FavCoreError::IdNotFound(source) => {
-                write!(f, "Id<{}> not found", source)
+            FavCoreError::IdNotUsable(source) => {
+                write!(
+                    f,
+                    "Id<{}> not usable; Or maybe the resource is expired",
+                    source
+                )
             }
         }
     }
