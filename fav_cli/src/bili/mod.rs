@@ -87,59 +87,56 @@ impl Cli {
         let args = Self::parse();
         match args.subcmd {
             Commands::Init => init()?,
-            subcmd => match subcmd {
-                Commands::Auth { subcmd } => match subcmd {
-                    AuthCommands::Login => login().await?,
-                    AuthCommands::Logout => logout().await?,
-                },
-                Commands::Status {
-                    id,
-                    sets,
-                    res,
-                    track,
-                } => match id {
-                    Some(id) => {
-                        if sets | res | track {
-                            Cli::command()
-                                .error(
-                                    ErrorKind::ArgumentConflict,
-                                    "The id to 'fav status' does not take -s, -r, -t, options.",
-                                )
-                                .exit();
-                        }
-                        status(id)?;
-                    }
-                    None => match (sets, res) {
-                        (false, false) => status_all(sets, true, track)?,
-                        _ => status_all(sets, res, track)?,
-                    },
-                },
-                Commands::Fetch => fetch().await?,
-                Commands::Track { id } => {
-                    for id in id {
-                        track(id)?;
-                    }
-                }
-                Commands::Untrack { id } => {
-                    for id in id {
-                        untrack(id)?;
-                    }
-                }
-                Commands::Pull { id } => match id {
-                    Some(id) => {
-                        for id in id {
-                            pull(id).await?;
-                        }
-                    }
-                    None => pull_all().await?,
-                },
-                Commands::Daemon { interval } => daemon(interval).await,
-                Commands::Completion { shell } => {
-                    let mut cmd = Cli::command();
-                    clap_complete::generate(shell, &mut cmd, "fav", &mut std::io::stdout());
-                }
-                _ => unreachable!(),
+            Commands::Auth { subcmd } => match subcmd {
+                AuthCommands::Login => login().await?,
+                AuthCommands::Logout => logout().await?,
             },
+            Commands::Status {
+                id,
+                sets,
+                res,
+                track,
+            } => match id {
+                Some(id) => {
+                    if sets | res | track {
+                        Cli::command()
+                            .error(
+                                ErrorKind::ArgumentConflict,
+                                "The id to 'fav status' does not take -s, -r, -t, options.",
+                            )
+                            .exit();
+                    }
+                    status(id)?;
+                }
+                None => match (sets, res) {
+                    (false, false) => status_all(sets, true, track)?,
+                    _ => status_all(sets, res, track)?,
+                },
+            },
+            Commands::Fetch => fetch().await?,
+            Commands::Track { id } => {
+                for id in id {
+                    track(id)?;
+                }
+            }
+            Commands::Untrack { id } => {
+                for id in id {
+                    untrack(id)?;
+                }
+            }
+            Commands::Pull { id } => match id {
+                Some(id) => {
+                    for id in id {
+                        pull(id).await?;
+                    }
+                }
+                None => pull_all().await?,
+            },
+            Commands::Daemon { interval } => daemon(interval).await,
+            Commands::Completion { shell } => {
+                let mut cmd = Cli::command();
+                clap_complete::generate(shell, &mut cmd, "fav", &mut std::io::stdout());
+            }
         }
         Ok(())
     }
