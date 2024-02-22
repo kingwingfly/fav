@@ -118,7 +118,7 @@ impl ResOps for Bili {
         let Dash { audio, video } = self
             .request_json(ApiKind::Pull, params, "/data/dash")
             .await?;
-        self.download(resource, vec![audio, video]).await?; // Ctrl-C will be caught in `save`
+        self.download(resource, vec![audio, video]).await?; // Ctrl-C will be caught in `download`
         resource.on_status(StatusFlags::SAVED);
         Ok(())
     }
