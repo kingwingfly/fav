@@ -55,7 +55,7 @@ enum Commands {
     },
     /// Pull remote resource to local
     Pull {
-        /// The id of the source to pull
+        /// The id of the source to pull forcely. If no id provided, then pull all and skip those having been saved
         #[arg(value_hint = ValueHint::Other)]
         id: Option<Vec<String>>,
     },
