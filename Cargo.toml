@@ -21,7 +21,7 @@ repository = "https://github.com/kingwingfly/fav"
 documentation = ""
 
 [workspace.dependencies]
-fav_core = { path = "fav_core", version = "0.0.1-beta4" }
+fav_core = { path = "fav_core", version = "0.0.1-beta5" }
 fav_derive = { path = "fav_derive", version = "0.0.1-beta1" }
 fav_utils = { path = "fav_utils", version = "0.0.1-beta3" }
 fav_cli = { path = "fav_cli" }

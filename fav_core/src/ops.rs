@@ -15,7 +15,7 @@ use protobuf_json_mapping::{parse_from_str_with_options, ParseOptions};
 use reqwest::{header, Client, Response};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
-use tracing::warn;
+use tracing::{error, warn};
 
 const PARSE_OPTIONS: ParseOptions = ParseOptions {
     ignore_unknown_fields: true,
@@ -231,7 +231,7 @@ where
                     warn!("{e}");
                     break;
                 }
-                _ => err(e),
+                _ => error!("{e}"),
             }
         }
     }
@@ -322,7 +322,7 @@ where
                     warn!("{e}");
                     break;
                 }
-                _ => err(e),
+                _ => error!("{e}"),
             }
         }
     }
@@ -330,19 +330,6 @@ where
 }
 
 impl<T> ResOpsExt for T where T: ResOps {}
-
-/// A function to print a err message, influenced by `tracing` feature.
-/// This needn't be `inline` since error message is not so frequent.
-#[inline]
-pub fn err<E>(e: E)
-where
-    E: std::error::Error,
-{
-    #[cfg(not(feature = "tracing"))]
-    println!("{}", e);
-    #[cfg(feature = "tracing")]
-    tracing::error!("{}", e);
-}
 
 /// Serde `Response` to json.
 pub async fn resp2json<T>(resp: Response, pointer: &str) -> FavCoreResult<T>
