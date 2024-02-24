@@ -351,7 +351,7 @@ where
 {
     match resp.json::<Value>().await?.pointer_mut(pointer) {
         Some(json) => {
-            let ret = serde_json::from_value(json.clone())?;
+            let ret = serde_json::from_value(json.take())?;
             Ok(ret)
         }
         None => Err(FavCoreError::SerdePointerNotFound),

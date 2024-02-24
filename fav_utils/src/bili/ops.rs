@@ -137,6 +137,7 @@ struct Wbi {
 }
 
 #[derive(Debug, serde::Deserialize)]
+#[cfg_attr(test, derive(PartialEq))]
 struct Dash {
     #[serde(deserialize_with = "extract")]
     audio: Url,
@@ -144,13 +145,18 @@ struct Dash {
     video: Url,
 }
 
-/// Extract the url from the json value
+#[derive(Debug, serde::Deserialize)]
+struct Info {
+    base_url: String,
+}
+
+/// Extract the url from json
 fn extract<'de, D>(d: D) -> Result<Url, D::Error>
 where
     D: serde::Deserializer<'de>,
 {
-    let v: serde_json::Value = serde::Deserialize::deserialize(d)?;
-    let url = v[0]["base_url"].as_str().unwrap().to_string();
+    let v: Vec<Info> = serde::Deserialize::deserialize(d)?;
+    let url = v[0].base_url.to_owned();
     Ok(Url::parse(&url).unwrap())
 }
 
@@ -178,6 +184,34 @@ mod tests {
         let sets = BiliSets::read().unwrap();
         println!("{:#?}", bili);
         println!("{:#?}", sets);
+    }
+
+    #[test]
+    fn extract_json() {
+        let json = r#"
+        {
+            "audio": [{"base_url": "https://example.com"}],
+            "video": [{"base_url": "https://example.com"}]
+        }
+        "#;
+        let expect = Dash {
+            audio: Url::parse("https://example.com").unwrap(),
+            video: Url::parse("https://example.com").unwrap(),
+        };
+        let ret: Dash = serde_json::from_str(json).unwrap();
+        assert_eq!(ret, expect);
+    }
+
+    #[test]
+    #[should_panic]
+    fn extract_json_fail() {
+        let json = r#"
+        {
+            "audio": [{}],
+            "video": [{"base_url": "https://example.com"}]
+        }
+        "#;
+        let _: Dash = serde_json::from_str(json).unwrap();
     }
 
     #[tokio::test]

@@ -9,6 +9,9 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 -->
 
 ## [Unreleased]
+### [0.2.3] - 2024-02-24
+- TryFix: panic when `base_url` not exist.
+
 ## [0.2.2] - 2024-02-20
 - Fix: overwriting the same file when pulling resources with the same name.
 - Improvement: the help info of `pull`.
