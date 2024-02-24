@@ -9,6 +9,9 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 -->
 
 ## [Unreleased]
+## [0.2.4] - 2024-02-24
+- Fix: media count not refresh after fetching.
+
 ## [0.2.3] - 2024-02-24
 - TryFix: panic when `base_url` not exist.
 

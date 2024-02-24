@@ -8,7 +8,10 @@ impl BitOrAssign for BiliSets {
         rhs.list
             .into_iter()
             .for_each(|s| match self.iter_mut().find(|s1| s1.id == s.id) {
-                Some(s1) => *s1 |= s,
+                Some(s1) => {
+                    s1.media_count = s.media_count;
+                    *s1 |= s
+                },
                 None => cache.push(s),
             });
         self.list.extend(cache);
