@@ -58,7 +58,7 @@ impl SetsOps for Bili {
         *sets |= self
             .request_proto(ApiKind::FetchSets, params, "/data")
             .await?;
-        info!("Fetched sets successfully.");
+        info!("Fetch sets successfully.");
         Ok(())
     }
 }
@@ -77,7 +77,7 @@ impl SetOps for Bili {
                 .await?
                 .with_res_status_on(StatusFlags::FAV);
         }
-        info!("Fetching set<{}> successfully.", id);
+        info!("Fetch set<{}> successfully.", id);
         Ok(())
     }
 }
