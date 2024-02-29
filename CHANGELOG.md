@@ -10,10 +10,10 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 
 ## [Unreleased]
 
-### [0.2.5] - 2024-02-29
+## [0.2.5] - 2024-02-29
 
 - Improvement: the help info of `pull`.
-- Auth: Add `reuse` to `fav auth reuse` to reuse the old cookie.
+- Auth: Add `reuse` to `fav auth reuse` to reuse the old cookies.
 
 ## [0.2.4] - 2024-02-24
 
