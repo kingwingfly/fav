@@ -88,7 +88,7 @@ pub(super) fn untrack(id: String) -> FavCoreResult<()> {
     let id_ = Id::from(&id);
     if let Some(s) = try_find_set(&mut sets, &id_) {
         s.off_status(StatusFlags::TRACK);
-        s.off_res_status(StatusFlags::TRACK);
+        s.medias.clear();
     } else if let Some(r) = try_find_res(&mut sets, &id_) {
         r.off_status(StatusFlags::TRACK);
     } else {

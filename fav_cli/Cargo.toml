@@ -1,6 +1,6 @@
 [package]
 name = "fav_cli"
-version = "0.0.1-alpha4"
+version = "0.0.1-alpha5"
 authors.workspace = true
 description = "Fav's CLI, helping persist the remote source. Repo: https://github.com/kingwingfly/fav"
 license.workspace = true
