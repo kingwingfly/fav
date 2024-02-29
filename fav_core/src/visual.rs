@@ -7,19 +7,19 @@ use tabled::{
     settings::{object::Rows, Alignment, Style},
 };
 
-/// Visualize the data as table
+/// Visualize the sets as table
 pub trait TableSets: Sets {
-    /// Visualize the data as table
+    /// Visualize the sets as table
     fn table(&self);
 }
-/// Visualize the data as table
+/// Visualize the set as table
 pub trait TableSet: Set {
-    /// Visualize the data as table
+    /// Visualize the set as table
     fn table(&self);
 }
-/// Visualize the data as table
+/// Visualize the resource as table
 pub trait TableRes: Res {
-    /// Visualize the data as table
+    /// Visualize the resource as table
     fn table(&self);
 }
 
