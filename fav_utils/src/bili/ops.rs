@@ -178,7 +178,7 @@ mod tests {
     use fav_core::ops::ResOpsExt;
 
     #[test]
-    #[ignore = "need data"]
+    #[ignore = "need local data"]
     fn print_data() {
         let bili = Bili::read().unwrap();
         let sets = BiliSets::read().unwrap();
@@ -203,7 +203,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic]
+    #[should_panic = "no base_url field in json"]
     fn extract_json_fail() {
         let json = r#"
         {
