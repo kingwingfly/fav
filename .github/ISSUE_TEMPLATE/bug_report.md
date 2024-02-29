@@ -2,7 +2,7 @@
 name: Bug report
 about: Create a report to help us improve
 title: "[Bug]"
-labels: ''
+labels: 'unread'
 assignees: ''
 ---
 
@@ -20,7 +20,6 @@ If applicable, add screenshots to help explain your problem.
 
 **Information (please complete the following information):**
 OS: [e.g. macOS]
-Output of `rustc -V`
 
 **Additional context**
 Add any other context about the problem here.
