@@ -79,6 +79,12 @@ enum AuthCommands {
     Login,
     /// Login with QR code
     Logout,
+    /// Reuse the login info
+    Reuse {
+        /// The path of .fav folder, example: /path/to/.fav
+        #[arg(value_hint = ValueHint::DirPath)]
+        path: std::path::PathBuf,
+    },
 }
 
 impl Cli {
@@ -90,6 +96,9 @@ impl Cli {
             Commands::Auth { subcmd } => match subcmd {
                 AuthCommands::Login => login().await?,
                 AuthCommands::Logout => logout().await?,
+                AuthCommands::Reuse { path } => {
+                    std::fs::copy(path.join("bili"), ".fav")?;
+                }
             },
             Commands::Status {
                 id,
