@@ -1,6 +1,6 @@
 [package]
 name = "fav_utils"
-version = "0.0.1-beta4"
+version = "0.0.1-beta5"
 authors.workspace = true
 description = "Fav's utils crate; A collection of utilities and data structures for the fav project"
 license.workspace = true
