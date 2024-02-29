@@ -203,7 +203,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic = "no base_url field in json"]
+    #[should_panic = "missing field `base_url`"]
     fn extract_json_fail() {
         let json = r#"
         {
