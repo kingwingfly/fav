@@ -24,7 +24,7 @@ pub(super) async fn logout() -> FavCoreResult<()> {
     bili.logout().await
 }
 
-pub fn status(id: String) -> FavCoreResult<()> {
+pub(super) fn status(id: String) -> FavCoreResult<()> {
     let mut sets = BiliSets::read()?;
     let id_ = Id::from(&id);
     if let Some(s) = try_find_set(&mut sets, &id_) {
@@ -37,7 +37,7 @@ pub fn status(id: String) -> FavCoreResult<()> {
     Ok(())
 }
 
-pub fn status_all(sets: bool, res: bool, track: bool) -> FavCoreResult<()> {
+pub(super) fn status_all(sets: bool, res: bool, track: bool) -> FavCoreResult<()> {
     let mut sets_ = BiliSets::read()?;
     if sets {
         let sub = sets_.subset(|s| s.check_status(StatusFlags::TRACK) | !track);
@@ -137,7 +137,7 @@ pub(super) async fn pull(id: String) -> FavCoreResult<()> {
     sets.write()
 }
 
-pub(crate) async fn daemon(interval: u64) {
+pub(super) async fn daemon(interval: u64) {
     if interval < 15 {
         warn!("Interval would better to be greater than 15 minutes.");
     }
