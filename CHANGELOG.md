@@ -10,6 +10,11 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 
 ## [Unreleased]
 
+## [0.2.7] - 2024-03-03
+
+- improve error hint of IoErr
+
+
 ## [0.2.6] - 2024-02-29
 
 - Untrack: When untrack a set, it will clear its content now, or `fav status` would keep showing its resources after untracking.
