@@ -1,4 +1,6 @@
+#[cfg(test)]
 use protobuf::reflect::MessageDescriptor;
+#[cfg(test)]
 use protobuf_codegen::{Codegen, Customize, CustomizeCallback};
 use rustc_version::{version_meta, Channel};
 
@@ -11,6 +13,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Channel::Dev => "CHANNEL_DEV",
     };
     println!("cargo:rustc-cfg={}", channel);
+    #[cfg(test)]
     Codegen::new()
         .pure()
         .includes(["proto"])
@@ -24,8 +27,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+#[cfg(test)]
 struct MyCustomizeCallback;
-
+#[cfg(test)]
 impl CustomizeCallback for MyCustomizeCallback {
     fn message(&self, message: &MessageDescriptor) -> Customize {
         let name = message.name();
@@ -38,7 +42,10 @@ impl CustomizeCallback for MyCustomizeCallback {
     }
 }
 
+#[cfg(test)]
 const DERIVE_UPPER: &str = "#[derive(fav_core::attr::Attr)]\n#[attr(id(mid), title(name))]";
+#[cfg(test)]
 const DERIVE_BILIRES: &str =
     "#[derive(fav_core::attr::Attr, fav_core::status::Status)]\n#[attr(id(bvid))]";
+#[cfg(test)]
 const DERIVE_BILISET: &str = "#[derive(fav_core::attr::Attr, fav_core::status::Status)]";
