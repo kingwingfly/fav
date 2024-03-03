@@ -9,6 +9,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Channel::Dev => "CHANNEL_DEV",
     };
     println!("cargo:rustc-cfg={}", channel);
+    #[cfg(test)]
     protobuf_codegen::Codegen::new()
         .pure()
         .includes(["proto"])
