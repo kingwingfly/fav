@@ -32,7 +32,7 @@ pub enum FavCoreError {
 impl std::fmt::Display for FavCoreError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FavCoreError::AuthError => write!(f, "AuthErr: failed to login or logout."),
+            FavCoreError::AuthError => write!(f, "AuthErr: failed to login or logout"),
             FavCoreError::ParamsError(msg) => write!(f, "{}", msg),
             FavCoreError::NetworkError(source) => write!(f, "NetworkErr:: {}", source),
             FavCoreError::Cancel => write!(f, "Ctrl-C cancelled"),
@@ -42,7 +42,7 @@ impl std::fmt::Display for FavCoreError {
             FavCoreError::Json2ProtobufError(source) => write!(f, "ProtobufParseErr: {}", source),
             FavCoreError::ProtobufError(source) => write!(f, "ProtobufError: {}", source),
             FavCoreError::IoError(source) => {
-                write!(f, "IOErr: {}; Maybe you didn't run `fav init`", source)
+                write!(f, "IOErr: {}; Maybe you didn't run `fav init` or have no permission to write .fav", source)
             }
             FavCoreError::IdNotUsable(source) => {
                 write!(
