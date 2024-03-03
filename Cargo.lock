@@ -357,7 +357,7 @@ dependencies = [
 
 [[package]]
 name = "fav_cli"
-version = "0.0.1-alpha5"
+version = "0.0.1"
 dependencies = [
  "chrono",
  "clap",
@@ -405,7 +405,7 @@ dependencies = [
 
 [[package]]
 name = "fav_utils"
-version = "0.0.1-beta5"
+version = "0.0.1"
 dependencies = [
  "fav_core",
  "indicatif",
