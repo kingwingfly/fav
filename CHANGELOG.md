@@ -16,7 +16,7 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 
 ## [0.2.8] - 2024-03-04
 
-- Auth reuse: use hard link instread of copying file
+- Auth reuse: use hard link instead of copying file
 - Stop publish utils and cli to crates.io, because `Cargo` only allow modify `OutDir` during building now.
 - Sync the version of cli and bin.
 
