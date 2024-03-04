@@ -10,6 +10,10 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 
 ## [Unreleased]
 
+## [0.2.9] - 2024-03-05
+
+- fix: modify src/ while building. This does not influence users.
+
 ## [0.2.8] - 2024-03-04
 
 - Auth reuse: use hard link instread of copying file
