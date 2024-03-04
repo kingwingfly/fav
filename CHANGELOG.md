@@ -10,6 +10,12 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 
 ## [Unreleased]
 
+## [0.2.8] - 2024-03-04
+
+- Auth reuse: use hard link instread of copying file
+- Stop publish utils and cli to crates.io, because `Cargo` only allow modify `OutDir` during building now.
+- Sync the version of cli and bin.
+
 ## [0.2.7] - 2024-03-03
 
 - improve error hint of IoErr

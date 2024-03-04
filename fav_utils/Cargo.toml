@@ -7,6 +7,7 @@ license.workspace = true
 edition.workspace = true
 repository.workspace = true
 documentation = "https://docs.rs/fav_utils"
+publish = false
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

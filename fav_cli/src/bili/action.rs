@@ -8,13 +8,12 @@ use tracing::{info, warn};
 pub(super) fn init() -> FavCoreResult<()> {
     #[cfg(not(test))]
     std::fs::create_dir_all(".fav")?;
-    Bili::default().write()?;
     BiliSets::default().write()?;
     Ok(())
 }
 
 pub(super) async fn login() -> FavCoreResult<()> {
-    let mut bili = Bili::read()?;
+    let mut bili = Bili::default();
     bili.login().await?;
     bili.write()
 }

@@ -97,7 +97,7 @@ impl Cli {
                 AuthCommands::Login => login().await?,
                 AuthCommands::Logout => logout().await?,
                 AuthCommands::Reuse { path } => {
-                    std::fs::copy(path.join("bili"), ".fav/bili")?;
+                    std::fs::hard_link(path.join("bili"), ".fav/bili")?;
                 }
             },
             Commands::Status {

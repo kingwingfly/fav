@@ -1,12 +1,13 @@
 [package]
 name = "fav_cli"
-version = "0.0.1"
+version.workspace= true
 authors.workspace = true
 description = "Fav's CLI, helping persist the remote source. Repo: https://github.com/kingwingfly/fav"
 license.workspace = true
 edition.workspace = true
 repository.workspace = true
 documentation = "https://docs.rs/fav_cli"
+publish = false
 
 [package.metadata.docs.rs]
 all-features = true
