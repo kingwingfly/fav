@@ -3,8 +3,7 @@ use crate::{api::DefaultApiKind, prelude::*};
 #[cfg(not(test))]
 use fav_core::{api::DefaultApiKind, prelude::*};
 
-use super::data::{App, Conf, TestRes, TestSet, TestSets};
-use std::future::Future;
+use super::data::{App, TestRes, TestSet, TestSets};
 
 impl HttpConfig for App {
     fn headers(&self) -> reqwest::header::HeaderMap {
@@ -23,7 +22,7 @@ impl HttpConfig for App {
 impl ApiProvider for App {
     type ApiKind = DefaultApiKind;
 
-    fn api(&self, api_kind: Self::ApiKind) -> &dyn Api {
+    fn api(&self, _: Self::ApiKind) -> &dyn Api {
         todo!()
     }
 }
@@ -41,11 +40,11 @@ impl AuthOps for App {
 impl ResOps for App {
     type Res = TestRes;
 
-    async fn fetch_res(&self, resource: &mut Self::Res) -> FavCoreResult<()> {
+    async fn fetch_res(&self, _: &mut Self::Res) -> FavCoreResult<()> {
         todo!()
     }
 
-    async fn pull_res(&self, resource: &mut Self::Res) -> FavCoreResult<()> {
+    async fn pull_res(&self, _: &mut Self::Res) -> FavCoreResult<()> {
         todo!()
     }
 }
@@ -53,7 +52,7 @@ impl ResOps for App {
 impl SetOps for App {
     type Set = TestSet;
 
-    async fn fetch_set(&self, set: &mut Self::Set) -> FavCoreResult<()> {
+    async fn fetch_set(&self, _: &mut Self::Set) -> FavCoreResult<()> {
         todo!()
     }
 }

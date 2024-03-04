@@ -1,4 +1,5 @@
-use crate::{proto::bili::Bili, utils::time::timestamp_sc};
+use super::Bili;
+use crate::utils::time::timestamp_sc;
 use fav_core::api::{Api, ApiProvider};
 
 impl ApiProvider for Bili {

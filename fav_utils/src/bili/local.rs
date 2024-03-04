@@ -1,8 +1,5 @@
-use crate::{
-    proto::bili::{Bili, BiliSets},
-    utils::bar::download_bar,
-    FavUtilsError,
-};
+use super::{Bili, BiliSets};
+use crate::{utils::bar::download_bar, FavUtilsError};
 use fav_core::prelude::*;
 use reqwest::header::CONTENT_LENGTH;
 use std::io::{BufWriter, Write as _};

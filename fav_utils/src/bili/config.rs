@@ -1,4 +1,4 @@
-use crate::proto::bili::Bili;
+use super::Bili;
 use fav_core::prelude::*;
 use reqwest::{header, header::HeaderMap};
 use std::collections::HashMap;

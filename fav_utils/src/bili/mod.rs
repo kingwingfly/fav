@@ -6,7 +6,9 @@ mod local;
 mod ops;
 mod res;
 
-pub use crate::proto::bili::*;
+pub mod data;
+
+pub use data::*;
 
 impl From<Qn> for String {
     fn from(qn: Qn) -> Self {

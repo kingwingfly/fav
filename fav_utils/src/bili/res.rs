@@ -1,4 +1,4 @@
-use crate::proto::bili::{BiliRes, BiliSet, BiliSets};
+use super::{BiliRes, BiliSet, BiliSets};
 use fav_core::prelude::*;
 use std::ops::BitOrAssign;
 
@@ -11,7 +11,7 @@ impl BitOrAssign for BiliSets {
                 Some(s1) => {
                     s1.media_count = s.media_count;
                     *s1 |= s
-                },
+                }
                 None => cache.push(s),
             });
         self.list.extend(cache);
