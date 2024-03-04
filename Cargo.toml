@@ -5,7 +5,7 @@ members = [
     "fav_core",
     "fav_utils_old",
     "fav_utils",
-    "fav_derive",
+    "fav_derive"
 ]
 resolver = "2"
 
