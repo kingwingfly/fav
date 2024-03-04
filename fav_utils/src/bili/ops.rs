@@ -1,9 +1,6 @@
 use super::api::ApiKind;
-use crate::{
-    proto::bili::{Bili, BiliRes, BiliSet, BiliSets},
-    utils::qr::show_qr_code,
-    FavUtilsError, FavUtilsResult,
-};
+use super::{Bili, BiliRes, BiliSet, BiliSets};
+use crate::{utils::qr::show_qr_code, FavUtilsError, FavUtilsResult};
 use fav_core::{prelude::*, status::SetStatusExt as _};
 use reqwest::Response;
 use std::collections::HashMap;
@@ -173,8 +170,8 @@ fn try_extract_cookie(resp: &Response) -> FavUtilsResult<HashMap<String, String>
 
 #[cfg(test)]
 mod tests {
+    use super::BiliSets;
     use super::*;
-    use crate::proto::bili::BiliSets;
     use fav_core::ops::ResOpsExt;
 
     #[test]
