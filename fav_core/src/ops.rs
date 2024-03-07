@@ -79,7 +79,7 @@ pub trait LocalSetsOps: Net + HttpConfig {
 /// For more information, see [Rust Blog](https://blog.rust-lang.org/2023/12/21/async-fn-rpit-in-traits.html#async-fn-in-public-traits).
 #[trait_variant::make(SetOps: Send)]
 pub trait LocalSetOps: Net + HttpConfig {
-    /// The sets type the operations on
+    /// The set type the operations on
     type Set: Set;
     /// Fetch one resource set
     async fn fetch_set(&self, set: &mut Self::Set) -> FavCoreResult<()>;
