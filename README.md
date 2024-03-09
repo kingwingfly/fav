@@ -1,14 +1,12 @@
 <a name="readme-top"></a>
 
-
-
 <!-- PROJECT SHIELDS -->
+
 [![Contributors][contributors-shield]][contributors-url]
 [![Forks][forks-shield]][forks-url]
 [![Stargazers][stars-shield]][stars-url]
 [![Issues][issues-shield]][issues-url]
 [![MIT License][license-shield]][license-url]
-
 
 <!-- PROJECT LOGO -->
 <br />
@@ -32,8 +30,6 @@
     <a href="https://github.com/kingwingfly/fav/issues">Request Feature</a>
   </p>
 </div>
-
-
 
 <!-- TABLE OF CONTENTS -->
 <details>
@@ -61,9 +57,8 @@
   </ol>
 </details>
 
-
-
 <!-- ABOUT THE PROJECT -->
+
 ## About The Project
 
 [![Product Name Screen Shot][product-screenshot]](https://github.com/kingwingfly/fav)
@@ -72,22 +67,19 @@ Back up your favorite bilibili online resources with CLI.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-
-
 ### Built With
 
-* [![Rust][Rust]][Rust-url]
+- [![Rust][Rust]][Rust-url]
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-
-
 <!-- GETTING STARTED -->
+
 ## Getting Started
 
 ### Prerequisites
 
-* Install Rust
+- Install Rust
   ```sh
   curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
   ```
@@ -106,9 +98,8 @@ Back up your favorite bilibili online resources with CLI.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-
-
 <!-- USAGE EXAMPLES -->
+
 ## Usage
 
 Need `ffmpeg` usable, and able to be directly called in cli.
@@ -135,17 +126,19 @@ Options:
   -h, --help     Print help
   -V, --version  Print version
 ```
+
 ### Steps
 
 1. Init and Login first
-2. Fetch the favorite list
-3. Track the bvid or list_id you want to fav. You can see them through `fav status -s/r`
+2. Fetch the favorite sets(lists)
+3. Track the list_id you want. You can see them through `fav status -s`
 4. Fetch tracked resources
-5. Pull the resources (Now only tracked resource can be pulled, since c_id is needed for pulling while only tracked resource has c_id fetched)
+5. Pull the resources
 
 ### Example
+
 ```sh
-# auto complete is supported; e.g:
+# auto complete is supported; i.e. fish
 $ fav completion fish > ~/.config/fish/completions/fav.fish
 # init for bilibili
 $ fav init
@@ -155,13 +148,11 @@ $ fav auth login
 $ fav fetch
 # show status
 $ fav status -s
-# track list (just like `git add`, by the way, commit is not needed)
-$ fav track <list_id/bvid>
-# fetch
-$ fav fetch
-# pull videos (support dry-run)
+# track list
+$ fav track <list_id>
+# fetch and pull videos
 $ fav pull
-# untrack list or video (just like `git rm`)
+# untrack list or video
 $ fav untrack <list_id/bvid>
 # daemon
 $ fav daemon 30
@@ -171,9 +162,8 @@ _For more examples, please refer to the [Documentation](https://github.com/kingw
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-
-
 <!-- ROADMAP -->
+
 ## Roadmap
 
 - [x] Init
@@ -183,21 +173,14 @@ _For more examples, please refer to the [Documentation](https://github.com/kingw
 - [x] Track
 - [x] Untrack
 - [x] Pull
-- [ ] Push
-- [ ] Ignore
-- [x] Like
-- [ ] Sync
-- [ ] Serve
-- [ ] Tui
 - [ ] Dynamic completion
 
 See the [open issues](https://github.com/kingwingfly/fav/issues) for a full list of proposed features (and known issues).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-
-
 <!-- CONTRIBUTING -->
+
 ## Contributing
 
 Contributions are what make the open source community such an amazing place to learn, inspire, and create. Any contributions you make are **greatly appreciated**. Moreover, it is recommended to open an issue before coding to avoid repeated and useless work.
@@ -207,18 +190,16 @@ Don't forget to give the project a star! Thanks again!
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-
-
 <!-- LICENSE -->
+
 ## License
 
 Distributed under the MIT License. See `LICENSE.txt` for more information.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-
-
 <!-- CONTACT -->
+
 ## Contact
 
 Louis - 836250617@qq.com
@@ -227,19 +208,17 @@ Project Link: [https://github.com/kingwingfly/fav](https://github.com/kingwingfl
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-
-
 <!-- ACKNOWLEDGMENTS -->
+
 ## Acknowledgments
 
-* [bilibili-API-collect](https://github.com/SocialSisterYi/bilibili-API-collect)
+- [bilibili-API-collect](https://github.com/SocialSisterYi/bilibili-API-collect)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-
-
 <!-- MARKDOWN LINKS & IMAGES -->
 <!-- https://www.markdownguide.org/basic-syntax/#reference-style-links -->
+
 [contributors-shield]: https://img.shields.io/github/contributors/kingwingfly/fav.svg?style=for-the-badge
 [contributors-url]: https://github.com/kingwingfly/fav/graphs/contributors
 [forks-shield]: https://img.shields.io/github/forks/kingwingfly/fav.svg?style=for-the-badge
