@@ -43,7 +43,7 @@ tracing-subscriber = { version = "0.3" }
 # Tools
 qrcode = { version = "0.13", default-features = false }
 rand = "0.8.5"
-base64 = "0.21.7"
+base64 = "0.22.0"
 tempfile = "3.9.0"
 sanitize-filename = "0.5.0"
 md5 = "0.7.0"
