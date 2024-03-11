@@ -16,7 +16,7 @@ all-features = true
 
 [dependencies]
 # CLI
-clap = { version = "4.4", features = ["derive"] }
+clap = { version = "4.5", features = ["derive"] }
 tabled = "0.15.0"
 indicatif = { version = "0.17", features = ["tokio"] }
 clap_complete = { version = "4" }
