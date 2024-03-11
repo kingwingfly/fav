@@ -22,7 +22,7 @@ jobs:
         run: echo "VERSION=$(grep -oP '^version = "\K[^"]+' Cargo.toml | awk '{$1=$1;print}')" >> $GITHUB_OUTPUT
 
       - name: Cache restore
-        uses: actions/cache/restore@v3
+        uses: actions/cache/restore@v4
         id: cache-cargo-restore
         with:
           path: |
@@ -39,7 +39,7 @@ jobs:
 
       - name: Cache save
         if: steps.cache-cargo-restore.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v3
+        uses: actions/cache/save@v4
         id: cache-cargo-save
         with:
           path: |
