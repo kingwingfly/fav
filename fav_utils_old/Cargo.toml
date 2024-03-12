@@ -47,7 +47,7 @@ base64 = "0.22.0"
 tempfile = "3.10.1"
 sanitize-filename = "0.5.0"
 md5 = "0.7.0"
-chrono = "0.4.33"
+chrono = "0.4.35"
 
 [build-dependencies]
 protobuf-codegen = { version = "3" }
