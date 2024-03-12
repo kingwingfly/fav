@@ -142,10 +142,11 @@ pub(super) async fn daemon(interval: u64) {
     }
     pull_all().await.ok();
     loop {
-        let next_ts_local = (chrono::Utc::now() + chrono::Duration::minutes(interval as i64))
-            .with_timezone(&chrono::Local)
-            .format("%Y-%m-%d %H:%M:%S")
-            .to_string();
+        let next_ts_local = (chrono::Utc::now()
+            + chrono::Duration::try_minutes(interval as i64).expect("invalid interval."))
+        .with_timezone(&chrono::Local)
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string();
         info!(
             "Next job will be {} minutes later at {}.\n",
             interval, next_ts_local

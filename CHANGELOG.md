@@ -10,6 +10,10 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 
 ## [Unreleased]
 
+## [0.2.10] - 2024-03-13
+
+- bump dependencies
+
 ## [0.2.9] - 2024-03-05
 
 - fix: modify src/ while building. This does not influence users.
@@ -23,7 +27,6 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 ## [0.2.7] - 2024-03-03
 
 - improve error hint of IoErr
-
 
 ## [0.2.6] - 2024-02-29
 

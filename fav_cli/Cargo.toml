@@ -24,7 +24,7 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 # Tracing
 tracing = { version = "0.1" }
 # utils
-chrono = "0.4.34"
+chrono = "0.4.35"
 
 [build-dependencies]
 rustc_version = "0.4.0"

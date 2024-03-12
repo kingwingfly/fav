@@ -9,10 +9,11 @@ pub(crate) async fn interval(interval: u64) {
     }
     job().await;
     loop {
-        let next_ts_local = (chrono::Utc::now() + chrono::Duration::minutes(interval as i64))
-            .with_timezone(&chrono::Local)
-            .format("%Y-%m-%d %H:%M:%S")
-            .to_string();
+        let next_ts_local = (chrono::Utc::now()
+            + chrono::Duration::try_minutes(interval as i64).unwrap())
+        .with_timezone(&chrono::Local)
+        .format("%Y-%m-%d %H:%M:%S")
+        .to_string();
         info!(
             "Next job will be {} minutes later at {}.",
             interval, next_ts_local
