@@ -34,7 +34,7 @@ tokio = { version = "1", features = [
 # tracing
 tracing = { version = "0.1" }
 # Tools
-qrcode = { version = "0.13", default-features = false }
+qrcode = { version = "0.14", default-features = false }
 tempfile = "3.10.1"
 sanitize-filename = "0.5.0"
 md5 = "0.7.0"
