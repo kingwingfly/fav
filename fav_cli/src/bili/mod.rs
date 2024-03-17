@@ -141,7 +141,7 @@ impl Cli {
                 }
                 None => pull_all().await?,
             },
-            Commands::Daemon { interval } => daemon(interval).await,
+            Commands::Daemon { interval } => daemon(interval).await?,
             Commands::Completion { shell } => {
                 let mut cmd = Cli::command();
                 clap_complete::generate(shell, &mut cmd, "fav", &mut std::io::stdout());

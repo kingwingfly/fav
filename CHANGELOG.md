@@ -10,6 +10,11 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 
 ## [Unreleased]
 
+## [0.2.11] - 2024-03-18
+
+- bump dependencies.
+- improvement: quit while running `daemon` in a dir which is not initialized.
+
 ## [0.2.10] - 2024-03-13
 
 - bump dependencies

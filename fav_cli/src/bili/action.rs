@@ -136,11 +136,11 @@ pub(super) async fn pull(id: String) -> FavCoreResult<()> {
     sets.write()
 }
 
-pub(super) async fn daemon(interval: u64) {
+pub(super) async fn daemon(interval: u64) -> FavCoreResult<()> {
     if interval < 15 {
         warn!("Interval would better to be greater than 15 minutes.");
     }
-    pull_all().await.ok();
+    pull_all().await?;
     loop {
         let next_ts_local = (chrono::Utc::now()
             + chrono::Duration::try_minutes(interval as i64).expect("invalid interval."))
@@ -161,6 +161,7 @@ pub(super) async fn daemon(interval: u64) {
             }
         }
     }
+    Ok(())
 }
 
 fn try_find_set<'a>(sets: &'a mut BiliSets, id: &Id) -> Option<&'a mut BiliSet> {
