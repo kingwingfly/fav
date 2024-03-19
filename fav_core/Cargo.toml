@@ -32,7 +32,7 @@ tokio = { version = "1", features = ["rt-multi-thread", "signal", "macros"] }
 tokio-stream = { version = "0.1" }
 futures = "0.3"
 # utils
-bitflags = "2.4"
+bitflags = "2.5"
 # derive
 fav_derive = { workspace = true, optional = true }
 # tracing
