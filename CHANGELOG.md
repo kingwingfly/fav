@@ -10,6 +10,10 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 
 ## [Unreleased]
 
+## [0.2.12] - 2024-03-23
+
+- daemon: performance improvement.
+
 ## [0.2.11] - 2024-03-18
 
 - bump dependencies.
