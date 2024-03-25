@@ -22,7 +22,7 @@ serde_json = { version = "1" }
 protobuf = { version = "3", features = ["with-bytes"] }
 protobuf-json-mapping = { version = "3" }
 # Net
-reqwest = { version = "0.11", features = ["json", "cookies"] }
+reqwest = { version = "0.12", features = ["json", "cookies"] }
 url = "2.5"
 # Runtime
 tokio = { version = "1", features = [
