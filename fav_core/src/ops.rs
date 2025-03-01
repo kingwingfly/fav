@@ -139,9 +139,9 @@ pub trait LocalResOps: Net + HttpConfig {
 /// ```
 pub trait SetOpsExt: SetOps {
     /// **Asynchronously** fetch sets in sets using [`SetOps::fetch_set`].
-    fn batch_fetch_set<'a, SS>(
+    fn batch_fetch_set<SS>(
         &self,
-        sets: &'a mut SS,
+        sets: &mut SS,
         batch_size: usize,
     ) -> impl Future<Output = FavCoreResult<()>>
     where
@@ -221,9 +221,9 @@ impl<T> SetOpsExt for T where T: SetOps {}
 /// ```
 pub trait ResOpsExt: ResOps {
     /// **Asynchronously** fetch resourses in set using [`ResOps::fetch_res`].
-    fn batch_fetch_res<'a, S>(
+    fn batch_fetch_res<S>(
         &self,
-        set: &'a mut S,
+        set: &mut S,
         batch_size: usize,
     ) -> impl Future<Output = FavCoreResult<()>>
     where
@@ -233,9 +233,9 @@ pub trait ResOpsExt: ResOps {
     }
 
     /// **Asynchronously** pull resourses in set using [`ResOps::pull_res`].
-    fn batch_pull_res<'a, S>(
+    fn batch_pull_res<S>(
         &self,
-        set: &'a mut S,
+        set: &mut S,
         batch_size: usize,
     ) -> impl Future<Output = FavCoreResult<()>>
     where
