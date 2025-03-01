@@ -41,7 +41,7 @@ futures = "0.3"
 tracing = { version = "0.1" }
 # tools
 qrcode = { version = "0.14", default-features = false }
-tempfile = "3.13.0"
+tempfile = "3.17.1"
 sanitize-filename = "0.6.0"
 md5 = "0.7.0"
 unicode-width = "0.2.0"
