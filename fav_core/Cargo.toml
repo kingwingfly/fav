@@ -18,7 +18,7 @@ rustdoc-args = ["--cfg", "docsrs"]
 # derive
 fav_derive = { workspace = true, optional = true }
 # cli
-tabled = { version = "0.17.0", optional = true }
+tabled = { version = "0.18.0", optional = true }
 # net
 url = "2.5"
 http = "1"
@@ -36,7 +36,7 @@ tokio-stream = { version = "0.1" }
 tokio-util = { version = "0.7" }
 futures = "0.3"
 # utils
-bitflags = "2.5"
+bitflags = "2.9"
 # tracing
 tracing = { version = "0.1" }
 
