@@ -1,0 +1,19 @@
+[package]
+name = "fav"
+version.workspace = true
+authors.workspace = true
+description.workspace = true
+license.workspace = true
+edition.workspace = true
+repository.workspace = true
+documentation.workspace = true
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+fav_cli = { workspace = true }
+# runtime
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+# tracing
+tracing = { version = "0.1" }
+tracing-subscriber = { version = "0.3" }
