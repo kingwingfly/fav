@@ -18,7 +18,7 @@ is considered over-designed by me.
 
 As my being more familar with Rust, I decide to re-factor again this CRUD-oriented application.
 
-🆕 update
+# 🆕 update of fav v1.*
 
 - **sqlite & sea-orm**: to support more video attributes management
 - **better task manager**: a task manager with handle and callback
