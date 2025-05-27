@@ -207,6 +207,18 @@ See the [open issues](https://github.com/kingwingfly/fav/issues) for a full list
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
+<!-- DEVELOP -->
+
+## Develop
+
+`sea-orm` is used to handle database ops.
+
+```sh
+cargo binstall sea-orm-cli # or `cargo install sea-orm-cli`
+sea-orm-cli migrate refresh
+sea-orm-cli generate entity --expanded-format -o fav/src/entity/entity_inner/
+```
+
 <!-- CONTRIBUTING -->
 
 ## Contributing

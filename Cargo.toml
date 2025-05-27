@@ -1,8 +1,8 @@
-[workspace]
-members = ["fav"]
-resolver = "2"
-
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+[workspace]
+members = ["fav", "migration"]
+default-members = ["fav"]
+resolver = "2"
 
 [workspace.package]
 authors = ["Louis <836250617@qq.com>"]

@@ -1,7 +1,9 @@
 mod api;
 mod command;
 mod db;
+mod entity;
 mod event;
+mod migration;
 mod payload;
 mod response;
 mod runtime;
@@ -19,7 +21,9 @@ fn main() {
     let event = FavCommand::new().run();
 
     let mut world = World::new();
-    world.insert_resource(runtime::Runtime::new());
+    let runtime = runtime::Runtime::new();
+    world.insert_resource(runtime.block_on(db::Db::connect()));
+    world.insert_resource(runtime);
 
     let mut schedule = Schedule::default();
     schedule.set_executor_kind(ExecutorKind::SingleThreaded);
