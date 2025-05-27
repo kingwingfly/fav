@@ -16,6 +16,10 @@ impl MigrationTrait for Migration {
                     .col(unsigned_uniq(User::UserId))
                     .col(string(User::Name))
                     .col(binary(User::Cookies))
+                    .col(
+                        enumeration(User::State, "state", ["Active", "Inactive", "Expired"])
+                            .default("Active"),
+                    )
                     .primary_key(Index::create().col(User::UserId))
                     .to_owned(),
             )
@@ -38,6 +42,14 @@ impl MigrationTrait for Migration {
                     .if_not_exists()
                     .col(unsigned_uniq(Set::SetId))
                     .col(string(Set::Name))
+                    .col(
+                        enumeration(
+                            Set::State,
+                            "state",
+                            ["Sync", "SyncRef", "Pull", "Inactive", "Expired"],
+                        )
+                        .default("Inactive"),
+                    )
                     .primary_key(Index::create().col(Set::SetId))
                     .to_owned(),
             )
@@ -171,6 +183,7 @@ enum User {
     UserId,
     Name,
     Cookies,
+    State,
 }
 
 #[derive(DeriveIden)]
@@ -185,6 +198,7 @@ enum Set {
     Table,
     SetId,
     Name,
+    State,
 }
 
 #[derive(DeriveIden)]
