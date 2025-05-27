@@ -7,6 +7,7 @@ mod response;
 mod runtime;
 mod system;
 mod version;
+mod wbi;
 
 use bevy_ecs::{
     schedule::{ExecutorKind, Schedule},

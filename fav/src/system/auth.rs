@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use api_req::{ApiCaller as _, COOKIE_JAR};
+use api_req::{ApiCaller as _, COOKIE_JAR, CookieStore as _};
 use bevy_ecs::{
     observer::Trigger,
     system::{Commands, Res},
@@ -9,10 +9,10 @@ use qrcode::{QrCode, render::unicode};
 use tokio::time::sleep;
 
 use crate::{
-    api::AuthApi,
+    api::{AuthApi, BiliApi},
     event::Login,
-    payload::{QrPayload, QrPollPayload},
-    response::{QrData, QrResp},
+    payload::{QrPayload, QrPollPayload, WhoamiPayload},
+    response::{QrData, QrPollData, QrPollResp, QrResp, WhoamiData, WhoamiResp},
     runtime::Runtime,
 };
 
@@ -29,16 +29,33 @@ pub fn auth(mut cmds: Commands) {
                 .light_color(unicode::Dense1x2::Dark)
                 .build();
             println!("{}", image);
-            for _ in 0..40 {
+            loop {
                 sleep(Duration::from_secs(3)).await;
-                let resp: serde_json::Value = AuthApi::request(QrPollPayload {
+                let QrPollResp {
+                    data: QrPollData { code, message },
+                } = AuthApi::request(QrPollPayload {
                     qrcode_key: qrcode_key.clone(),
                 })
                 .await
                 .unwrap();
-                dbg!(resp);
-                dbg!(COOKIE_JAR.clone());
+                match code {
+                    0 => {
+                        println!("Login successfully.");
+                        break;
+                    }
+                    86101 | 86090 => {}
+                    _ => {
+                        println!("{}", message);
+                        return;
+                    }
+                }
             }
+            let WhoamiResp {
+                data: WhoamiData { name, .. },
+            } = BiliApi::request(WhoamiPayload::new(32280488).await)
+                .await
+                .unwrap();
+            println!("Hello {}", name);
         });
     });
 }

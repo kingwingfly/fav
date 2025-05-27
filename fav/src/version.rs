@@ -1,7 +1,7 @@
 use const_format::formatc;
 
 pub const VERSION: &str = formatc!(
-    "VERSION: {fav_version}\tRUSTC: {rustc_version}",
+    "version: {fav_version}\trustc: {rustc_version}",
     fav_version = env!("VERGEN_GIT_DESCRIBE"),
     rustc_version = env!("VERGEN_RUSTC_SEMVER")
 );

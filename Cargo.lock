@@ -84,9 +84,9 @@ checksum = "e16d2d3311acee920a9eb8d33b8cbc1787ce4a264e85f964c2404b969bdcd487"
 
 [[package]]
 name = "api_req"
-version = "0.4.0-alpha.1"
+version = "0.4.0-alpha.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "073fc0546b15c9c5a91ed83bf42cca8fed2d5afa327fcfd0e33d9403cc5832e7"
+checksum = "fc764ff050f686b17ed240430b3ac6bea1f925e0a0df4e26b3e15f1cb77b30ca"
 dependencies = [
  "api_req_derive",
  "bytes",
@@ -102,9 +102,9 @@ dependencies = [
 
 [[package]]
 name = "api_req_derive"
-version = "0.4.0-alpha.1"
+version = "0.4.0-alpha.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ad1bcd52f4c448d90d7f0f4fa4590ea608a8d00de5ec049dd1e55a03bd7cde1"
+checksum = "515f2cbf56dd766732b3525e58b6300ae9377f47eb9bc59853816c79ac049fa3"
 dependencies = [
  "quote",
  "regex",
@@ -683,9 +683,11 @@ dependencies = [
  "bevy_ecs",
  "clap",
  "const_format",
+ "md5",
  "qrcode",
  "serde",
  "serde_json",
+ "serde_urlencoded",
  "tokio",
  "url",
  "vergen",
@@ -1212,6 +1214,12 @@ name = "log"
 version = "0.4.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
+
+[[package]]
+name = "md5"
+version = "0.7.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "490cc448043f947bae3cbee9c203358d62dbee0db12107a74be5c30ccfd09771"
 
 [[package]]
 name = "memchr"

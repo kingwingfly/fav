@@ -1,4 +1,4 @@
-use api_req::{Method, Payload};
+use api_req::Payload;
 use serde::Serialize;
 
 #[derive(Debug, Payload, Serialize)]
@@ -6,7 +6,7 @@ use serde::Serialize;
 pub struct QrPayload;
 
 #[derive(Debug, Payload, Serialize)]
-#[api_req(path = "/x/passport-login/web/qrcode/poll", req=query)]
+#[api_req(path = "/x/passport-login/web/qrcode/poll")]
 pub struct QrPollPayload {
     pub qrcode_key: String,
 }
