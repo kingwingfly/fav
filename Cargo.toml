@@ -6,9 +6,8 @@ resolver = "2"
 
 [workspace.package]
 authors = ["Louis <836250617@qq.com>"]
-description = "Back up your favorite online resources with CLI."
 license = "MIT"
-edition = "2021"
+edition = "2024"
 repository = "https://github.com/kingwingfly/fav"
 documentation = "https://github.com/kingwingfly/fav"
 

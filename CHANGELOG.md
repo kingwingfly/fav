@@ -11,7 +11,7 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 ## [Unreleased]
 ## [1.0.0] - 2025-05-26
 
-⚠️ fav v0.* is achieved
+⚠️ fav v0.* is archived
 
 `fav v0.*`, based on `fav_core` `fav_utils` (which heavily depends on **protobuf** and many traits),
 is considered over-designed by me.

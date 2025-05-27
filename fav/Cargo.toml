@@ -2,10 +2,27 @@
 name = "fav"
 version = "1.0.0"
 authors.workspace = true
-description.workspace = true
 license.workspace = true
 edition.workspace = true
 repository.workspace = true
 documentation.workspace = true
+description = "Back up your favorite bilibili online resources with CLI."
+keywords = ["bilibili", "bili"]
 
 [dependencies]
+tokio = { version = "1", default-features = false, features = [
+    "macros",
+    "rt-multi-thread",
+] }
+bevy_ecs = { version = "0.16" }
+const_format = { version = "0.2", features = ["fmt"] }
+clap = { version = "4.5", features = ["cargo"] }
+api_req = { version = "0.4.0-alpha", features = ["stream"] }
+url = { version = "2.5", features = ["serde"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1" }
+qrcode = { version = "0.14", default-features = false }
+
+[build-dependencies]
+vergen = { version = "9.0", features = ["rustc"] }
+vergen-gitcl = { version = "1.0", features = [] }
