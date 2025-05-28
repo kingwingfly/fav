@@ -59,7 +59,7 @@
 
 <!-- ABOUT THE PROJECT -->
 
-# ⚠️ fav v0.* is achieved
+# ⚠️ fav v0.* is archived
 
 `fav v0.*`, based on `fav_core` `fav_utils` (which heavily depends on **protobuf** and many traits),
 is considered over-designed by me.
