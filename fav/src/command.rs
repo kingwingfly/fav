@@ -38,7 +38,7 @@ impl FavCommand {
                                     .action(ArgAction::SetTrue)
                                     .conflicts_with("user_id"),
                                 Arg::new("user_id")
-                                    .help("The of user to logout")
+                                    .help("The user to logout")
                                     .value_parser(value_parser!(i32))
                                     .action(ArgAction::Append),
                             ]),

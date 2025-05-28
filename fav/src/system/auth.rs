@@ -95,6 +95,7 @@ pub fn auth(mut cmds: Commands) {
                     AuthApi::request(LogoutPayload { biliCSRF: bili_jct }).await?;
                 match code {
                     0 => {
+                        info!("Logout successfully.");
                         db.delete_user(user_id).await?;
                         println!("Goodbye👋, {}", name);
                     }
