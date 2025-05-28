@@ -97,7 +97,7 @@ enum Commands {
 enum AuthCommand {
     /// Login with password
     Login,
-    /// Login with QR code
+    /// Logout
     Logout,
     /// Reuse the login info
     Reuse {
