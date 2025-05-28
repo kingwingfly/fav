@@ -16,6 +16,7 @@ mod wbi;
 
 use command::FavCommand;
 
+use tracing::error;
 use tracing_subscriber::EnvFilter;
 
 fn main() {
@@ -26,5 +27,7 @@ fn main() {
         .with_env_filter(filter)
         .with_writer(std::io::stdout)
         .init();
-    FavCommand::new().run();
+    if let Err(e) = FavCommand::new().run() {
+        error!("{}", e);
+    }
 }

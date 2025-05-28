@@ -1,8 +1,12 @@
+use std::process::exit;
+
+use anyhow::Result;
 use bevy_ecs::{
     schedule::{ExecutorKind, Schedule, ScheduleLabel},
     world::World,
 };
 use clap::{Arg, ArgAction, Command, command, value_parser};
+use tracing::error;
 
 use crate::{
     db::Db,
@@ -47,15 +51,16 @@ impl FavCommand {
     }
 
     /// Parse the commands and args, return the Event to trigger.
-    pub fn run(self) {
+    pub fn run(self) -> Result<()> {
         let matches = self.0.get_matches();
 
         let mut world = World::new();
         let mut schedule = Schedule::new(FavSchedule);
         schedule.set_executor_kind(ExecutorKind::SingleThreaded);
 
-        let runtime = Runtime::new();
-        world.insert_resource(runtime.block_on(Db::connect()));
+        let runtime = Runtime::new()?;
+        let db = runtime.block_on(Db::connect())?;
+        world.insert_resource(db);
         world.insert_resource(runtime);
 
         schedule.add_systems(system::auth);
@@ -67,11 +72,13 @@ impl FavCommand {
             Some(("auth", sub_matches)) => match sub_matches.subcommand() {
                 Some(("login", _)) => world.trigger(Login),
                 Some(("logout", sub_matches)) if sub_matches.get_flag("all") => {
-                    world.trigger(LogoutAll)
+                    world.trigger(LogoutAll);
+                    // run again for events triggered by events
+                    world.run_schedule(FavSchedule);
                 }
                 Some(("logout", sub_matches)) => sub_matches
                     .get_many::<i32>("user_id")
-                    .unwrap()
+                    .unwrap() // required has been set to true
                     .for_each(|&user_id| {
                         world.trigger(Logout { user_id });
                     }),
@@ -80,9 +87,7 @@ impl FavCommand {
             },
             _ => unreachable!(),
         }
-
-        // run again for events triggered by events
-        world.run_schedule(FavSchedule);
+        Ok(())
     }
 }
 

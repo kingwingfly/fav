@@ -1,3 +1,4 @@
+use anyhow::{Context as _, Result};
 use fav::migration::OnConflict;
 use sea_orm::{EntityTrait, IntoActiveModel as _};
 
@@ -5,7 +6,7 @@ use super::Db;
 use crate::entity::user;
 
 impl Db {
-    pub async fn upsert_user(&self, user: user::Model) {
+    pub async fn upsert_user(&self, user: user::Model) -> Result<()> {
         user::Entity::insert(user.into_active_model())
             .on_conflict(
                 OnConflict::column(user::Column::UserId)
@@ -13,30 +14,28 @@ impl Db {
                     .to_owned(),
             )
             .exec(&self.db)
-            .await
-            .unwrap();
+            .await?;
+        Ok(())
     }
 
-    pub async fn get_user(&self, user_id: i32) -> user::Model {
+    pub async fn get_user(&self, user_id: i32) -> Result<user::Model> {
         user::Entity::find_by_id(user_id)
             .one(&self.db)
-            .await
-            .unwrap()
-            .unwrap()
+            .await?
+            .context(format!("Unknown user_id<{}>", user_id))
     }
 
-    pub async fn delete_user(&self, user_id: i32) {
-        user::Entity::delete_by_id(user_id)
-            .exec(&self.db)
-            .await
-            .unwrap();
+    pub async fn delete_user(&self, user_id: i32) -> Result<()> {
+        user::Entity::delete_by_id(user_id).exec(&self.db).await?;
+        Ok(())
     }
 
-    pub async fn all_users(&self) -> Vec<user::Model> {
-        user::Entity::find().all(&self.db).await.unwrap()
+    pub async fn all_users(&self) -> Result<Vec<user::Model>> {
+        user::Entity::find().all(&self.db).await.map_err(Into::into)
     }
 
-    pub async fn delete_all(&self) {
-        user::Entity::delete_many().exec(&self.db).await.unwrap();
+    pub async fn delete_all(&self) -> Result<()> {
+        user::Entity::delete_many().exec(&self.db).await?;
+        Ok(())
     }
 }

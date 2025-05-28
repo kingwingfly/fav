@@ -1,5 +1,6 @@
 use std::ops::Deref;
 
+use anyhow::Result;
 use bevy_ecs::resource::Resource;
 use tokio::runtime::Builder;
 
@@ -15,7 +16,11 @@ impl Deref for Runtime {
 }
 
 impl Runtime {
-    pub fn new() -> Self {
-        Self(Builder::new_current_thread().enable_all().build().unwrap())
+    pub fn new() -> Result<Self> {
+        Builder::new_current_thread()
+            .enable_io()
+            .build()
+            .map(Runtime)
+            .map_err(Into::into)
     }
 }

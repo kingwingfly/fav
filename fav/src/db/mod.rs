@@ -1,5 +1,6 @@
 pub mod user;
 
+use anyhow::{Context, Result};
 use bevy_ecs::resource::Resource;
 use sea_orm::{Database, DatabaseConnection};
 use sea_orm_migration::MigratorTrait as _;
@@ -12,12 +13,14 @@ pub struct Db {
 }
 
 impl Db {
-    pub async fn connect() -> Self {
-        std::fs::create_dir_all(".fav").unwrap();
+    pub async fn connect() -> Result<Self> {
+        std::fs::create_dir_all(".fav").context("Failed to create .fav dir.")?;
         let db = Database::connect("sqlite://.fav/fav.db?mode=rwc")
             .await
-            .unwrap();
-        Migrator::up(&db, None).await.unwrap();
-        Self { db }
+            .context("Failed to connect db.")?;
+        Migrator::up(&db, None)
+            .await
+            .context("Failed to update db tables.")?;
+        Ok(Self { db })
     }
 }
