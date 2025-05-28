@@ -1,12 +1,12 @@
 use bevy_ecs::{
-    schedule::{ExecutorKind, Schedule},
+    schedule::{ExecutorKind, Schedule, ScheduleLabel},
     world::World,
 };
-use clap::{Arg, Command, command, value_parser};
+use clap::{Arg, ArgAction, Command, command, value_parser};
 
 use crate::{
     db::Db,
-    event::{ListUser, Login, Logout},
+    event::{ListUser, Login, Logout, LogoutAll},
     runtime::Runtime,
     system,
     version::VERSION,
@@ -29,11 +29,18 @@ impl FavCommand {
                         Command::new("logout")
                             .about("Logout")
                             .arg_required_else_help(true)
-                            .arg(
+                            .args([
+                                Arg::new("all")
+                                    .help("Logout all authorized users")
+                                    .long("all")
+                                    .short('a')
+                                    .action(ArgAction::SetTrue)
+                                    .conflicts_with("user_id"),
                                 Arg::new("user_id")
                                     .help("The of user to logout")
-                                    .value_parser(value_parser!(i32)),
-                            ),
+                                    .value_parser(value_parser!(i32))
+                                    .action(ArgAction::Append),
+                            ]),
                         Command::new("list").about("List all authorized users"),
                     ])]),
         )
@@ -44,7 +51,7 @@ impl FavCommand {
         let matches = self.0.get_matches();
 
         let mut world = World::new();
-        let mut schedule = Schedule::default();
+        let mut schedule = Schedule::new(FavSchedule);
         schedule.set_executor_kind(ExecutorKind::SingleThreaded);
 
         let runtime = Runtime::new();
@@ -52,18 +59,32 @@ impl FavCommand {
         world.insert_resource(runtime);
 
         schedule.add_systems(system::auth);
-        schedule.run(&mut world);
+        world.add_schedule(schedule);
+
+        world.run_schedule(FavSchedule);
 
         match matches.subcommand() {
             Some(("auth", sub_matches)) => match sub_matches.subcommand() {
                 Some(("login", _)) => world.trigger(Login),
-                Some(("logout", sub_matches)) => world.trigger(Logout {
-                    user_id: *sub_matches.get_one::<i32>("user_id").unwrap(),
-                }),
+                Some(("logout", sub_matches)) if sub_matches.get_flag("all") => {
+                    world.trigger(LogoutAll)
+                }
+                Some(("logout", sub_matches)) => sub_matches
+                    .get_many::<i32>("user_id")
+                    .unwrap()
+                    .for_each(|&user_id| {
+                        world.trigger(Logout { user_id });
+                    }),
                 Some(("list", _)) => world.trigger(ListUser),
                 _ => unreachable!(),
             },
             _ => unreachable!(),
         }
+
+        // run again for events triggered by events
+        world.run_schedule(FavSchedule);
     }
 }
+
+#[derive(Debug, Clone, Eq, PartialEq, Hash, ScheduleLabel)]
+struct FavSchedule;

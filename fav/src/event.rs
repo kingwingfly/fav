@@ -9,4 +9,7 @@ pub struct Logout {
 }
 
 #[derive(Debug, Event)]
+pub struct LogoutAll;
+
+#[derive(Debug, Event)]
 pub struct ListUser;

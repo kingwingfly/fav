@@ -5,7 +5,6 @@ use bevy_ecs::{
     observer::Trigger,
     system::{Commands, Res},
 };
-use cookie::Cookie;
 use qrcode::{QrCode, render::unicode};
 use tokio::time::sleep;
 
@@ -14,7 +13,7 @@ use crate::{
     cookies::{parse_cookies, set_cookie_jar},
     db::Db,
     entity::{ToTableRecord, user},
-    event::{ListUser, Login, Logout},
+    event::{ListUser, Login, Logout, LogoutAll},
     payload::{LogoutPayload, QrPayload, QrPollPayload, WbiPayload},
     response::{LogoutResp, QrData, QrPollData, QrPollResp, QrResp, WbiData, WbiResp},
     runtime::Runtime,
@@ -100,6 +99,18 @@ pub fn auth(mut cmds: Commands) {
                     }
                     _ => println!("Failed to logout: {}", message.unwrap_or_default()),
                 }
+            });
+        },
+    );
+    cmds.add_observer(
+        |_: Trigger<LogoutAll>, mut cmds: Commands, runtime: Res<Runtime>, db: Res<Db>| {
+            runtime.block_on(async {
+                let users = db.all_users().await;
+                users.into_iter().for_each(|user| {
+                    cmds.trigger(Logout {
+                        user_id: user.user_id,
+                    })
+                });
             });
         },
     );
