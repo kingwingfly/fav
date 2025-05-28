@@ -18,7 +18,7 @@ impl Deref for Runtime {
 impl Runtime {
     pub fn new() -> Result<Self> {
         Builder::new_current_thread()
-            .enable_io()
+            .enable_all()
             .build()
             .map(Runtime)
             .map_err(Into::into)
