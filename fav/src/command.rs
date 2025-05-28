@@ -1,12 +1,9 @@
-use std::process::exit;
-
 use anyhow::Result;
 use bevy_ecs::{
     schedule::{ExecutorKind, Schedule, ScheduleLabel},
     world::World,
 };
 use clap::{Arg, ArgAction, Command, command, value_parser};
-use tracing::error;
 
 use crate::{
     db::Db,
