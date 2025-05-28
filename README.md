@@ -83,15 +83,6 @@ For Arch Linux users, you can `yay -S fav-git` maybe, someone has maken it a pac
 
 Or you can compile by yourself:
 
-### Prerequisites
-
-- Install Rust
-  ```sh
-  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-  ```
-
-### Compilation
-
 1. Clone the repo
    ```sh
    git clone https://github.com/kingwingfly/fav.git
@@ -211,11 +202,12 @@ See the [open issues](https://github.com/kingwingfly/fav/issues) for a full list
 
 ## Develop
 
-`sea-orm` is used to handle database ops.
+`sea-orm-cli` is used to handle database ops.
 
 ```sh
 cargo binstall sea-orm-cli # or `cargo install sea-orm-cli`
-sea-orm-cli migrate refresh
+sea-orm-cli migrate refresh -v
+rm -rf fav/src/entity/entity_inner/
 sea-orm-cli generate entity --expanded-format -o fav/src/entity/entity_inner/
 ```
 

@@ -46,7 +46,10 @@ impl MigrationTrait for Migration {
                         enumeration(Set::State, "state", ["SyncFile", "NotSyncFile", "Expired"])
                             .default("NotSyncFile"),
                     )
-                    .col(enumeration(Set::Method, "method", ["Pull", "Push"]).default("Pull"))
+                    .col(
+                        enumeration(Set::Method, "method", ["Pull", "Push", "Inactive"])
+                            .default("Inactive"),
+                    )
                     .primary_key(Index::create().col(Set::SetId))
                     .to_owned(),
             )
@@ -80,20 +83,9 @@ impl MigrationTrait for Migration {
         manager
             .create_table(
                 Table::create()
-                    .table(VideoUp::Table)
-                    .if_not_exists()
-                    .col(unsigned(VideoUp::BvId))
-                    .col(unsigned(VideoUp::UpId))
-                    .primary_key(Index::create().col(VideoUp::BvId).col(VideoUp::UpId))
-                    .to_owned(),
-            )
-            .await?;
-        manager
-            .create_table(
-                Table::create()
                     .table(VideoSet::Table)
                     .if_not_exists()
-                    .col(unsigned(VideoSet::BvId))
+                    .col(string(VideoSet::BvId))
                     .col(unsigned(VideoSet::SetId))
                     .primary_key(Index::create().col(VideoSet::BvId).col(VideoSet::SetId))
                     .foreign_key(
@@ -120,7 +112,7 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(VideoUp::Table)
                     .if_not_exists()
-                    .col(unsigned(VideoUp::BvId))
+                    .col(string(VideoUp::BvId))
                     .col(unsigned(VideoUp::UpId))
                     .primary_key(Index::create().col(VideoUp::BvId).col(VideoUp::UpId))
                     .foreign_key(

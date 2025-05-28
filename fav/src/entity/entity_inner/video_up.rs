@@ -13,7 +13,7 @@ impl EntityName for Entity {
 
 #[derive(Clone, Debug, PartialEq, DeriveModel, DeriveActiveModel, Eq)]
 pub struct Model {
-    pub bv_id: i32,
+    pub bv_id: String,
     pub up_id: i32,
 }
 
@@ -30,20 +30,23 @@ pub enum PrimaryKey {
 }
 
 impl PrimaryKeyTrait for PrimaryKey {
-    type ValueType = (i32, i32);
+    type ValueType = (String, i32);
     fn auto_increment() -> bool {
         false
     }
 }
 
 #[derive(Copy, Clone, Debug, EnumIter)]
-pub enum Relation {}
+pub enum Relation {
+    Up,
+    Video,
+}
 
 impl ColumnTrait for Column {
     type EntityName = Entity;
     fn def(&self) -> ColumnDef {
         match self {
-            Self::BvId => ColumnType::Integer.def(),
+            Self::BvId => ColumnType::String(StringLen::None).def(),
             Self::UpId => ColumnType::Integer.def(),
         }
     }
@@ -51,7 +54,28 @@ impl ColumnTrait for Column {
 
 impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
-        panic!("No RelationDef")
+        match self {
+            Self::Up => Entity::belongs_to(super::up::Entity)
+                .from(Column::UpId)
+                .to(super::up::Column::UpId)
+                .into(),
+            Self::Video => Entity::belongs_to(super::video::Entity)
+                .from(Column::BvId)
+                .to(super::video::Column::BvId)
+                .into(),
+        }
+    }
+}
+
+impl Related<super::up::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Up.def()
+    }
+}
+
+impl Related<super::video::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Video.def()
     }
 }
 

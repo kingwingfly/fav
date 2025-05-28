@@ -11,10 +11,12 @@ use tokio::time::sleep;
 use crate::{
     api::{AuthApi, BiliApi},
     db::Db,
+    entity::user,
     event::Login,
     payload::{QrPayload, QrPollPayload, WbiPayload},
     response::{QrData, QrPollData, QrPollResp, QrResp, WbiData, WbiResp},
     runtime::Runtime,
+    state::UserState,
 };
 
 pub fn auth(mut cmds: Commands) {
@@ -53,8 +55,19 @@ pub fn auth(mut cmds: Commands) {
                     }
                 }
                 let WbiResp {
-                    data: WbiData { uname, .. },
+                    data: WbiData { mid, uname, .. },
                 } = BiliApi::request(WbiPayload).await.unwrap();
+                let cookies = COOKIE_JAR
+                    .cookies(&"https://bilibili.com".parse().unwrap())
+                    .map(|cookies| cookies.as_bytes().to_vec())
+                    .expect("Auth related cookies should be set by bilibili.");
+                db.upsert_user(user::Model {
+                    user_id: mid,
+                    name: uname.to_owned(),
+                    cookies,
+                    state: UserState::Active.to_string(),
+                })
+                .await;
                 println!("Hello😊, {}.", uname);
             });
         },

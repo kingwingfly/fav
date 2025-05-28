@@ -40,6 +40,7 @@ impl PrimaryKeyTrait for PrimaryKey {
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
     VideoSet,
+    VideoUp,
 }
 
 impl ColumnTrait for Column {
@@ -57,6 +58,7 @@ impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
             Self::VideoSet => Entity::has_many(super::video_set::Entity).into(),
+            Self::VideoUp => Entity::has_many(super::video_up::Entity).into(),
         }
     }
 }
@@ -67,12 +69,27 @@ impl Related<super::video_set::Entity> for Entity {
     }
 }
 
+impl Related<super::video_up::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::VideoUp.def()
+    }
+}
+
 impl Related<super::set::Entity> for Entity {
     fn to() -> RelationDef {
         super::video_set::Relation::Set.def()
     }
     fn via() -> Option<RelationDef> {
         Some(super::video_set::Relation::Video.def().rev())
+    }
+}
+
+impl Related<super::up::Entity> for Entity {
+    fn to() -> RelationDef {
+        super::video_up::Relation::Up.def()
+    }
+    fn via() -> Option<RelationDef> {
+        Some(super::video_up::Relation::Video.def().rev())
     }
 }
 

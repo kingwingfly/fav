@@ -7,6 +7,7 @@ mod migration;
 mod payload;
 mod response;
 mod runtime;
+mod state;
 mod system;
 mod version;
 mod wbi;

@@ -8,7 +8,7 @@ pub struct WbiResp {
 
 #[derive(Debug, Deserialize)]
 pub struct WbiData {
-    pub mid: u64,
+    pub mid: i32,
     pub uname: String,
     pub wbi_img: Wbi,
 }
@@ -25,20 +25,14 @@ impl Wbi {
             "{}{}",
             self.img_url
                 .path_segments()
-                .unwrap()
-                .next_back()
-                .unwrap()
-                .split(".")
-                .next()
-                .unwrap(),
+                .and_then(|mut segs| segs.next_back())
+                .and_then(|s| s.split('.').next())
+                .unwrap_or(""),
             self.sub_url
                 .path_segments()
-                .unwrap()
-                .next_back()
-                .unwrap()
-                .split(".")
-                .next()
-                .unwrap(),
+                .and_then(|mut segs| segs.next_back())
+                .and_then(|s| s.split('.').next())
+                .unwrap_or("")
         )
     }
 }
