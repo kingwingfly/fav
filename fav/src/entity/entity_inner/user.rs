@@ -16,6 +16,7 @@ pub struct Model {
     pub user_id: i32,
     pub name: String,
     pub cookies: Vec<u8>,
+    pub state: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -23,6 +24,7 @@ pub enum Column {
     UserId,
     Name,
     Cookies,
+    State,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -47,6 +49,7 @@ impl ColumnTrait for Column {
             Self::UserId => ColumnType::Integer.def().unique(),
             Self::Name => ColumnType::String(StringLen::None).def(),
             Self::Cookies => ColumnType::Binary(1u32).def(),
+            Self::State => ColumnType::custom("enum_text").def(),
         }
     }
 }

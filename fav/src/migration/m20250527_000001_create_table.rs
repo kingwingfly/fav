@@ -43,13 +43,10 @@ impl MigrationTrait for Migration {
                     .col(unsigned_uniq(Set::SetId))
                     .col(string(Set::Name))
                     .col(
-                        enumeration(
-                            Set::State,
-                            "state",
-                            ["Sync", "SyncRef", "Pull", "Inactive", "Expired"],
-                        )
-                        .default("Inactive"),
+                        enumeration(Set::State, "state", ["SyncFile", "NotSyncFile", "Expired"])
+                            .default("NotSyncFile"),
                     )
+                    .col(enumeration(Set::Method, "method", ["Pull", "Push"]).default("Pull"))
                     .primary_key(Index::create().col(Set::SetId))
                     .to_owned(),
             )
@@ -199,6 +196,7 @@ enum Set {
     SetId,
     Name,
     State,
+    Method,
 }
 
 #[derive(DeriveIden)]

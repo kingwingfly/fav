@@ -15,12 +15,16 @@ impl EntityName for Entity {
 pub struct Model {
     pub set_id: i32,
     pub name: String,
+    pub state: String,
+    pub method: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
 pub enum Column {
     SetId,
     Name,
+    State,
+    Method,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -46,6 +50,8 @@ impl ColumnTrait for Column {
         match self {
             Self::SetId => ColumnType::Integer.def().unique(),
             Self::Name => ColumnType::String(StringLen::None).def(),
+            Self::State => ColumnType::custom("enum_text").def(),
+            Self::Method => ColumnType::custom("enum_text").def(),
         }
     }
 }
