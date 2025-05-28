@@ -1,5 +1,6 @@
 mod api;
 mod command;
+mod cookies;
 mod db;
 mod entity;
 mod event;
@@ -9,28 +10,21 @@ mod response;
 mod runtime;
 mod state;
 mod system;
+mod table;
 mod version;
 mod wbi;
 
-use bevy_ecs::{
-    schedule::{ExecutorKind, Schedule},
-    world::World,
-};
 use command::FavCommand;
 
+use tracing_subscriber::EnvFilter;
+
 fn main() {
-    let event = FavCommand::new().run();
-
-    let mut world = World::new();
-    let runtime = runtime::Runtime::new();
-    world.insert_resource(runtime.block_on(db::Db::connect()));
-    world.insert_resource(runtime);
-
-    let mut schedule = Schedule::default();
-    schedule.set_executor_kind(ExecutorKind::SingleThreaded);
-
-    schedule.add_systems(system::auth);
-    schedule.run(&mut world);
-
-    world.trigger(event);
+    let filter = EnvFilter::from_default_env().add_directive("fav=info".parse().unwrap());
+    #[cfg(debug_assertions)]
+    let filter = filter.add_directive("reqwest=debug".parse().unwrap());
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_writer(std::io::stdout)
+        .init();
+    FavCommand::new().run();
 }

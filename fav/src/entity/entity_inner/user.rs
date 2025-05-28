@@ -15,7 +15,7 @@ impl EntityName for Entity {
 pub struct Model {
     pub user_id: i32,
     pub name: String,
-    pub cookies: Vec<u8>,
+    pub cookies: String,
     pub state: String,
 }
 
@@ -48,7 +48,7 @@ impl ColumnTrait for Column {
         match self {
             Self::UserId => ColumnType::Integer.def().unique(),
             Self::Name => ColumnType::String(StringLen::None).def(),
-            Self::Cookies => ColumnType::Binary(1u32).def(),
+            Self::Cookies => ColumnType::String(StringLen::None).def(),
             Self::State => ColumnType::custom("enum_text").def(),
         }
     }

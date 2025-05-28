@@ -16,6 +16,7 @@ pub struct WbiEncoded {
 }
 
 impl WbiEncoder {
+    /// The fields' names in `s` should be in alphabetical order.
     pub fn encode(wbi: Wbi, s: &impl Serialize) -> WbiEncoded {
         let query = serde_urlencoded::to_string(s).unwrap();
         let key = wbi.key();

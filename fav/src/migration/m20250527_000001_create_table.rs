@@ -15,7 +15,7 @@ impl MigrationTrait for Migration {
                     .if_not_exists()
                     .col(unsigned_uniq(User::UserId))
                     .col(string(User::Name))
-                    .col(binary(User::Cookies))
+                    .col(string(User::Cookies))
                     .col(
                         enumeration(User::State, "state", ["Active", "Inactive", "Expired"])
                             .default("Active"),
