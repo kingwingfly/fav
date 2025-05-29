@@ -98,8 +98,7 @@ impl FavCommand {
                         .arg_required_else_help(true)
                         .args([Arg::new("shell")
                             .help("The shell to generate completion script for")
-                            .value_parser(value_parser!(Shell))
-                            .default_value("bash")]),
+                            .value_parser(value_parser!(Shell))]),
                 ]),
         )
     }

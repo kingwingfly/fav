@@ -21,18 +21,16 @@ pub struct Wbi {
 
 impl Wbi {
     pub fn key(self) -> String {
+        fn get_filename(url: &Url) -> &str {
+            url.path_segments()
+                .and_then(|mut segs| segs.next_back())
+                .and_then(|s| s.split('.').next())
+                .expect("Bilibili should return a valid wbi")
+        }
         format!(
             "{}{}",
-            self.img_url
-                .path_segments()
-                .and_then(|mut segs| segs.next_back())
-                .and_then(|s| s.split('.').next())
-                .unwrap_or(""),
-            self.sub_url
-                .path_segments()
-                .and_then(|mut segs| segs.next_back())
-                .and_then(|s| s.split('.').next())
-                .unwrap_or("")
+            get_filename(&self.img_url),
+            get_filename(&self.sub_url)
         )
     }
 }
