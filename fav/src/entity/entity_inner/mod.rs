@@ -2,9 +2,9 @@
 
 pub mod prelude;
 
+pub mod account;
 pub mod set;
 pub mod up;
-pub mod user;
 pub mod video;
 pub mod video_set;
 pub mod video_up;

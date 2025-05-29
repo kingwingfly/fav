@@ -33,58 +33,62 @@ impl FavCommand {
                                 .arg_required_else_help(true)
                                 .args([
                                     Arg::new("all")
-                                        .help("Logout all authorized users")
+                                        .help("Logout all authorized accounts")
                                         .long("all")
                                         .short('a')
                                         .action(ArgAction::SetTrue)
-                                        .conflicts_with("user_id"),
-                                    Arg::new("user_id")
-                                        .help("The user to logout")
+                                        .conflicts_with("account_id"),
+                                    Arg::new("account_id")
+                                        .help("The account to logout")
                                         .value_parser(value_parser!(i32))
                                         .action(ArgAction::Append),
                                 ]),
                         ]),
                     Command::new("list")
-                        .about("List users/sets/videos")
+                        .about("List accounts/sets/videos [alias: ls, l]")
                         .arg_required_else_help(true)
+                        .aliases(["ls", "l"])
                         .subcommands([
-                            Command::new("user")
-                                .about("List users [alias: account, u, a]")
-                                .aliases(["account", "u", "a"]),
+                            Command::new("account")
+                                .about("List accounts [alias: user, a , u]")
+                                .aliases(["user", "a", "u"]),
                             Command::new("set")
                                 .about("List sets [alias: list, s, l]")
                                 .aliases(["list", "s", "l"]),
+                            Command::new("up")
+                                .about("List uppers [alias: upper]")
+                                .aliases(["upper"]),
                             Command::new("video")
                                 .about("List videos [alias: bv, v]")
                                 .aliases(["bv", "v"]),
                         ]),
                     Command::new("activate")
-                        .about("Activate authorized users")
+                        .about("Activate authorized accounts")
                         .arg_required_else_help(true)
                         .args([
                             Arg::new("all")
-                                .help("Activate all authorized users")
+                                .help("Activate all authorized accounts")
                                 .long("all")
                                 .short('a')
                                 .action(ArgAction::SetTrue)
-                                .conflicts_with("user_id"),
-                            Arg::new("user_id")
-                                .help("The user to activate")
+                                .conflicts_with("account_id"),
+                            Arg::new("account_id")
+                                .help("The account to activate")
                                 .value_parser(value_parser!(i32))
                                 .action(ArgAction::Append),
                         ]),
                     Command::new("deactivate")
-                        .about("Deactivate authorized users")
+                        .about("Deactivate authorized accounts")
                         .arg_required_else_help(true)
                         .args([
                             Arg::new("all")
-                                .help("Deactivate all authorized users")
+                                .help("Deactivate all authorized accounts")
                                 .long("all")
                                 .short('a')
                                 .action(ArgAction::SetTrue)
-                                .conflicts_with("user_id"),
-                            Arg::new("user_id")
-                                .help("The user to deactivate")
+                                .conflicts_with("account_id"),
+                            Arg::new("account_id")
+                                .help("The account to deactivate")
                                 .value_parser(value_parser!(i32))
                                 .action(ArgAction::Append),
                         ]),
@@ -124,16 +128,17 @@ impl FavCommand {
                     world.run_schedule(FavSchedule);
                 }
                 Some(("logout", sub_matches)) => sub_matches
-                    .get_many::<i32>("user_id")
+                    .get_many::<i32>("account_id")
                     .unwrap() // arg_required_else_help has been set to true
-                    .for_each(|&user_id| {
-                        world.trigger(Logout { user_id });
+                    .for_each(|&account_id| {
+                        world.trigger(Logout { account_id });
                     }),
                 _ => unreachable!(),
             },
             Some(("list", sub_matches)) => match sub_matches.subcommand() {
-                Some(("user", _)) => world.trigger(ListUser),
+                Some(("account", _)) => world.trigger(ListUser),
                 Some(("set", _)) => todo!(),
+                Some(("up", _)) => todo!(),
                 Some(("video", _)) => todo!(),
                 _ => unreachable!(),
             },
@@ -144,10 +149,10 @@ impl FavCommand {
                     world.run_schedule(FavSchedule);
                 }
                 false => sub_matches
-                    .get_many::<i32>("user_id")
+                    .get_many::<i32>("account_id")
                     .unwrap() // arg_required_else_help has been set to true
-                    .for_each(|&user_id| {
-                        world.trigger(Activate { user_id });
+                    .for_each(|&account_id| {
+                        world.trigger(Activate { account_id });
                     }),
             },
             Some(("deactivate", sub_matches)) => match sub_matches.get_flag("all") {
@@ -157,10 +162,10 @@ impl FavCommand {
                     world.run_schedule(FavSchedule);
                 }
                 false => sub_matches
-                    .get_many::<i32>("user_id")
+                    .get_many::<i32>("account_id")
                     .unwrap() // arg_required_else_help has been set to true
-                    .for_each(|&user_id| {
-                        world.trigger(Deactivate { user_id });
+                    .for_each(|&account_id| {
+                        world.trigger(Deactivate { account_id });
                     }),
             },
             _ => unreachable!(),

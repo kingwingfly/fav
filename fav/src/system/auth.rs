@@ -14,7 +14,7 @@ use crate::{
     api::{AuthApi, BiliApi},
     cookies::{parse_cookies, set_cookie_jar},
     db::Db,
-    entity::user,
+    entity::account,
     event::{Login, Logout, LogoutAll},
     payload::{LogoutPayload, QrPayload, QrPollPayload, WbiPayload},
     response::{LogoutResp, QrData, QrPollData, QrPollResp, QrResp, WbiData, WbiResp},
@@ -64,8 +64,8 @@ pub fn auth(mut cmds: Commands) {
                     .context("Auth related cookies should be set by bilibili.")?
                     .to_str()?
                     .to_owned();
-                db.upsert_user(user::Model {
-                    user_id: mid,
+                db.upsert_account(account::Model {
+                    account_id: mid,
                     name: uname.to_owned(),
                     cookies,
                     state: UserState::Active.to_string(),
@@ -81,21 +81,24 @@ pub fn auth(mut cmds: Commands) {
     cmds.add_observer(
         |trigger: Trigger<Logout>, runtime: Res<Runtime>, db: Res<Db>| {
             if let Err(e) = runtime.block_on(async {
-                let Logout { user_id } = *trigger;
-                let user::Model { name, cookies, .. } = db.get_user(user_id).await?;
+                let Logout { account_id } = *trigger;
+                let account::Model { name, cookies, .. } = db.get_account(account_id).await?;
                 let cookies = parse_cookies(cookies).collect::<Vec<_>>();
                 let bili_jct = cookies
                     .iter()
                     .find(|c| c.name() == "bili_jct")
                     .map(|c| c.value().to_owned())
-                    .context(format!("No bili_jct in cookies of user_id<{}>.", user_id))?;
+                    .context(format!(
+                        "No bili_jct in cookies of account_id<{}>.",
+                        account_id
+                    ))?;
                 set_cookie_jar(cookies.into_iter());
                 let LogoutResp { code, message } =
                     AuthApi::request(LogoutPayload { biliCSRF: bili_jct }).await?;
                 match code {
                     0 => {
                         info!("Logout successfully.");
-                        db.delete_user(user_id).await?;
+                        db.delete_account(account_id).await?;
                         println!("Goodbye👋, {}", name);
                     }
                     _ => error!("Failed to logout: {}", message.unwrap_or_default()),
@@ -109,10 +112,10 @@ pub fn auth(mut cmds: Commands) {
     cmds.add_observer(
         |_: Trigger<LogoutAll>, mut cmds: Commands, runtime: Res<Runtime>, db: Res<Db>| {
             if let Err(e) = runtime.block_on(async {
-                let users = db.all_users().await?;
-                users.into_iter().for_each(|user| {
+                let accounts = db.all_accounts().await?;
+                accounts.into_iter().for_each(|account| {
                     cmds.trigger(Logout {
-                        user_id: user.user_id,
+                        account_id: account.account_id,
                     })
                 });
                 Ok::<_, anyhow::Error>(())

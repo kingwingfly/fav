@@ -11,16 +11,16 @@ impl MigrationTrait for Migration {
         manager
             .create_table(
                 Table::create()
-                    .table(User::Table)
+                    .table(Account::Table)
                     .if_not_exists()
-                    .col(unsigned_uniq(User::UserId))
-                    .col(string(User::Name))
-                    .col(string(User::Cookies))
+                    .col(unsigned_uniq(Account::AccountId))
+                    .col(string(Account::Name))
+                    .col(string(Account::Cookies))
                     .col(
-                        enumeration(User::State, "state", ["Active", "Inactive", "Expired"])
+                        enumeration(Account::State, "state", ["Active", "Inactive", "Expired"])
                             .default("Active"),
                     )
-                    .primary_key(Index::create().col(User::UserId))
+                    .primary_key(Index::create().col(Account::AccountId))
                     .to_owned(),
             )
             .await?;
@@ -147,7 +147,7 @@ impl MigrationTrait for Migration {
             .await
             .unwrap();
         manager
-            .drop_table(Table::drop().table(User::Table).to_owned())
+            .drop_table(Table::drop().table(Account::Table).to_owned())
             .await
             .unwrap();
         manager
@@ -167,9 +167,9 @@ impl MigrationTrait for Migration {
 }
 
 #[derive(DeriveIden)]
-enum User {
+enum Account {
     Table,
-    UserId,
+    AccountId,
     Name,
     Cookies,
     State,

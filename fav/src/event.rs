@@ -5,7 +5,7 @@ pub struct Login;
 
 #[derive(Debug, Event)]
 pub struct Logout {
-    pub user_id: i32,
+    pub account_id: i32,
 }
 
 #[derive(Debug, Event)]
@@ -16,7 +16,7 @@ pub struct ListUser;
 
 #[derive(Debug, Event)]
 pub struct Activate {
-    pub user_id: i32,
+    pub account_id: i32,
 }
 
 #[derive(Debug, Event)]
@@ -24,7 +24,7 @@ pub struct ActivateAll;
 
 #[derive(Debug, Event)]
 pub struct Deactivate {
-    pub user_id: i32,
+    pub account_id: i32,
 }
 
 #[derive(Debug, Event)]

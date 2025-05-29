@@ -7,13 +7,13 @@ pub struct Entity;
 
 impl EntityName for Entity {
     fn table_name(&self) -> &str {
-        "user"
+        "account"
     }
 }
 
 #[derive(Clone, Debug, PartialEq, DeriveModel, DeriveActiveModel, Eq)]
 pub struct Model {
-    pub user_id: i32,
+    pub account_id: i32,
     pub name: String,
     pub cookies: String,
     pub state: String,
@@ -21,7 +21,7 @@ pub struct Model {
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
 pub enum Column {
-    UserId,
+    AccountId,
     Name,
     Cookies,
     State,
@@ -29,7 +29,7 @@ pub enum Column {
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
 pub enum PrimaryKey {
-    UserId,
+    AccountId,
 }
 
 impl PrimaryKeyTrait for PrimaryKey {
@@ -46,7 +46,7 @@ impl ColumnTrait for Column {
     type EntityName = Entity;
     fn def(&self) -> ColumnDef {
         match self {
-            Self::UserId => ColumnType::Integer.def().unique(),
+            Self::AccountId => ColumnType::Integer.def().unique(),
             Self::Name => ColumnType::String(StringLen::None).def(),
             Self::Cookies => ColumnType::String(StringLen::None).def(),
             Self::State => ColumnType::custom("enum_text").def(),

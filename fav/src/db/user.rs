@@ -6,14 +6,14 @@ use sea_orm::{
 };
 
 use super::Db;
-use crate::{entity::user, state::UserState};
+use crate::{entity::account, state::UserState};
 
 impl Db {
-    pub async fn upsert_user(&self, user: user::Model) -> Result<()> {
-        user::Entity::insert(user.into_active_model())
+    pub async fn upsert_account(&self, account: account::Model) -> Result<()> {
+        account::Entity::insert(account.into_active_model())
             .on_conflict(
-                OnConflict::column(user::Column::UserId)
-                    .update_columns([user::Column::Name, user::Column::Cookies])
+                OnConflict::column(account::Column::AccountId)
+                    .update_columns([account::Column::Name, account::Column::Cookies])
                     .to_owned(),
             )
             .exec(&self.db)
@@ -21,30 +21,35 @@ impl Db {
         Ok(())
     }
 
-    pub async fn get_user(&self, user_id: i32) -> Result<user::Model> {
-        user::Entity::find_by_id(user_id)
+    pub async fn get_account(&self, account_id: i32) -> Result<account::Model> {
+        account::Entity::find_by_id(account_id)
             .one(&self.db)
             .await?
-            .context(format!("Unknown user_id<{}>", user_id))
+            .context(format!("Unknown account_id<{}>", account_id))
     }
 
-    pub async fn delete_user(&self, user_id: i32) -> Result<()> {
-        user::Entity::delete_by_id(user_id).exec(&self.db).await?;
+    pub async fn delete_account(&self, account_id: i32) -> Result<()> {
+        account::Entity::delete_by_id(account_id)
+            .exec(&self.db)
+            .await?;
         Ok(())
     }
 
-    pub async fn all_users(&self) -> Result<Vec<user::Model>> {
-        user::Entity::find().all(&self.db).await.map_err(Into::into)
+    pub async fn all_accounts(&self) -> Result<Vec<account::Model>> {
+        account::Entity::find()
+            .all(&self.db)
+            .await
+            .map_err(Into::into)
     }
 
     pub async fn delete_all(&self) -> Result<()> {
-        user::Entity::delete_many().exec(&self.db).await?;
+        account::Entity::delete_many().exec(&self.db).await?;
         Ok(())
     }
 
-    pub async fn activate(&self, user_id: i32) -> Result<()> {
-        user::Entity::update(user::ActiveModel {
-            user_id: Unchanged(user_id),
+    pub async fn activate(&self, account_id: i32) -> Result<()> {
+        account::Entity::update(account::ActiveModel {
+            account_id: Unchanged(account_id),
             state: Set(UserState::Active.to_string()),
             ..Default::default()
         })
@@ -53,9 +58,9 @@ impl Db {
         Ok(())
     }
 
-    pub async fn deactivate(&self, user_id: i32) -> Result<()> {
-        user::Entity::update(user::ActiveModel {
-            user_id: Unchanged(user_id),
+    pub async fn deactivate(&self, account_id: i32) -> Result<()> {
+        account::Entity::update(account::ActiveModel {
+            account_id: Unchanged(account_id),
             state: Set(UserState::Inactive.to_string()),
             ..Default::default()
         })
