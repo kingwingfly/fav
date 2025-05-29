@@ -2,11 +2,11 @@ use anyhow::{Context as _, Result};
 use fav::migration::OnConflict;
 use sea_orm::{
     ActiveValue::{Set, Unchanged},
-    EntityTrait, IntoActiveModel as _,
+    ColumnTrait as _, EntityTrait as _, IntoActiveModel as _, QueryFilter as _,
 };
 
 use super::Db;
-use crate::{entity::account, state::UserState};
+use crate::{entity::account, state::AccountState};
 
 impl Db {
     pub async fn upsert_account(&self, account: account::Model) -> Result<()> {
@@ -21,14 +21,14 @@ impl Db {
         Ok(())
     }
 
-    pub async fn get_account(&self, account_id: i32) -> Result<account::Model> {
+    pub async fn get_account(&self, account_id: i64) -> Result<account::Model> {
         account::Entity::find_by_id(account_id)
             .one(&self.db)
             .await?
-            .context(format!("Unknown account_id<{}>", account_id))
+            .context(format!("Unknown account<{}>", account_id))
     }
 
-    pub async fn delete_account(&self, account_id: i32) -> Result<()> {
+    pub async fn delete_account(&self, account_id: i64) -> Result<()> {
         account::Entity::delete_by_id(account_id)
             .exec(&self.db)
             .await?;
@@ -42,15 +42,18 @@ impl Db {
             .map_err(Into::into)
     }
 
-    pub async fn delete_all(&self) -> Result<()> {
-        account::Entity::delete_many().exec(&self.db).await?;
-        Ok(())
+    pub async fn all_active_accounts(&self) -> Result<Vec<account::Model>> {
+        account::Entity::find()
+            .filter(account::Column::State.eq(AccountState::Active.to_string()))
+            .all(&self.db)
+            .await
+            .map_err(Into::into)
     }
 
-    pub async fn activate(&self, account_id: i32) -> Result<()> {
+    pub async fn activate_account(&self, account_id: i64) -> Result<()> {
         account::Entity::update(account::ActiveModel {
             account_id: Unchanged(account_id),
-            state: Set(UserState::Active.to_string()),
+            state: Set(AccountState::Active.to_string()),
             ..Default::default()
         })
         .exec(&self.db)
@@ -58,10 +61,10 @@ impl Db {
         Ok(())
     }
 
-    pub async fn deactivate(&self, account_id: i32) -> Result<()> {
+    pub async fn deactivate_account(&self, account_id: i64) -> Result<()> {
         account::Entity::update(account::ActiveModel {
             account_id: Unchanged(account_id),
-            state: Set(UserState::Inactive.to_string()),
+            state: Set(AccountState::Inactive.to_string()),
             ..Default::default()
         })
         .exec(&self.db)

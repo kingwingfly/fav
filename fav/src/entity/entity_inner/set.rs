@@ -13,10 +13,9 @@ impl EntityName for Entity {
 
 #[derive(Clone, Debug, PartialEq, DeriveModel, DeriveActiveModel, Eq)]
 pub struct Model {
-    pub set_id: i32,
+    pub set_id: i64,
     pub name: String,
     pub state: String,
-    pub method: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -24,7 +23,6 @@ pub enum Column {
     SetId,
     Name,
     State,
-    Method,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -33,7 +31,7 @@ pub enum PrimaryKey {
 }
 
 impl PrimaryKeyTrait for PrimaryKey {
-    type ValueType = i32;
+    type ValueType = i64;
     fn auto_increment() -> bool {
         false
     }
@@ -41,6 +39,7 @@ impl PrimaryKeyTrait for PrimaryKey {
 
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
+    SetAccount,
     VideoSet,
 }
 
@@ -48,10 +47,9 @@ impl ColumnTrait for Column {
     type EntityName = Entity;
     fn def(&self) -> ColumnDef {
         match self {
-            Self::SetId => ColumnType::Integer.def().unique(),
+            Self::SetId => ColumnType::BigInteger.def(),
             Self::Name => ColumnType::String(StringLen::None).def(),
             Self::State => ColumnType::custom("enum_text").def(),
-            Self::Method => ColumnType::custom("enum_text").def(),
         }
     }
 }
@@ -59,14 +57,30 @@ impl ColumnTrait for Column {
 impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
+            Self::SetAccount => Entity::has_many(super::set_account::Entity).into(),
             Self::VideoSet => Entity::has_many(super::video_set::Entity).into(),
         }
+    }
+}
+
+impl Related<super::set_account::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::SetAccount.def()
     }
 }
 
 impl Related<super::video_set::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::VideoSet.def()
+    }
+}
+
+impl Related<super::account::Entity> for Entity {
+    fn to() -> RelationDef {
+        super::set_account::Relation::Account.def()
+    }
+    fn via() -> Option<RelationDef> {
+        Some(super::set_account::Relation::Set.def().rev())
     }
 }
 

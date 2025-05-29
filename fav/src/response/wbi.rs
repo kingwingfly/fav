@@ -8,7 +8,7 @@ pub struct WbiResp {
 
 #[derive(Debug, Deserialize)]
 pub struct WbiData {
-    pub mid: i32,
+    pub mid: i64,
     pub uname: String,
     pub wbi_img: Wbi,
 }

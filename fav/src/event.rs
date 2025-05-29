@@ -5,7 +5,7 @@ pub struct Login;
 
 #[derive(Debug, Event)]
 pub struct Logout {
-    pub account_id: i32,
+    pub account_id: i64,
 }
 
 #[derive(Debug, Event)]
@@ -15,17 +15,39 @@ pub struct LogoutAll;
 pub struct ListUser;
 
 #[derive(Debug, Event)]
-pub struct Activate {
-    pub account_id: i32,
+pub struct ListSet;
+
+#[derive(Debug, Event)]
+pub struct ActivateAccount {
+    pub account_id: i64,
 }
 
 #[derive(Debug, Event)]
-pub struct ActivateAll;
+pub struct ActivateAccountAll;
 
 #[derive(Debug, Event)]
-pub struct Deactivate {
-    pub account_id: i32,
+pub struct DeactivateAccount {
+    pub account_id: i64,
 }
 
 #[derive(Debug, Event)]
-pub struct DeactivateAll;
+pub struct DeactivateAccountAll;
+
+#[derive(Debug, Event)]
+pub struct ActivateSet {
+    pub set_id: i64,
+}
+
+#[derive(Debug, Event)]
+pub struct ActivateSetAll;
+
+#[derive(Debug, Event)]
+pub struct DeactivateSet {
+    pub set_id: i64,
+}
+
+#[derive(Debug, Event)]
+pub struct DeactivateSetAll;
+
+#[derive(Debug, Event)]
+pub struct PullMeta;

@@ -1,4 +1,6 @@
-pub mod user;
+mod account;
+mod set;
+mod set_account;
 
 use anyhow::{Context, Result};
 use bevy_ecs::resource::Resource;
@@ -14,13 +16,13 @@ pub struct Db {
 
 impl Db {
     pub async fn connect() -> Result<Self> {
-        std::fs::create_dir_all(".fav").context("Failed to create .fav dir.")?;
+        std::fs::create_dir_all(".fav").context("Failed to create .fav dir")?;
         let db = Database::connect("sqlite://.fav/fav.db?mode=rwc")
             .await
-            .context("Failed to connect db.")?;
+            .context("Failed to connect db")?;
         Migrator::up(&db, None)
             .await
-            .context("Failed to update db tables.")?;
+            .context("Failed to update db tables")?;
         Ok(Self { db })
     }
 }

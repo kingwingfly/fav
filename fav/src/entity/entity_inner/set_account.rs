@@ -7,33 +7,30 @@ pub struct Entity;
 
 impl EntityName for Entity {
     fn table_name(&self) -> &str {
-        "account"
+        "set_account"
     }
 }
 
 #[derive(Clone, Debug, PartialEq, DeriveModel, DeriveActiveModel, Eq)]
 pub struct Model {
+    pub set_id: i64,
     pub account_id: i64,
-    pub name: String,
-    pub cookies: String,
-    pub state: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
 pub enum Column {
+    SetId,
     AccountId,
-    Name,
-    Cookies,
-    State,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
 pub enum PrimaryKey {
+    SetId,
     AccountId,
 }
 
 impl PrimaryKeyTrait for PrimaryKey {
-    type ValueType = i64;
+    type ValueType = (i64, i64);
     fn auto_increment() -> bool {
         false
     }
@@ -41,17 +38,16 @@ impl PrimaryKeyTrait for PrimaryKey {
 
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
-    SetAccount,
+    Account,
+    Set,
 }
 
 impl ColumnTrait for Column {
     type EntityName = Entity;
     fn def(&self) -> ColumnDef {
         match self {
+            Self::SetId => ColumnType::BigInteger.def(),
             Self::AccountId => ColumnType::BigInteger.def(),
-            Self::Name => ColumnType::String(StringLen::None).def(),
-            Self::Cookies => ColumnType::String(StringLen::None).def(),
-            Self::State => ColumnType::custom("enum_text").def(),
         }
     }
 }
@@ -59,23 +55,27 @@ impl ColumnTrait for Column {
 impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
-            Self::SetAccount => Entity::has_many(super::set_account::Entity).into(),
+            Self::Account => Entity::belongs_to(super::account::Entity)
+                .from(Column::AccountId)
+                .to(super::account::Column::AccountId)
+                .into(),
+            Self::Set => Entity::belongs_to(super::set::Entity)
+                .from(Column::SetId)
+                .to(super::set::Column::SetId)
+                .into(),
         }
     }
 }
 
-impl Related<super::set_account::Entity> for Entity {
+impl Related<super::account::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::SetAccount.def()
+        Relation::Account.def()
     }
 }
 
 impl Related<super::set::Entity> for Entity {
     fn to() -> RelationDef {
-        super::set_account::Relation::Set.def()
-    }
-    fn via() -> Option<RelationDef> {
-        Some(super::set_account::Relation::Account.def().rev())
+        Relation::Set.def()
     }
 }
 

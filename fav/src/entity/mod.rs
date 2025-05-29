@@ -12,3 +12,9 @@ impl ToTableRecord<3> for account::Model {
         [self.account_id.to_string(), self.name, self.state]
     }
 }
+
+impl ToTableRecord<3> for set::Model {
+    fn to_record(self) -> [String; 3] {
+        [self.set_id.to_string(), self.name, self.state]
+    }
+}

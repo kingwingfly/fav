@@ -13,7 +13,7 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(Account::Table)
                     .if_not_exists()
-                    .col(unsigned_uniq(Account::AccountId))
+                    .col(big_unsigned_uniq(Account::AccountId))
                     .col(string(Account::Name))
                     .col(string(Account::Cookies))
                     .col(
@@ -29,7 +29,7 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(Up::Table)
                     .if_not_exists()
-                    .col(unsigned_uniq(Up::UpId))
+                    .col(big_unsigned_uniq(Up::UpId))
                     .col(string(Up::Name))
                     .primary_key(Index::create().col(Up::UpId))
                     .to_owned(),
@@ -40,14 +40,10 @@ impl MigrationTrait for Migration {
                 Table::create()
                     .table(Set::Table)
                     .if_not_exists()
-                    .col(unsigned_uniq(Set::SetId))
+                    .col(big_unsigned_uniq(Set::SetId))
                     .col(string(Set::Name))
                     .col(
-                        enumeration(Set::State, "state", ["SyncFile", "NotSyncFile", "Expired"])
-                            .default("NotSyncFile"),
-                    )
-                    .col(
-                        enumeration(Set::Method, "method", ["Pull", "Push", "Inactive"])
+                        enumeration(Set::State, "state", ["Active", "Inactive", "Unreachable"])
                             .default("Inactive"),
                     )
                     .primary_key(Index::create().col(Set::SetId))
@@ -86,7 +82,7 @@ impl MigrationTrait for Migration {
                     .table(VideoSet::Table)
                     .if_not_exists()
                     .col(string(VideoSet::BvId))
-                    .col(unsigned(VideoSet::SetId))
+                    .col(big_unsigned(VideoSet::SetId))
                     .primary_key(Index::create().col(VideoSet::BvId).col(VideoSet::SetId))
                     .foreign_key(
                         ForeignKey::create()
@@ -113,7 +109,7 @@ impl MigrationTrait for Migration {
                     .table(VideoUp::Table)
                     .if_not_exists()
                     .col(string(VideoUp::BvId))
-                    .col(unsigned(VideoUp::UpId))
+                    .col(big_unsigned(VideoUp::UpId))
                     .primary_key(Index::create().col(VideoUp::BvId).col(VideoUp::UpId))
                     .foreign_key(
                         ForeignKey::create()
@@ -134,6 +130,37 @@ impl MigrationTrait for Migration {
                     .to_owned(),
             )
             .await?;
+        manager
+            .create_table(
+                Table::create()
+                    .table(SetAccount::Table)
+                    .if_not_exists()
+                    .col(big_unsigned(SetAccount::SetId))
+                    .col(big_unsigned(SetAccount::AccountId))
+                    .primary_key(
+                        Index::create()
+                            .col(SetAccount::SetId)
+                            .col(SetAccount::AccountId),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("setaccount_set_fk")
+                            .from(SetAccount::Table, SetAccount::SetId)
+                            .to(Set::Table, Set::SetId)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("setaccount_account_fk")
+                            .from(SetAccount::Table, SetAccount::AccountId)
+                            .to(Account::Table, Account::AccountId)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
         Ok(())
     }
 
@@ -144,6 +171,10 @@ impl MigrationTrait for Migration {
             .unwrap();
         manager
             .drop_table(Table::drop().table(VideoSet::Table).to_owned())
+            .await
+            .unwrap();
+        manager
+            .drop_table(Table::drop().table(SetAccount::Table).to_owned())
             .await
             .unwrap();
         manager
@@ -188,7 +219,6 @@ enum Set {
     SetId,
     Name,
     State,
-    Method,
 }
 
 #[derive(DeriveIden)]
@@ -211,4 +241,11 @@ enum VideoSet {
     Table,
     BvId,
     SetId,
+}
+
+#[derive(DeriveIden)]
+enum SetAccount {
+    Table,
+    SetId,
+    AccountId,
 }

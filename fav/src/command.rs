@@ -8,7 +8,11 @@ use clap_complete::Shell;
 
 use crate::{
     db::Db,
-    event::{Activate, ActivateAll, Deactivate, DeactivateAll, ListUser, Login, Logout, LogoutAll},
+    event::{
+        ActivateAccount, ActivateAccountAll, ActivateSet, ActivateSetAll, DeactivateAccount,
+        DeactivateAccountAll, DeactivateSet, DeactivateSetAll, ListUser, Login, Logout, LogoutAll,
+        PullMeta,
+    },
     runtime::Runtime,
     system,
     version::VERSION,
@@ -41,7 +45,7 @@ impl FavCommand {
                                         .conflicts_with("account_id"),
                                     Arg::new("account_id")
                                         .help("The account to logout")
-                                        .value_parser(value_parser!(i32))
+                                        .value_parser(value_parser!(i64))
                                         .action(ArgAction::Append),
                                 ]),
                         ]),
@@ -51,11 +55,11 @@ impl FavCommand {
                         .aliases(["ls", "l"])
                         .subcommands([
                             Command::new("account")
-                                .about("List accounts [alias: user, a , u]")
+                                .about("List accounts [alias: user, a, u]")
                                 .aliases(["user", "a", "u"]),
                             Command::new("set")
-                                .about("List sets [alias: list, s, l]")
-                                .aliases(["list", "s", "l"]),
+                                .about("List sets [alias: list, collection, s, l, c]")
+                                .aliases(["list", "collection", "s", "l", "c"]),
                             Command::new("up")
                                 .about("List uppers [alias: upper]")
                                 .aliases(["upper"]),
@@ -64,35 +68,88 @@ impl FavCommand {
                                 .aliases(["bv", "v"]),
                         ]),
                     Command::new("activate")
-                        .about("Activate authorized accounts")
+                        .about("Activate obj [alias: active, a]")
                         .arg_required_else_help(true)
-                        .args([
-                            Arg::new("all")
-                                .help("Activate all authorized accounts")
-                                .long("all")
-                                .short('a')
-                                .action(ArgAction::SetTrue)
-                                .conflicts_with("account_id"),
-                            Arg::new("account_id")
-                                .help("The account to activate")
-                                .value_parser(value_parser!(i32))
-                                .action(ArgAction::Append),
+                        .aliases(["active", "a"])
+                        .subcommands([
+                            Command::new("account")
+                                .about("Activate accounts [alias: user, a, u]")
+                                .arg_required_else_help(true)
+                                .aliases(["user", "a", "u"])
+                                .args([
+                                    Arg::new("all")
+                                        .help("Activate all authorized accounts")
+                                        .long("all")
+                                        .short('a')
+                                        .action(ArgAction::SetTrue)
+                                        .conflicts_with("account_id"),
+                                    Arg::new("account_id")
+                                        .help("The account to activate")
+                                        .value_parser(value_parser!(i64))
+                                        .action(ArgAction::Append),
+                                ]),
+                            Command::new("set")
+                                .about("Activate sets [alias: list, collection, s, l, c]")
+                                .arg_required_else_help(true)
+                                .aliases(["list", "collection", "s", "l", "c"])
+                                .args([
+                                    Arg::new("all")
+                                        .help("Activate all sets")
+                                        .long("all")
+                                        .short('a')
+                                        .action(ArgAction::SetTrue)
+                                        .conflicts_with("set_id"),
+                                    Arg::new("set_id")
+                                        .help("The set to activate")
+                                        .value_parser(value_parser!(i64))
+                                        .action(ArgAction::Append),
+                                ]),
                         ]),
                     Command::new("deactivate")
-                        .about("Deactivate authorized accounts")
+                        .about("Deactivate authorized accounts [alias: d]")
+                        .aliases(["d"])
                         .arg_required_else_help(true)
-                        .args([
-                            Arg::new("all")
-                                .help("Deactivate all authorized accounts")
-                                .long("all")
-                                .short('a')
-                                .action(ArgAction::SetTrue)
-                                .conflicts_with("account_id"),
-                            Arg::new("account_id")
-                                .help("The account to deactivate")
-                                .value_parser(value_parser!(i32))
-                                .action(ArgAction::Append),
+                        .subcommands([
+                            Command::new("account")
+                                .about("Deactivate accounts [alias: user, a , u]")
+                                .arg_required_else_help(true)
+                                .aliases(["user", "a", "u"])
+                                .args([
+                                    Arg::new("all")
+                                        .help("Dectivate all authorized accounts")
+                                        .long("all")
+                                        .short('a')
+                                        .action(ArgAction::SetTrue)
+                                        .conflicts_with("account_id"),
+                                    Arg::new("account_id")
+                                        .help("The account to deactivate")
+                                        .value_parser(value_parser!(i64))
+                                        .action(ArgAction::Append),
+                                ]),
+                            Command::new("set")
+                                .about("Deactivate sets [alias: list, s, l]")
+                                .arg_required_else_help(true)
+                                .aliases(["list", "s", "l"])
+                                .args([
+                                    Arg::new("all")
+                                        .help("Deactivate all sets")
+                                        .long("all")
+                                        .short('a')
+                                        .action(ArgAction::SetTrue)
+                                        .conflicts_with("set_id"),
+                                    Arg::new("set_id")
+                                        .help("The set to deactivate")
+                                        .value_parser(value_parser!(i64))
+                                        .action(ArgAction::Append),
+                                ]),
                         ]),
+                    Command::new("pull")
+                        .about("Pull [alias: p]")
+                        .aliases(["p"])
+                        .args([Arg::new("only-meta")
+                            .help("Only pull metadata without downloading")
+                            .long("only-meta")
+                            .action(ArgAction::SetTrue)]),
                     Command::new("completion")
                         .about("Generate completion script")
                         .arg_required_else_help(true)
@@ -128,6 +185,7 @@ impl FavCommand {
                     system::activate,
                     system::deactivate,
                     system::list,
+                    system::pull,
                 ));
                 world.add_schedule(schedule);
 
@@ -142,7 +200,7 @@ impl FavCommand {
                             world.run_schedule(FavSchedule);
                         }
                         Some(("logout", sub_matches)) => sub_matches
-                            .get_many::<i32>("account_id")
+                            .get_many::<i64>("account_id")
                             .unwrap() // arg_required_else_help has been set to true
                             .for_each(|&account_id| {
                                 world.trigger(Logout { account_id });
@@ -156,34 +214,56 @@ impl FavCommand {
                         Some(("video", _)) => todo!(),
                         _ => unreachable!(),
                     },
-                    Some(("activate", sub_matches)) => match sub_matches.get_flag("all") {
-                        true => {
-                            world.trigger(ActivateAll);
-                            // run again for events triggered by events
-                            world.run_schedule(FavSchedule);
-                        }
-                        false => sub_matches
-                            .get_many::<i32>("account_id")
-                            .unwrap() // arg_required_else_help has been set to true
-                            .for_each(|&account_id| {
-                                world.trigger(Activate { account_id });
-                            }),
+                    Some(("activate", sub_matches)) => match sub_matches.subcommand() {
+                        Some(("account", sub_matches)) => match sub_matches.get_flag("all") {
+                            true => world.trigger(ActivateAccountAll),
+                            false => sub_matches
+                                .get_many::<i64>("account_id")
+                                .unwrap() // arg_required_else_help has been set to true
+                                .for_each(|&account_id| {
+                                    world.trigger(ActivateAccount { account_id });
+                                }),
+                        },
+                        Some(("set", sub_matches)) => match sub_matches.get_flag("all") {
+                            true => world.trigger(ActivateSetAll),
+                            false => sub_matches
+                                .get_many::<i64>("set_id")
+                                .unwrap() // arg_required_else_help has been set to true
+                                .for_each(|&set_id| {
+                                    world.trigger(ActivateSet { set_id });
+                                }),
+                        },
+                        _ => unreachable!(),
                     },
-                    Some(("deactivate", sub_matches)) => match sub_matches.get_flag("all") {
-                        true => {
-                            world.trigger(DeactivateAll);
-                            // run again for events triggered by events
-                            world.run_schedule(FavSchedule);
-                        }
-                        false => sub_matches
-                            .get_many::<i32>("account_id")
-                            .unwrap() // arg_required_else_help has been set to true
-                            .for_each(|&account_id| {
-                                world.trigger(Deactivate { account_id });
-                            }),
+                    Some(("deactivate", sub_matches)) => match sub_matches.subcommand() {
+                        Some(("account", sub_matches)) => match sub_matches.get_flag("all") {
+                            true => world.trigger(DeactivateAccountAll),
+                            false => sub_matches
+                                .get_many::<i64>("account_id")
+                                .unwrap() // arg_required_else_help has been set to true
+                                .for_each(|&account_id| {
+                                    world.trigger(DeactivateAccount { account_id });
+                                }),
+                        },
+                        Some(("set", sub_matches)) => match sub_matches.get_flag("all") {
+                            true => world.trigger(DeactivateSetAll),
+                            false => sub_matches
+                                .get_many::<i64>("set_id")
+                                .unwrap() // arg_required_else_help has been set to true
+                                .for_each(|&set_id| {
+                                    world.trigger(DeactivateSet { set_id });
+                                }),
+                        },
+                        _ => unreachable!(),
+                    },
+                    Some(("pull", sub_matches)) => match sub_matches.get_flag("only-meta") {
+                        true => todo!(),
+                        false => world.trigger(PullMeta),
                     },
                     _ => unreachable!(),
                 }
+                // run again for events triggered by events
+                world.run_schedule(FavSchedule);
             }
         }
         Ok(())

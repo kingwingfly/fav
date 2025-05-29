@@ -6,17 +6,17 @@ use tracing::{error, info};
 
 use crate::{
     db::Db,
-    event::{Deactivate, DeactivateAll},
+    event::{DeactivateAccount, DeactivateAccountAll, DeactivateSet, DeactivateSetAll},
     runtime::Runtime,
 };
 
 pub fn deactivate(mut cmds: Commands) {
     cmds.add_observer(
-        |trigger: Trigger<Deactivate>, runtime: Res<Runtime>, db: Res<Db>| {
+        |trigger: Trigger<DeactivateAccount>, runtime: Res<Runtime>, db: Res<Db>| {
             if let Err(e) = runtime.block_on(async {
-                let Deactivate { account_id } = *trigger;
-                db.deactivate(account_id).await?;
-                info!("Deactivated account_id<{}>", account_id);
+                let DeactivateAccount { account_id } = *trigger;
+                db.deactivate_account(account_id).await?;
+                info!("Deactivated account<{}>", account_id);
                 Ok::<_, anyhow::Error>(())
             }) {
                 error!("{}", e);
@@ -24,14 +24,41 @@ pub fn deactivate(mut cmds: Commands) {
         },
     );
     cmds.add_observer(
-        |_: Trigger<DeactivateAll>, mut cmds: Commands, runtime: Res<Runtime>, db: Res<Db>| {
+        |_: Trigger<DeactivateAccountAll>,
+         mut cmds: Commands,
+         runtime: Res<Runtime>,
+         db: Res<Db>| {
             if let Err(e) = runtime.block_on(async {
                 let accounts = db.all_accounts().await?;
                 accounts.into_iter().for_each(|account| {
-                    cmds.trigger(Deactivate {
+                    cmds.trigger(DeactivateAccount {
                         account_id: account.account_id,
                     })
                 });
+                Ok::<_, anyhow::Error>(())
+            }) {
+                error!("{}", e);
+            }
+        },
+    );
+    cmds.add_observer(
+        |trigger: Trigger<DeactivateSet>, runtime: Res<Runtime>, db: Res<Db>| {
+            if let Err(e) = runtime.block_on(async {
+                let DeactivateSet { set_id } = *trigger;
+                db.activate_set(set_id).await?;
+                info!("DeactivateSet set<{}>", set_id);
+                Ok::<_, anyhow::Error>(())
+            }) {
+                error!("{}", e);
+            }
+        },
+    );
+    cmds.add_observer(
+        |_: Trigger<DeactivateSetAll>, mut cmds: Commands, runtime: Res<Runtime>, db: Res<Db>| {
+            if let Err(e) = runtime.block_on(async {
+                let sets = db.all_sets().await?;
+                sets.into_iter()
+                    .for_each(|set| cmds.trigger(DeactivateSet { set_id: set.set_id }));
                 Ok::<_, anyhow::Error>(())
             }) {
                 error!("{}", e);

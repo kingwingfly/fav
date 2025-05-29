@@ -4,19 +4,36 @@ use bevy_ecs::{
 };
 use tracing::error;
 
-use crate::{db::Db, entity::ToTableRecord, event::ListUser, runtime::Runtime, table::table};
+use crate::{
+    db::Db,
+    entity::ToTableRecord,
+    event::{ListSet, ListUser},
+    runtime::Runtime,
+    table::table,
+};
 
 pub fn list(mut cmds: Commands) {
     cmds.add_observer(|_: Trigger<ListUser>, runtime: Res<Runtime>, db: Res<Db>| {
         if let Err(e) = runtime.block_on(async {
             let accounts = db.all_accounts().await?;
-            println!(
-                "{}",
-                table(
-                    ["account_id", "name", "state"],
-                    accounts.into_iter().map(ToTableRecord::to_record)
-                )
+            let table = table(
+                ["account_id", "name", "state"],
+                accounts.into_iter().map(ToTableRecord::to_record),
             );
+            println!("{}\nrows: {}", table, table.count_rows() - 1);
+            Ok::<_, anyhow::Error>(())
+        }) {
+            error!("{}", e);
+        };
+    });
+    cmds.add_observer(|_: Trigger<ListSet>, runtime: Res<Runtime>, db: Res<Db>| {
+        if let Err(e) = runtime.block_on(async {
+            let sets = db.all_sets().await?;
+            let table = table(
+                ["set_id", "name", "state"],
+                sets.into_iter().map(ToTableRecord::to_record),
+            );
+            println!("{}\nrows: {}", table, table.count_rows() - 1);
             Ok::<_, anyhow::Error>(())
         }) {
             error!("{}", e);

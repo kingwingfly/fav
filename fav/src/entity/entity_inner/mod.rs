@@ -4,6 +4,7 @@ pub mod prelude;
 
 pub mod account;
 pub mod set;
+pub mod set_account;
 pub mod up;
 pub mod video;
 pub mod video_set;

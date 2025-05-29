@@ -2,6 +2,7 @@
 
 pub use super::account::Entity as Account;
 pub use super::set::Entity as Set;
+pub use super::set_account::Entity as SetAccount;
 pub use super::up::Entity as Up;
 pub use super::video::Entity as Video;
 pub use super::video_set::Entity as VideoSet;

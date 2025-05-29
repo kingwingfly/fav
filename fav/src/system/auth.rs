@@ -19,7 +19,7 @@ use crate::{
     payload::{LogoutPayload, QrPayload, QrPollPayload, WbiPayload},
     response::{LogoutResp, QrData, QrPollData, QrPollResp, QrResp, WbiData, WbiResp},
     runtime::Runtime,
-    state::UserState,
+    state::AccountState,
 };
 
 pub fn auth(mut cmds: Commands) {
@@ -68,7 +68,7 @@ pub fn auth(mut cmds: Commands) {
                     account_id: mid,
                     name: uname.to_owned(),
                     cookies,
-                    state: UserState::Active.to_string(),
+                    state: AccountState::Active.to_string(),
                 })
                 .await?;
                 println!("Hello😊, {}.", uname);

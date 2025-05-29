@@ -1,6 +1,6 @@
 macro_rules! impl_display_fromstr {
-    ($enum_name: ident { $($variant: ident),* }) => {
-        #[derive(Debug, PartialEq)]
+    ($enum_name: ident { $($variant: ident),* $(,)? }) => {
+        #[derive(Debug, PartialEq, ::sea_orm::DeriveIden)]
         pub enum $enum_name {
             $($variant),*
         }
@@ -27,20 +27,23 @@ macro_rules! impl_display_fromstr {
     };
 }
 
-impl_display_fromstr!(UserState {
+impl_display_fromstr!(AccountState {
     Active,
     Inactive,
-    Expired
+    Expired,
 });
 
 impl_display_fromstr!(SetState {
-    SyncFile,
-    NotSyncFile,
-    Expired
+    Active,
+    Inactive,
+    Unreachable,
 });
 
-impl_display_fromstr!(SetMethod {
-    Pull,
-    Push,
-    Inactive
+impl_display_fromstr!(VideoState {
+    Pending,
+    Downloading,
+    Completed,
+    Failed,
+    Expired,
+    PermissionDenied,
 });
