@@ -1,7 +1,7 @@
 use api_req::COOKIE_JAR;
 use cookie::Cookie;
 
-pub fn parse_cookies<'a>(cookies: String) -> impl Iterator<Item = Cookie<'a>> {
+pub fn parse_cookies<'a>(cookies: &'a str) -> impl Iterator<Item = Cookie<'a>> {
     Cookie::split_parse_encoded(cookies).filter_map(|res| res.ok())
 }
 

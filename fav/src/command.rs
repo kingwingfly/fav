@@ -10,8 +10,8 @@ use crate::{
     db::Db,
     event::{
         ActivateAccount, ActivateAccountAll, ActivateSet, ActivateSetAll, DeactivateAccount,
-        DeactivateAccountAll, DeactivateSet, DeactivateSetAll, ListUser, Login, Logout, LogoutAll,
-        PullMeta,
+        DeactivateAccountAll, DeactivateSet, DeactivateSetAll, Fetch, ListAccount, ListSet, Login,
+        Logout, LogoutAll,
     },
     runtime::Runtime,
     system,
@@ -143,13 +143,9 @@ impl FavCommand {
                                         .action(ArgAction::Append),
                                 ]),
                         ]),
-                    Command::new("pull")
-                        .about("Pull [alias: p]")
-                        .aliases(["p"])
-                        .args([Arg::new("only-meta")
-                            .help("Only pull metadata without downloading")
-                            .long("only-meta")
-                            .action(ArgAction::SetTrue)]),
+                    Command::new("fetch")
+                        .about("Fetch [alias: f]")
+                        .aliases(["f"]),
                     Command::new("completion")
                         .about("Generate completion script")
                         .arg_required_else_help(true)
@@ -195,9 +191,7 @@ impl FavCommand {
                     Some(("auth", sub_matches)) => match sub_matches.subcommand() {
                         Some(("login", _)) => world.trigger(Login),
                         Some(("logout", sub_matches)) if sub_matches.get_flag("all") => {
-                            world.trigger(LogoutAll);
-                            // run again for events triggered by events
-                            world.run_schedule(FavSchedule);
+                            world.trigger(LogoutAll)
                         }
                         Some(("logout", sub_matches)) => sub_matches
                             .get_many::<i64>("account_id")
@@ -205,11 +199,12 @@ impl FavCommand {
                             .for_each(|&account_id| {
                                 world.trigger(Logout { account_id });
                             }),
+
                         _ => unreachable!(),
                     },
                     Some(("list", sub_matches)) => match sub_matches.subcommand() {
-                        Some(("account", _)) => world.trigger(ListUser),
-                        Some(("set", _)) => todo!(),
+                        Some(("account", _)) => world.trigger(ListAccount),
+                        Some(("set", _)) => world.trigger(ListSet),
                         Some(("up", _)) => todo!(),
                         Some(("video", _)) => todo!(),
                         _ => unreachable!(),
@@ -256,13 +251,10 @@ impl FavCommand {
                         },
                         _ => unreachable!(),
                     },
-                    Some(("pull", sub_matches)) => match sub_matches.get_flag("only-meta") {
-                        true => todo!(),
-                        false => world.trigger(PullMeta),
-                    },
+                    Some(("fetch", _)) => world.trigger(Fetch),
                     _ => unreachable!(),
                 }
-                // run again for events triggered by events
+
                 world.run_schedule(FavSchedule);
             }
         }

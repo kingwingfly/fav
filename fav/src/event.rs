@@ -12,7 +12,7 @@ pub struct Logout {
 pub struct LogoutAll;
 
 #[derive(Debug, Event)]
-pub struct ListUser;
+pub struct ListAccount;
 
 #[derive(Debug, Event)]
 pub struct ListSet;
@@ -50,4 +50,4 @@ pub struct DeactivateSet {
 pub struct DeactivateSetAll;
 
 #[derive(Debug, Event)]
-pub struct PullMeta;
+pub struct Fetch;

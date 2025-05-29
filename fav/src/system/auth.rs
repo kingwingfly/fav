@@ -83,7 +83,7 @@ pub fn auth(mut cmds: Commands) {
             if let Err(e) = runtime.block_on(async {
                 let Logout { account_id } = *trigger;
                 let account::Model { name, cookies, .. } = db.get_account(account_id).await?;
-                let cookies = parse_cookies(cookies).collect::<Vec<_>>();
+                let cookies = parse_cookies(&cookies).collect::<Vec<_>>();
                 let bili_jct = cookies
                     .iter()
                     .find(|c| c.name() == "bili_jct")

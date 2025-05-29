@@ -45,7 +45,7 @@ pub fn deactivate(mut cmds: Commands) {
         |trigger: Trigger<DeactivateSet>, runtime: Res<Runtime>, db: Res<Db>| {
             if let Err(e) = runtime.block_on(async {
                 let DeactivateSet { set_id } = *trigger;
-                db.activate_set(set_id).await?;
+                db.deactivate_set(set_id).await?;
                 info!("DeactivateSet set<{}>", set_id);
                 Ok::<_, anyhow::Error>(())
             }) {
