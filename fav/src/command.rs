@@ -7,7 +7,7 @@ use clap::{Arg, ArgAction, Command, command, value_parser};
 
 use crate::{
     db::Db,
-    event::{ListUser, Login, Logout, LogoutAll},
+    event::{Activate, ActivateAll, Deactivate, DeactivateAll, ListUser, Login, Logout, LogoutAll},
     runtime::Runtime,
     system,
     version::VERSION,
@@ -22,28 +22,73 @@ impl FavCommand {
             command!()
                 .arg_required_else_help(true)
                 .version(VERSION)
-                .subcommands([Command::new("auth")
-                    .about("Auth your account")
-                    .arg_required_else_help(true)
-                    .subcommands([
-                        Command::new("login").about("Login with QR code"),
-                        Command::new("logout")
-                            .about("Logout")
-                            .arg_required_else_help(true)
-                            .args([
-                                Arg::new("all")
-                                    .help("Logout all authorized users")
-                                    .long("all")
-                                    .short('a')
-                                    .action(ArgAction::SetTrue)
-                                    .conflicts_with("user_id"),
-                                Arg::new("user_id")
-                                    .help("The user to logout")
-                                    .value_parser(value_parser!(i32))
-                                    .action(ArgAction::Append),
-                            ]),
-                        Command::new("list").about("List all authorized users"),
-                    ])]),
+                .subcommands([
+                    Command::new("auth")
+                        .about("Auth account")
+                        .arg_required_else_help(true)
+                        .subcommands([
+                            Command::new("login").about("Login with QR code"),
+                            Command::new("logout")
+                                .about("Logout")
+                                .arg_required_else_help(true)
+                                .args([
+                                    Arg::new("all")
+                                        .help("Logout all authorized users")
+                                        .long("all")
+                                        .short('a')
+                                        .action(ArgAction::SetTrue)
+                                        .conflicts_with("user_id"),
+                                    Arg::new("user_id")
+                                        .help("The user to logout")
+                                        .value_parser(value_parser!(i32))
+                                        .action(ArgAction::Append),
+                                ]),
+                        ]),
+                    Command::new("list")
+                        .about("List users/sets/videos")
+                        .arg_required_else_help(true)
+                        .subcommands([
+                            Command::new("user")
+                                .about("List users [alias: account, u, a]")
+                                .aliases(["account", "u", "a"]),
+                            Command::new("set")
+                                .about("List sets [alias: list, s, l]")
+                                .aliases(["list", "s", "l"]),
+                            Command::new("video")
+                                .about("List videos [alias: bv, v]")
+                                .aliases(["bv", "v"]),
+                        ]),
+                    Command::new("activate")
+                        .about("Activate authorized users")
+                        .arg_required_else_help(true)
+                        .args([
+                            Arg::new("all")
+                                .help("Activate all authorized users")
+                                .long("all")
+                                .short('a')
+                                .action(ArgAction::SetTrue)
+                                .conflicts_with("user_id"),
+                            Arg::new("user_id")
+                                .help("The user to activate")
+                                .value_parser(value_parser!(i32))
+                                .action(ArgAction::Append),
+                        ]),
+                    Command::new("deactivate")
+                        .about("Deactivate authorized users")
+                        .arg_required_else_help(true)
+                        .args([
+                            Arg::new("all")
+                                .help("Deactivate all authorized users")
+                                .long("all")
+                                .short('a')
+                                .action(ArgAction::SetTrue)
+                                .conflicts_with("user_id"),
+                            Arg::new("user_id")
+                                .help("The user to deactivate")
+                                .value_parser(value_parser!(i32))
+                                .action(ArgAction::Append),
+                        ]),
+                ]),
         )
     }
 
@@ -60,7 +105,12 @@ impl FavCommand {
         world.insert_resource(db);
         world.insert_resource(runtime);
 
-        schedule.add_systems(system::auth);
+        schedule.add_systems((
+            system::auth,
+            system::activate,
+            system::deactivate,
+            system::list,
+        ));
         world.add_schedule(schedule);
 
         world.run_schedule(FavSchedule);
@@ -75,12 +125,43 @@ impl FavCommand {
                 }
                 Some(("logout", sub_matches)) => sub_matches
                     .get_many::<i32>("user_id")
-                    .unwrap() // required has been set to true
+                    .unwrap() // arg_required_else_help has been set to true
                     .for_each(|&user_id| {
                         world.trigger(Logout { user_id });
                     }),
-                Some(("list", _)) => world.trigger(ListUser),
                 _ => unreachable!(),
+            },
+            Some(("list", sub_matches)) => match sub_matches.subcommand() {
+                Some(("user", _)) => world.trigger(ListUser),
+                Some(("set", _)) => todo!(),
+                Some(("video", _)) => todo!(),
+                _ => unreachable!(),
+            },
+            Some(("activate", sub_matches)) => match sub_matches.get_flag("all") {
+                true => {
+                    world.trigger(ActivateAll);
+                    // run again for events triggered by events
+                    world.run_schedule(FavSchedule);
+                }
+                false => sub_matches
+                    .get_many::<i32>("user_id")
+                    .unwrap() // arg_required_else_help has been set to true
+                    .for_each(|&user_id| {
+                        world.trigger(Activate { user_id });
+                    }),
+            },
+            Some(("deactivate", sub_matches)) => match sub_matches.get_flag("all") {
+                true => {
+                    world.trigger(DeactivateAll);
+                    // run again for events triggered by events
+                    world.run_schedule(FavSchedule);
+                }
+                false => sub_matches
+                    .get_many::<i32>("user_id")
+                    .unwrap() // arg_required_else_help has been set to true
+                    .for_each(|&user_id| {
+                        world.trigger(Deactivate { user_id });
+                    }),
             },
             _ => unreachable!(),
         }

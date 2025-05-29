@@ -14,13 +14,12 @@ use crate::{
     api::{AuthApi, BiliApi},
     cookies::{parse_cookies, set_cookie_jar},
     db::Db,
-    entity::{ToTableRecord, user},
-    event::{ListUser, Login, Logout, LogoutAll},
+    entity::user,
+    event::{Login, Logout, LogoutAll},
     payload::{LogoutPayload, QrPayload, QrPollPayload, WbiPayload},
     response::{LogoutResp, QrData, QrPollData, QrPollResp, QrResp, WbiData, WbiResp},
     runtime::Runtime,
     state::UserState,
-    table::table,
 };
 
 pub fn auth(mut cmds: Commands) {
@@ -122,19 +121,4 @@ pub fn auth(mut cmds: Commands) {
             };
         },
     );
-    cmds.add_observer(|_: Trigger<ListUser>, runtime: Res<Runtime>, db: Res<Db>| {
-        if let Err(e) = runtime.block_on(async {
-            let users = db.all_users().await?;
-            println!(
-                "{}",
-                table(
-                    ["user id", "name", "state"],
-                    users.into_iter().map(ToTableRecord::to_record)
-                )
-            );
-            Ok::<_, anyhow::Error>(())
-        }) {
-            error!("{}", e);
-        };
-    });
 }
