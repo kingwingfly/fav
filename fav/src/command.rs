@@ -4,6 +4,7 @@ use bevy_ecs::{
     world::World,
 };
 use clap::{Arg, ArgAction, Command, command, value_parser};
+use clap_complete::Shell;
 
 use crate::{
     db::Db,
@@ -92,6 +93,13 @@ impl FavCommand {
                                 .value_parser(value_parser!(i32))
                                 .action(ArgAction::Append),
                         ]),
+                    Command::new("completion")
+                        .about("Generate completion script")
+                        .arg_required_else_help(true)
+                        .args([Arg::new("shell")
+                            .help("The shell to generate completion script for")
+                            .value_parser(value_parser!(Shell))
+                            .default_value("bash")]),
                 ]),
         )
     }
@@ -168,6 +176,18 @@ impl FavCommand {
                         world.trigger(Deactivate { account_id });
                     }),
             },
+            Some(("completion", sub_matches)) => {
+                let mut cmd = Self::new().0;
+                let shell = *sub_matches.get_one::<Shell>("shell").unwrap();
+                clap_complete::generate(
+                    shell,
+                    &mut cmd,
+                    std::env::current_exe()
+                        .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+                        .unwrap_or("fav".to_string()),
+                    &mut std::io::stdout(),
+                );
+            }
             _ => unreachable!(),
         }
         Ok(())
