@@ -179,6 +179,12 @@ Persistent=true
 WantedBy=timers.target
 ```
 
+```sh
+sudo systemctl daemon-reload
+sudo systemctl enable fav.timer
+sudo systemctl start fav.timer
+```
+
 You can also achieve the goal with `systemd timer` by yourself, but it's a little hard to learn.
 
 _For more examples, please refer to the [Documentation](https://github.com/kingwingfly/fav)_
