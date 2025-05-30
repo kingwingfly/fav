@@ -154,20 +154,29 @@ SELECT u.up_id, u.name, COUNT(u.up_id) count FROM up u LEFT JOIN media_up mu ON 
 
 Service example:
 ```ini
-# fav.service
+# /etc/systemd/system/fav.service
 [Unit]
-Description=Fav Cron Service
+Description=Fav Pull Service
 After=network-online.target
 
 [Service]
-Type=simple
+Type=oneshot
 User=your_user
 WorkingDirectory=/path/to/fav_set
-ExecStart=/usr/local/bin/fav cron 180
-Restart=on-failure
+ExecStart=/usr/local/bin/fav pull
+
+# /etc/systemd/system/fav.timer
+[Unit]
+Description=Run fav pull every 3 hours
+
+[Timer]
+OnCalendar=*-*-* 0/3:00:00
+# or OnUnitActiveSec=3h
+AccuracySec=1m
+Persistent=true
 
 [Install]
-WantedBy=multi-user.target
+WantedBy=timers.target
 ```
 
 You can also achieve the goal with `systemd timer` by yourself, but it's a little hard to learn.
