@@ -1,23 +1,17 @@
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [workspace]
-members = ["fav", "fav_cli", "fav_core", "fav_utils", "fav_derive"]
+members = ["fav", "migration"]
+default-members = ["fav"]
 resolver = "2"
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [workspace.package]
-version = "0.2.39"
 authors = ["Louis <836250617@qq.com>"]
-description = "Back up your favorite online resources with CLI."
 license = "MIT"
-edition = "2021"
+edition = "2024"
 repository = "https://github.com/kingwingfly/fav"
-documentation = ""
+documentation = "https://github.com/kingwingfly/fav"
 
 [workspace.dependencies]
-fav_core = { path = "fav_core", version = "0.1.8" }
-fav_derive = { path = "fav_derive", version = "0.0.4" }
-fav_utils = { path = "fav_utils", version = "0.0.15" }
-fav_cli = { path = "fav_cli", version = "0.2.39" }
 
 [profile.release]
 lto = "fat"

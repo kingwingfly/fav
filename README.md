@@ -83,15 +83,6 @@ For Arch Linux users, you can `yay -S fav-git` maybe, someone has maken it a pac
 
 Or you can compile by yourself:
 
-### Prerequisites
-
-- Install Rust
-  ```sh
-  curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-  ```
-
-### Compilation
-
 1. Clone the repo
    ```sh
    git clone https://github.com/kingwingfly/fav.git
@@ -110,26 +101,24 @@ Or you can compile by yourself:
 Need `ffmpeg` usable, and able to be directly called in cli.
 
 ```
-Fav's CLI, helping persist the remote source. Repo: https://github.com/kingwingfly/fav
+Back up your favorite bilibili online resources with CLI.
 
-Usage: fav [OPTIONS] <COMMAND>
+Usage: fav [OPTIONS] [COMMAND]
 
 Commands:
-  init        Initialize the folder for fav
-  auth        Login your account
-  fetch       Fetch from remote
-  status      Show status of local, default to show sets' status
-  track       Track a remote source
-  untrack     Untrack a remote source
-  pull        Pull remote resource to local.  If no id provided, then pull all and skip those having been saved
-  cron        Interval fetch and pull
-  completion  Completions for the shell
+  auth        Auth account
+  list        List accounts/sets/ups/medias [alias: ls, l]
+  activate    Activate obj [alias: active, a]
+  deactivate  Deactivate obj [alias: d]
+  fetch       Fetch metadata of following ups, fav sets, medias, ups [alias: f]
+  pull        Pull fetched medias [alias: p]
+  completion  Generate completion script
   help        Print this message or the help of the given subcommand(s)
 
 Options:
-  -d, --working-dir <WORKING_DIR>  [default: /Users/louis]
-  -h, --help                       Print help
-  -V, --version                    Print version
+  -v, --verbose  Show debug messages
+  -h, --help     Print help
+  -V, --version  Print version
 ```
 
 ### Steps
@@ -147,23 +136,22 @@ Options:
 fav completion fish > ~/.config/fish/completions/fav.fish
 # For Windows users
 echo "fav completion powershell | Out-String | Invoke-Expression" >> $PROFILE
-# init for bilibili
-fav init
 # scan code to login
 fav auth login
 # a fetch will auto run after login
 # show status
-fav status -s
-# track list
-fav track <list_id>
+fav ls set
+# activate set
+fav activate <list_id>
 # fetch and pull videos
 fav pull
-# untrack list or video
-fav untrack <list_id/bvid>
+# deactivate list or video
+fav deactivate <list_id/bvid>
 # cron, run `fav pull` every 30 minutes
 fav cron 30
 # after fetching, you can find your favorite upper
-fav status -r | awk -F '│' '{print $3}' | grep -v '^\s*$' | sort | uniq -c | sort -n
+# limbo/sqlite3 .fav/fav.db
+SELECT u.up_id, u.name, COUNT(u.up_id) count FROM up u LEFT JOIN media_up mu ON u.up_id=mu.up_id JOIN media m ON mu.id=m.id GROUP BY u.up_id, u.name ORDER BY count;
 ```
 
 Service example:
@@ -206,6 +194,18 @@ _For more examples, please refer to the [Documentation](https://github.com/kingw
 See the [open issues](https://github.com/kingwingfly/fav/issues) for a full list of proposed features (and known issues).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+<!-- DEVELOP -->
+
+## Develop
+
+`sea-orm-cli` is used to handle database ops.
+
+```sh
+cargo binstall sea-orm-cli # or `cargo install sea-orm-cli`
+# generate ORM code
+./sea-orm.sh
+```
 
 <!-- CONTRIBUTING -->
 

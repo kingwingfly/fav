@@ -2,3 +2,7 @@
 .DS_Store
 .fav
 temp.*
+*.db
+data.*
+*.mp4
+*.mp3
