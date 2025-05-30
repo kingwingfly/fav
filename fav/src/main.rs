@@ -26,6 +26,7 @@ fn main() {
     tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_writer(std::io::stdout)
+        .with_line_number(true)
         .init();
     if let Err(e) = FavCommand::new().run() {
         error!("{}", e);

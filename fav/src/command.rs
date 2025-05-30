@@ -189,7 +189,11 @@ impl FavCommand {
 
                 match sub_cmd {
                     Some(("auth", sub_matches)) => match sub_matches.subcommand() {
-                        Some(("login", _)) => world.trigger(Login),
+                        Some(("login", _)) => {
+                            world.trigger(Login);
+                            world.run_schedule(FavSchedule);
+                            world.trigger(Fetch);
+                        }
                         Some(("logout", sub_matches)) if sub_matches.get_flag("all") => {
                             world.trigger(LogoutAll)
                         }

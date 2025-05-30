@@ -49,7 +49,7 @@ pub fn pull(mut cmds: Commands) {
                 }))
                 .await?;
                 db.upsert_set_accounts(list.iter().map(|set| {
-                    info!("Linking set<{}> and account<{}>", set.title, account.name);
+                    info!("Linking account<{}> and set<{}>", account.name, set.title,);
                     set_account::Model {
                         set_id: set.id,
                         account_id,
@@ -62,7 +62,7 @@ pub fn pull(mut cmds: Commands) {
                 for set_id in old_set_ids {
                     db.delete_set_account(set_account::Model { set_id, account_id })
                         .await?;
-                    warn!("Unlinked set<{}> and account<{}>", set_id, account_id);
+                    warn!("Unlinked account<{}> and set<{}>", account.name, set_id,);
                 }
             }
             let fetched_sets = DashSet::<i64>::new();
@@ -101,22 +101,24 @@ pub fn pull(mut cmds: Commands) {
                             Err(e) => error!("{}", e),
                         }
                     }
-                    db.upsert_medias(medias.iter().map(|m| {
-                        info!("Updating media<{}>", m.title);
-                        media::Model {
-                            id: m.id,
-                            bv_id: m.bv_id.to_owned(),
-                            title: m.title.to_owned(),
-                            r#type: m.r#type.to_string(),
-                            state: MediaState::Pending.to_string(),
-                        }
-                    }))
-                    .await?;
-                    db.upsert_media_sets(medias.into_iter().map(|m| {
-                        info!("Linking media<{}> and set<{}>", m.title, set.name);
-                        media_set::Model { id: m.id, set_id }
-                    }))
-                    .await?;
+                    if !medias.is_empty() {
+                        db.upsert_medias(medias.iter().map(|m| {
+                            info!("Updating media<{}>", m.title);
+                            media::Model {
+                                id: m.id,
+                                bv_id: m.bv_id.to_owned(),
+                                title: m.title.to_owned(),
+                                r#type: m.r#type.to_string(),
+                                state: MediaState::Pending.to_string(),
+                            }
+                        }))
+                        .await?;
+                        db.upsert_media_sets(medias.into_iter().map(|m| {
+                            info!("Linking media<{}> and set<{}>", m.title, set.name);
+                            media_set::Model { id: m.id, set_id }
+                        }))
+                        .await?;
+                    }
                     fetched_sets.insert(set_id);
                 }
             }
@@ -124,7 +126,6 @@ pub fn pull(mut cmds: Commands) {
             for account in accounts.iter() {
                 info!("Fetching medias with account<{}>", account.name);
                 set_cookie_jar(parse_cookies(&account.cookies));
-                let account_id = account.account_id;
                 let medias = db.all_medias().await?;
                 let mut tasks = futures::stream::iter(
                     medias
@@ -132,7 +133,6 @@ pub fn pull(mut cmds: Commands) {
                         .filter(|media| !fetched_medias.contains(&media.id)),
                 )
                 .map(|media| {
-                    let db = db.clone();
                     let fetched_medias = fetched_medias.clone();
                     async move {
                         fetched_medias.insert(media.id);
@@ -165,17 +165,21 @@ pub fn pull(mut cmds: Commands) {
                         Err(e) => error!("{}", e),
                     }
                 }
-                db.upsert_ups(ups.into_values().map(|up| up::Model {
-                    up_id: up.mid,
-                    name: up.name,
-                }))
-                .await?;
-                db.upsert_media_ups(
-                    media_ups
-                        .into_iter()
-                        .map(|(id, up_id)| media_up::Model { id, up_id }),
-                )
-                .await?;
+                if !ups.is_empty() {
+                    db.upsert_ups(ups.into_values().map(|up| up::Model {
+                        up_id: up.mid,
+                        name: up.name,
+                    }))
+                    .await?;
+                }
+                if !media_ups.is_empty() {
+                    db.upsert_media_ups(
+                        media_ups
+                            .into_iter()
+                            .map(|(id, up_id)| media_up::Model { id, up_id }),
+                    )
+                    .await?;
+                }
             }
             Ok::<_, anyhow::Error>(())
         }) {

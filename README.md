@@ -138,23 +138,22 @@ Options:
 fav completion fish > ~/.config/fish/completions/fav.fish
 # For Windows users
 echo "fav completion powershell | Out-String | Invoke-Expression" >> $PROFILE
-# init for bilibili
-fav init
 # scan code to login
 fav auth login
 # a fetch will auto run after login
 # show status
-fav status -s
-# track list
-fav track <list_id>
+fav ls set
+# activate set
+fav activate <list_id>
 # fetch and pull videos
 fav pull
-# untrack list or video
-fav untrack <list_id/bvid>
+# deactivate list or video
+fav deactivate <list_id/bvid>
 # cron, run `fav pull` every 30 minutes
 fav cron 30
 # after fetching, you can find your favorite upper
-fav status -r | awk -F '│' '{print $3}' | grep -v '^\s*$' | sort | uniq -c | sort -n
+# limbo/sqlite3 .fav/fav.db
+SELECT u.up_id, u.name, COUNT(u.up_id) count FROM up u LEFT JOIN media_up mu ON u.up_id=mu.up_id JOIN media m ON mu.id=m.id GROUP BY u.up_id, u.name ORDER BY count;
 ```
 
 Service example:
