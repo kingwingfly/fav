@@ -5,6 +5,7 @@ use bevy_ecs::{
 };
 use clap::{Arg, ArgAction, Command, command, value_parser};
 use clap_complete::Shell;
+use tracing_subscriber::EnvFilter;
 
 use crate::{
     db::Db,
@@ -185,7 +186,12 @@ impl FavCommand {
                         .args([Arg::new("shell")
                             .help("The shell to generate completion script for")
                             .value_parser(value_parser!(Shell))]),
-                ]),
+                ])
+                .args([Arg::new("verbose")
+                    .help("Show debug messages")
+                    .long("verbose")
+                    .short('v')
+                    .action(ArgAction::SetTrue)]),
         )
     }
 
@@ -200,6 +206,18 @@ impl FavCommand {
                 clap_complete::generate(shell, &mut self.0, bin_name, &mut std::io::stdout());
             }
             sub_cmd => {
+                let mut log_level = "fav=info";
+                if matches.get_flag("verbose") {
+                    log_level = "fav=debug";
+                }
+                let filter =
+                    EnvFilter::from_default_env().add_directive(log_level.parse().unwrap());
+                tracing_subscriber::fmt()
+                    .with_env_filter(filter)
+                    .with_writer(std::io::stdout)
+                    .with_line_number(true)
+                    .with_thread_ids(true)
+                    .init();
                 let mut world = World::new();
                 let mut schedule = Schedule::new(FavSchedule);
                 schedule.set_executor_kind(ExecutorKind::SingleThreaded);

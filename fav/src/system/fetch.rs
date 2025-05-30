@@ -11,7 +11,7 @@ use bevy_ecs::{
 };
 use dashmap::DashSet;
 use futures::StreamExt as _;
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::{
     api::BiliApi,
@@ -46,7 +46,7 @@ pub fn pull(mut cmds: Commands) {
                 let mut old_set_ids: HashSet<i64> =
                     HashSet::from_iter(db.get_set_ids_of_account(account_id).await?);
                 db.upsert_sets(ups.iter().map(|set| {
-                    info!("Updating set<{}>", set.title);
+                    debug!("Updating set<{}>", set.title);
                     set::Model {
                         set_id: set.id,
                         name: set.title.to_owned(),
@@ -56,7 +56,7 @@ pub fn pull(mut cmds: Commands) {
                 }))
                 .await?;
                 db.upsert_set_accounts(ups.iter().map(|set| {
-                    info!("Linking account<{}> and set<{}>", account.name, set.title,);
+                    debug!("Linking account<{}> and set<{}>", account.name, set.title,);
                     set_account::Model {
                         set_id: set.id,
                         account_id,
@@ -71,7 +71,7 @@ pub fn pull(mut cmds: Commands) {
                         .await?;
                     warn!("Unlinked account<{}> and set<{}>", account.name, set_id,);
                 }
-                info!("Fetching following users with account<{}>", account.name);
+                info!("Fetching following ups with account<{}>", account.name);
                 let FollowingNumResp {
                     data: FollowingNumData { following },
                 } = BiliApi::request(FollowingNumPayload { vmid: account_id })
@@ -106,7 +106,7 @@ pub fn pull(mut cmds: Commands) {
                     HashSet::from_iter(db.get_up_ids_of_account(account_id).await?);
                 if !ups.is_empty() {
                     db.upsert_ups(ups.iter().map(|up| {
-                        info!("Updating following up<{}>", up.name);
+                        debug!("Updating following up<{}>", up.name);
                         up::Model {
                             up_id: up.mid,
                             name: up.name.to_owned(),
@@ -115,7 +115,7 @@ pub fn pull(mut cmds: Commands) {
                     }))
                     .await?;
                     db.upsert_up_accounts(ups.iter().map(|up| {
-                        info!("Linking account<{}> and up<{}>", account.name, up.name);
+                        debug!("Linking account<{}> and up<{}>", account.name, up.name);
                         up_account::Model {
                             up_id: up.mid,
                             account_id,
@@ -171,7 +171,7 @@ pub fn pull(mut cmds: Commands) {
                     }
                     if !medias.is_empty() {
                         db.upsert_medias(medias.iter().map(|m| {
-                            info!("Updating media<{}>", m.title);
+                            debug!("Updating media<{}>", m.title);
                             media::Model {
                                 id: m.id,
                                 bv_id: m.bv_id.to_owned(),
@@ -182,7 +182,7 @@ pub fn pull(mut cmds: Commands) {
                         }))
                         .await?;
                         db.upsert_media_sets(medias.into_iter().map(|m| {
-                            info!("Linking media<{}> and set<{}>", m.title, set.name);
+                            debug!("Linking media<{}> and set<{}>", m.title, set.name);
                             media_set::Model { id: m.id, set_id }
                         }))
                         .await?;
@@ -237,7 +237,7 @@ pub fn pull(mut cmds: Commands) {
                     }
                     if !medias.is_empty() {
                         db.upsert_medias(medias.iter().map(|m| {
-                            info!("Updating media<{}>", m.title);
+                            debug!("Updating media<{}>", m.title);
                             media::Model {
                                 id: m.id,
                                 bv_id: m.bv_id.to_owned(),
@@ -248,7 +248,7 @@ pub fn pull(mut cmds: Commands) {
                         }))
                         .await?;
                         db.upsert_media_ups(medias.into_iter().map(|m| {
-                            info!("Linking media<{}> and up<{}>", m.title, up.name);
+                            debug!("Linking media<{}> and up<{}>", m.title, up.name);
                             media_up::Model { id: m.id, up_id }
                         }))
                         .await?;
@@ -300,7 +300,7 @@ pub fn pull(mut cmds: Commands) {
                 }
                 if !ups.is_empty() {
                     db.upsert_ups(ups.into_values().map(|up| {
-                        info!("Upserting up<{}>", up.name);
+                        debug!("Updating up<{}>", up.name);
                         up::Model {
                             up_id: up.mid,
                             name: up.name,
@@ -311,7 +311,7 @@ pub fn pull(mut cmds: Commands) {
                 }
                 if !media_ups.is_empty() {
                     db.upsert_media_ups(media_ups.into_iter().map(|(media, up)| {
-                        info!("Linking media<{}> and up<{}>", media.title, up.name);
+                        debug!("Linking media<{}> and up<{}>", media.title, up.name);
                         media_up::Model {
                             id: media.id,
                             up_id: up.mid,
