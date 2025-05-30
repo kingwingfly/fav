@@ -28,3 +28,18 @@ pub struct InSetResp {
 pub struct InSetData {
     pub medias: Vec<Media>,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct InUpResp {
+    pub data: InUpData,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct InUpData {
+    pub list: InUpList,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct InUpList {
+    pub vlist: Vec<Media>,
+}

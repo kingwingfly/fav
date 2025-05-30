@@ -26,3 +26,13 @@ pub struct FollowingNumResp {
 pub struct FollowingNumData {
     pub following: i64,
 }
+
+#[derive(Debug, Deserialize)]
+pub struct PublishNumResp {
+    pub data: PublishNumData,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PublishNumData {
+    pub video: i64,
+}

@@ -20,11 +20,13 @@ use crate::{
     entity::{account, media, media_set, media_up, set, set_account, up, up_account},
     event::{Fetch, ListMedia},
     payload::{
-        FollowingNumPayload, FollowingUpPayload, InSetPayload, ListSetPayload, MediaInfoPayload,
+        FollowingNumPayload, FollowingUpPayload, InSetPayload, InUpPayload, ListSetPayload,
+        MediaInfoPayload, PublishNumPayload,
     },
     response::{
         FollowingNumData, FollowingNumResp, FollowingUpData, FollowingUpResp, InSetData, InSetResp,
-        ListSetData, ListSetResp, MediaInfoData, MediaInfoResp,
+        InUpData, InUpList, InUpResp, ListSetData, ListSetResp, MediaInfoData, MediaInfoResp,
+        PublishNumData, PublishNumResp,
     },
     runtime::Runtime,
     state::{MediaState, SetState, UpState},
@@ -74,7 +76,10 @@ pub fn pull(mut cmds: Commands) {
                     data: FollowingNumData { following },
                 } = BiliApi::request(FollowingNumPayload { vmid: account_id })
                     .await
-                    .context("Failed to fetch following number")?;
+                    .context("Failed to fetch following ups number")?;
+                if following == 0 {
+                    continue;
+                }
                 let page = (following - 1) / 50 + 1;
                 let mut tasks = futures::stream::iter(1..=page)
                     .map(|pn| async move {
@@ -86,7 +91,7 @@ pub fn pull(mut cmds: Commands) {
                             ps: 50,
                         })
                         .await
-                        .context(format!("Failed to fetch sets' page {}", pn))?;
+                        .context(format!("Failed to fetch following ups' page {}", pn))?;
                         Ok::<_, anyhow::Error>(list)
                     })
                     .buffer_unordered(8);
@@ -179,6 +184,71 @@ pub fn pull(mut cmds: Commands) {
                         db.upsert_media_sets(medias.into_iter().map(|m| {
                             info!("Linking media<{}> and set<{}>", m.title, set.name);
                             media_set::Model { id: m.id, set_id }
+                        }))
+                        .await?;
+                    }
+                }
+            }
+            let fetched_ups = DashSet::<i64>::new();
+            for account in accounts.iter() {
+                info!(
+                    "Fetching up published contents with account<{}>",
+                    account.name
+                );
+                set_cookie_jar(parse_cookies(&account.cookies));
+                let account_id = account.account_id;
+                let up_ids_of_account = db.get_up_ids_of_account(account_id).await?;
+                for up_id in up_ids_of_account {
+                    if fetched_ups.contains(&up_id) {
+                        continue;
+                    }
+                    let up = db.get_up(up_id).await?;
+                    if up.state != SetState::Active.to_string() {
+                        continue;
+                    }
+                    fetched_ups.insert(up_id);
+                    let PublishNumResp {
+                        data: PublishNumData { video },
+                    } = BiliApi::request(PublishNumPayload { mid: up_id }).await?;
+                    if video == 0 {
+                        continue;
+                    }
+                    let page = (video - 1) / 30 + 1;
+                    let mut tasks = futures::stream::iter(1..=page)
+                        .map(|pn| async move {
+                            let InUpResp {
+                                data:
+                                    InUpData {
+                                        list: InUpList { vlist },
+                                    },
+                            } = BiliApi::request(InUpPayload::new(up_id, pn, 30).await?)
+                                .await
+                                .context(format!("Failed to fetch sets' page {}", pn))?;
+                            Ok::<_, anyhow::Error>(vlist)
+                        })
+                        .buffer_unordered(8);
+                    let mut medias = vec![];
+                    while let Some(res) = tasks.next().await {
+                        match res {
+                            Ok(list) => medias.extend(list),
+                            Err(e) => error!("{}", e),
+                        }
+                    }
+                    if !medias.is_empty() {
+                        db.upsert_medias(medias.iter().map(|m| {
+                            info!("Updating media<{}>", m.title);
+                            media::Model {
+                                id: m.id,
+                                bv_id: m.bv_id.to_owned(),
+                                title: m.title.to_owned(),
+                                r#type: m.r#type.to_string(),
+                                state: MediaState::Pending.to_string(),
+                            }
+                        }))
+                        .await?;
+                        db.upsert_media_ups(medias.into_iter().map(|m| {
+                            info!("Linking media<{}> and up<{}>", m.title, up.name);
+                            media_up::Model { id: m.id, up_id }
                         }))
                         .await?;
                     }

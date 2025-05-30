@@ -56,4 +56,20 @@ pub struct DeactivateSet {
 pub struct DeactivateSetAll;
 
 #[derive(Debug, Event)]
+pub struct ActivateUp {
+    pub up_id: i64,
+}
+
+#[derive(Debug, Event)]
+pub struct ActivateUpAll;
+
+#[derive(Debug, Event)]
+pub struct DeactivateUp {
+    pub up_id: i64,
+}
+
+#[derive(Debug, Event)]
+pub struct DeactivateUpAll;
+
+#[derive(Debug, Event)]
 pub struct Fetch;

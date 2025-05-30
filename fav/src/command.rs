@@ -9,9 +9,10 @@ use clap_complete::Shell;
 use crate::{
     db::Db,
     event::{
-        ActivateAccount, ActivateAccountAll, ActivateSet, ActivateSetAll, DeactivateAccount,
-        DeactivateAccountAll, DeactivateSet, DeactivateSetAll, Fetch, ListAccount, ListMedia,
-        ListSet, ListUp, Login, Logout, LogoutAll,
+        ActivateAccount, ActivateAccountAll, ActivateSet, ActivateSetAll, ActivateUp,
+        ActivateUpAll, DeactivateAccount, DeactivateAccountAll, DeactivateSet, DeactivateSetAll,
+        DeactivateUp, DeactivateUpAll, Fetch, ListAccount, ListMedia, ListSet, ListUp, Login,
+        Logout, LogoutAll,
     },
     runtime::Runtime,
     system,
@@ -73,9 +74,9 @@ impl FavCommand {
                         .aliases(["active", "a"])
                         .subcommands([
                             Command::new("account")
-                                .about("Activate accounts [alias: user, a, u]")
+                                .about("Activate accounts [alias: a]")
                                 .arg_required_else_help(true)
-                                .aliases(["user", "a", "u"])
+                                .aliases(["a"])
                                 .args([
                                     Arg::new("all")
                                         .help("Activate all authorized accounts")
@@ -104,6 +105,22 @@ impl FavCommand {
                                         .value_parser(value_parser!(i64))
                                         .action(ArgAction::Append),
                                 ]),
+                            Command::new("up")
+                                .about("Activate ups [alias: u]")
+                                .arg_required_else_help(true)
+                                .aliases(["u"])
+                                .args([
+                                    Arg::new("all")
+                                        .help("Activate all ups")
+                                        .long("all")
+                                        .short('a')
+                                        .action(ArgAction::SetTrue)
+                                        .conflicts_with("up_id"),
+                                    Arg::new("up_id")
+                                        .help("The up to activate")
+                                        .value_parser(value_parser!(i64))
+                                        .action(ArgAction::Append),
+                                ]),
                         ]),
                     Command::new("deactivate")
                         .about("Deactivate authorized accounts [alias: d]")
@@ -111,9 +128,9 @@ impl FavCommand {
                         .arg_required_else_help(true)
                         .subcommands([
                             Command::new("account")
-                                .about("Deactivate accounts [alias: user, a , u]")
+                                .about("Deactivate accounts [alias: a]")
                                 .arg_required_else_help(true)
-                                .aliases(["user", "a", "u"])
+                                .aliases(["a"])
                                 .args([
                                     Arg::new("all")
                                         .help("Dectivate all authorized accounts")
@@ -139,6 +156,22 @@ impl FavCommand {
                                         .conflicts_with("set_id"),
                                     Arg::new("set_id")
                                         .help("The set to deactivate")
+                                        .value_parser(value_parser!(i64))
+                                        .action(ArgAction::Append),
+                                ]),
+                            Command::new("up")
+                                .about("Deactivate ups [alias: u]")
+                                .arg_required_else_help(true)
+                                .aliases(["u"])
+                                .args([
+                                    Arg::new("all")
+                                        .help("Deactivate all ups")
+                                        .long("all")
+                                        .short('a')
+                                        .action(ArgAction::SetTrue)
+                                        .conflicts_with("up_id"),
+                                    Arg::new("up_id")
+                                        .help("The up to deactivate")
                                         .value_parser(value_parser!(i64))
                                         .action(ArgAction::Append),
                                 ]),
@@ -228,6 +261,15 @@ impl FavCommand {
                                     world.trigger(ActivateSet { set_id });
                                 }),
                         },
+                        Some(("up", sub_matches)) => match sub_matches.get_flag("all") {
+                            true => world.trigger(ActivateUpAll),
+                            false => sub_matches
+                                .get_many::<i64>("up_id")
+                                .unwrap() // arg_required_else_help has been set to true
+                                .for_each(|&up_id| {
+                                    world.trigger(ActivateUp { up_id });
+                                }),
+                        },
                         _ => unreachable!(),
                     },
                     Some(("deactivate", sub_matches)) => match sub_matches.subcommand() {
@@ -247,6 +289,15 @@ impl FavCommand {
                                 .unwrap() // arg_required_else_help has been set to true
                                 .for_each(|&set_id| {
                                     world.trigger(DeactivateSet { set_id });
+                                }),
+                        },
+                        Some(("up", sub_matches)) => match sub_matches.get_flag("all") {
+                            true => world.trigger(DeactivateUpAll),
+                            false => sub_matches
+                                .get_many::<i64>("up_id")
+                                .unwrap() // arg_required_else_help has been set to true
+                                .for_each(|&up_id| {
+                                    world.trigger(DeactivateUp { up_id });
                                 }),
                         },
                         _ => unreachable!(),

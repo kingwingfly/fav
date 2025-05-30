@@ -17,16 +17,20 @@ pub struct MediaInfoData {
 
 #[derive(Debug, Deserialize)]
 pub struct Media {
+    #[serde(alias = "aid")]
     pub id: i64,
+    #[serde(alias = "bvid")]
     pub bv_id: String,
     pub title: String,
+    #[serde(default)]
     pub r#type: MediaType,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[repr(u8)]
 #[serde(from = "u8")]
 pub enum MediaType {
+    #[default]
     Video = 2,
     Audio = 12,
     Collection = 21,

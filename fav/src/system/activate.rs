@@ -6,7 +6,9 @@ use tracing::{error, info};
 
 use crate::{
     db::Db,
-    event::{ActivateAccount, ActivateAccountAll, ActivateSet, ActivateSetAll},
+    event::{
+        ActivateAccount, ActivateAccountAll, ActivateSet, ActivateSetAll, ActivateUp, ActivateUpAll,
+    },
     runtime::Runtime,
 };
 
@@ -56,6 +58,30 @@ pub fn activate(mut cmds: Commands) {
                 let sets = db.all_sets().await?;
                 sets.into_iter()
                     .for_each(|set| cmds.trigger(ActivateSet { set_id: set.set_id }));
+                Ok::<_, anyhow::Error>(())
+            }) {
+                error!("{}", e);
+            }
+        },
+    );
+    cmds.add_observer(
+        |trigger: Trigger<ActivateUp>, runtime: Res<Runtime>, db: Res<Db>| {
+            if let Err(e) = runtime.block_on(async {
+                let ActivateUp { up_id } = *trigger;
+                db.activate_up(up_id).await?;
+                info!("Activated set<{}>", up_id);
+                Ok::<_, anyhow::Error>(())
+            }) {
+                error!("{}", e);
+            }
+        },
+    );
+    cmds.add_observer(
+        |_: Trigger<ActivateUpAll>, mut cmds: Commands, runtime: Res<Runtime>, db: Res<Db>| {
+            if let Err(e) = runtime.block_on(async {
+                let ups = db.all_ups().await?;
+                ups.into_iter()
+                    .for_each(|up| cmds.trigger(ActivateUp { up_id: up.up_id }));
                 Ok::<_, anyhow::Error>(())
             }) {
                 error!("{}", e);

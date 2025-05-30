@@ -14,3 +14,9 @@ pub struct FollowingUpPayload {
 pub struct FollowingNumPayload {
     pub vmid: i64,
 }
+
+#[derive(Debug, Serialize, Payload)]
+#[api_req(path = "/x/space/navnum")]
+pub struct PublishNumPayload {
+    pub mid: i64,
+}

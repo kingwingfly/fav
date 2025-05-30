@@ -6,7 +6,10 @@ use tracing::{error, info};
 
 use crate::{
     db::Db,
-    event::{DeactivateAccount, DeactivateAccountAll, DeactivateSet, DeactivateSetAll},
+    event::{
+        DeactivateAccount, DeactivateAccountAll, DeactivateSet, DeactivateSetAll, DeactivateUp,
+        DeactivateUpAll,
+    },
     runtime::Runtime,
 };
 
@@ -59,6 +62,30 @@ pub fn deactivate(mut cmds: Commands) {
                 let sets = db.all_sets().await?;
                 sets.into_iter()
                     .for_each(|set| cmds.trigger(DeactivateSet { set_id: set.set_id }));
+                Ok::<_, anyhow::Error>(())
+            }) {
+                error!("{}", e);
+            }
+        },
+    );
+    cmds.add_observer(
+        |trigger: Trigger<DeactivateUp>, runtime: Res<Runtime>, db: Res<Db>| {
+            if let Err(e) = runtime.block_on(async {
+                let DeactivateUp { up_id } = *trigger;
+                db.deactivate_up(up_id).await?;
+                info!("Deactivated set<{}>", up_id);
+                Ok::<_, anyhow::Error>(())
+            }) {
+                error!("{}", e);
+            }
+        },
+    );
+    cmds.add_observer(
+        |_: Trigger<DeactivateUpAll>, mut cmds: Commands, runtime: Res<Runtime>, db: Res<Db>| {
+            if let Err(e) = runtime.block_on(async {
+                let ups = db.all_ups().await?;
+                ups.into_iter()
+                    .for_each(|up| cmds.trigger(DeactivateUp { up_id: up.up_id }));
                 Ok::<_, anyhow::Error>(())
             }) {
                 error!("{}", e);
