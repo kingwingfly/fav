@@ -213,6 +213,7 @@ pub fn pull(mut cmds: Commands) {
                     if video == 0 {
                         continue;
                     }
+                    info!("Fetching published videos of up<{}>", up.name);
                     let page = (video - 1) / 30 + 1;
                     let mut tasks = futures::stream::iter(1..=page)
                         .map(|pn| async move {
