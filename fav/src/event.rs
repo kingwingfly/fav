@@ -73,3 +73,6 @@ pub struct DeactivateUpAll;
 
 #[derive(Debug, Event)]
 pub struct Fetch;
+
+#[derive(Debug, Event)]
+pub struct Pull;

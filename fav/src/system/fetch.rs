@@ -32,7 +32,7 @@ use crate::{
     state::{MediaState, SetState, UpState},
 };
 
-pub fn pull(mut cmds: Commands) {
+pub fn fetch(mut cmds: Commands) {
     cmds.add_observer(|_: Trigger<Fetch>, runtime: Res<Runtime>, db: Res<Db>| {
         if let Err(e) = runtime.block_on(async {
             let accounts = db.all_active_accounts().await?;
@@ -134,7 +134,7 @@ pub fn pull(mut cmds: Commands) {
             }
             let fetched_sets = DashSet::<i64>::new();
             for account in accounts.iter() {
-                info!("Fetching set contents with account<{}>", account.name);
+                info!("Fetching set medias with account<{}>", account.name);
                 set_cookie_jar(parse_cookies(&account.cookies));
                 let account_id = account.account_id;
                 let set_ids_of_account = db.get_set_ids_of_account(account_id).await?;
@@ -146,6 +146,7 @@ pub fn pull(mut cmds: Commands) {
                     if set.state != SetState::Active.to_string() || set.count == 0 {
                         continue;
                     }
+                    info!("Fetching medias in set<{}>", set.name);
                     fetched_sets.insert(set_id);
                     let page = (set.count - 1) / 20 + 1;
                     let mut tasks = futures::stream::iter(1..=page)
@@ -224,7 +225,7 @@ pub fn pull(mut cmds: Commands) {
                                     },
                             } = BiliApi::request(InUpPayload::new(up_id, pn, 30).await?)
                                 .await
-                                .context(format!("Failed to fetch sets' page {}", pn))?;
+                                .context(format!("Failed to fetch up space page {}", pn))?;
                             Ok::<_, anyhow::Error>(vlist)
                         })
                         .buffer_unordered(8);
@@ -269,15 +270,22 @@ pub fn pull(mut cmds: Commands) {
                     let fetched_medias = fetched_medias.clone();
                     async move {
                         fetched_medias.insert(media.id);
-                        let MediaInfoResp {
-                            data: MediaInfoData { owner, staff, .. },
-                        } = BiliApi::request(MediaInfoPayload { aid: media.id })
-                            .await
-                            .context(format!(
-                                "Info unreachable media<{} {}>",
-                                media.title, media.id
-                            ))?;
-                        Ok::<_, anyhow::Error>((owner, staff, media))
+                        match BiliApi::request(MediaInfoPayload { aid: media.id }).await? {
+                            MediaInfoResp {
+                                data: Some(MediaInfoData { owner, staff, .. }),
+                                code: 0,
+                                ..
+                            } => Ok((owner, staff, media)),
+                            MediaInfoResp {
+                                message: option_msg,
+                                ..
+                            } => Err(anyhow::Error::msg(format!(
+                                "Info unreachable media<{} {}>: {}",
+                                media.title,
+                                media.id,
+                                option_msg.unwrap_or_default()
+                            ))),
+                        }
                     }
                 })
                 .buffer_unordered(128);

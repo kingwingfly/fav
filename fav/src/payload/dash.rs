@@ -11,36 +11,26 @@ use crate::{
 use super::WbiPayload;
 
 #[derive(Debug, Payload, Serialize)]
-#[api_req(path = "/x/v3/fav/folder/created/list-all")]
-pub struct ListSetPayload {
-    pub up_mid: i64,
-}
-
-#[derive(Debug, Payload, Serialize)]
-#[api_req(path = "/x/v3/fav/resource/list")]
-pub struct InSetPayload {
-    pub media_id: i64,
-    pub pn: i64,
-    pub ps: u8,
-}
-
-#[derive(Debug, Payload, Serialize)]
-#[api_req(path = "/x/space/wbi/arc/search")]
-pub struct InUpPayload {
-    pub mid: i64, // Do not change the field order
-    pub pn: i64,
-    pub ps: u8,
+#[api_req(path = "/x/player/wbi/playurl")]
+pub struct DashPayload {
+    pub avid: i64, // Do not change the field order
+    pub cid: i64,
+    pub fnval: u16,
+    pub fourk: u8,
+    pub qn: u16,
     pub wts: u64,
     #[serde(flatten)]
     pub wbi: Option<WbiEncoded>,
 }
 
-impl InUpPayload {
-    pub async fn new(mid: i64, pn: i64, ps: u8) -> Result<Self> {
+impl DashPayload {
+    pub async fn new(avid: i64, cid: i64) -> Result<Self> {
         let mut this = Self {
-            mid,
-            pn,
-            ps,
+            avid,
+            cid,
+            fnval: 16 | 64 | 128 | 1024,
+            fourk: 1,
+            qn: 127,
             wts: std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .unwrap()

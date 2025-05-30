@@ -2,7 +2,7 @@ use anyhow::{Context as _, Result};
 use fav::migration::OnConflict;
 use sea_orm::{
     ActiveValue::{Set, Unchanged},
-    EntityTrait as _, IntoActiveModel as _,
+    ColumnTrait, EntityTrait as _, IntoActiveModel as _, QueryFilter,
 };
 
 use super::Db;
@@ -59,6 +59,14 @@ impl Db {
 
     pub async fn all_medias(&self) -> Result<Vec<media::Model>> {
         media::Entity::find()
+            .all(&self.db)
+            .await
+            .map_err(Into::into)
+    }
+
+    pub async fn all_pending_medias(&self) -> Result<Vec<media::Model>> {
+        media::Entity::find()
+            .filter(media::Column::State.eq(MediaState::Pending.to_string()))
             .all(&self.db)
             .await
             .map_err(Into::into)

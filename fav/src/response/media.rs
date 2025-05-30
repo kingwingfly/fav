@@ -5,20 +5,30 @@ use super::Up;
 
 #[derive(Debug, Deserialize)]
 pub struct MediaInfoResp {
-    pub data: MediaInfoData,
+    pub code: i64,
+    pub data: Option<MediaInfoData>,
+    pub message: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct MediaInfoData {
     pub owner: Up,
+    pub pages: Vec<Page>,
     pub staff: Option<Vec<Up>>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Page {
+    pub cid: i64,
+    pub page: i64,
+    pub part: String,
 }
 
 #[derive(Debug, Deserialize)]
 pub struct Media {
     #[serde(alias = "aid")]
     pub id: i64,
-    #[serde(alias = "bvid")]
+    #[serde(rename = "bvid")]
     pub bv_id: String,
     pub title: String,
     #[serde(default)]

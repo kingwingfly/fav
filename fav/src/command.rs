@@ -13,7 +13,7 @@ use crate::{
         ActivateAccount, ActivateAccountAll, ActivateSet, ActivateSetAll, ActivateUp,
         ActivateUpAll, DeactivateAccount, DeactivateAccountAll, DeactivateSet, DeactivateSetAll,
         DeactivateUp, DeactivateUpAll, Fetch, ListAccount, ListMedia, ListSet, ListUp, Login,
-        Logout, LogoutAll,
+        Logout, LogoutAll, Pull,
     },
     runtime::Runtime,
     system,
@@ -178,8 +178,11 @@ impl FavCommand {
                                 ]),
                         ]),
                     Command::new("fetch")
-                        .about("Fetch [alias: f]")
+                        .about("Fetch metadata of following ups, fav sets, medias, ups [alias: f]")
                         .aliases(["f"]),
+                    Command::new("pull")
+                        .about("Pull fetched medias [alias: p]")
+                        .aliases(["p"]),
                     Command::new("completion")
                         .about("Generate completion script")
                         .arg_required_else_help(true)
@@ -232,6 +235,7 @@ impl FavCommand {
                     system::activate,
                     system::deactivate,
                     system::list,
+                    system::fetch,
                     system::pull,
                 ));
                 world.add_schedule(schedule);
@@ -321,6 +325,7 @@ impl FavCommand {
                         _ => unreachable!(),
                     },
                     Some(("fetch", _)) => world.trigger(Fetch),
+                    Some(("pull", _)) => world.trigger(Pull),
                     _ => unreachable!(),
                 }
 
