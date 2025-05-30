@@ -53,7 +53,9 @@ impl Db {
             id: Unchanged(id),
             state: Set(state.to_string()),
             ..Default::default()
-        });
+        })
+        .exec(&self.db)
+        .await?;
         Ok(())
     }
 

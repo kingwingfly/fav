@@ -3,7 +3,7 @@ use std::{
     sync::Arc,
 };
 
-use anyhow::Context as _;
+use anyhow::{Context as _, anyhow};
 use api_req::ApiCaller;
 use bevy_ecs::{
     observer::Trigger,
@@ -279,12 +279,12 @@ pub fn fetch(mut cmds: Commands) {
                             MediaInfoResp {
                                 message: option_msg,
                                 ..
-                            } => Err(anyhow::Error::msg(format!(
+                            } => Err(anyhow!(
                                 "Info unreachable media<{} {}>: {}",
                                 media.title,
                                 media.id,
                                 option_msg.unwrap_or_default()
-                            ))),
+                            )),
                         }
                     }
                 })

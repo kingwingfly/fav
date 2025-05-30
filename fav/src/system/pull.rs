@@ -1,6 +1,6 @@
 use std::io::Write;
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use api_req::{ApiCaller as _, StreamExt};
 use bevy_ecs::{
     observer::Trigger,
@@ -88,7 +88,6 @@ async fn download(avid: i64, db: Db, bars: MultiProgress) -> Result<()> {
             code: 0,
             ..
         } => {
-            db.set_media_state(avid, MediaState::Downloading).await?;
             'a: for Page { cid, page, part } in pages {
                 let DashResp {
                     data:
@@ -150,7 +149,7 @@ async fn download(avid: i64, db: Db, bars: MultiProgress) -> Result<()> {
                             .await
                             .unwrap();
                         if !status.success() {
-                            error!("Failed to merge video and audio part<{}>", part);
+                            return Err(anyhow!("Failed to merge video and audio part<{}>", part));
                         }
                     }
                     (Some(v), None) => {
@@ -220,6 +219,7 @@ async fn download(avid: i64, db: Db, bars: MultiProgress) -> Result<()> {
                     _ => {}
                 }
             }
+            db.set_media_state(avid, MediaState::Completed).await?;
             Ok(())
         }
         MediaInfoResp {
@@ -235,11 +235,11 @@ async fn download(avid: i64, db: Db, bars: MultiProgress) -> Result<()> {
                 },
             )
             .await?;
-            Err(anyhow::Error::msg(format!(
+            Err(anyhow!(
                 "Info unreachable media<{}>: {}",
                 avid,
                 option_msg.unwrap_or_default()
-            )))
+            ))
         }
     }
 }
