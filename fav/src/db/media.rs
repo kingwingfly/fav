@@ -1,9 +1,13 @@
 use anyhow::{Context as _, Result};
 use fav::migration::OnConflict;
-use sea_orm::{EntityTrait as _, IntoActiveModel as _};
+use sea_orm::{
+    ActiveModelBehavior,
+    ActiveValue::{Set, Unchanged},
+    EntityTrait as _, IntoActiveModel as _,
+};
 
 use super::Db;
-use crate::entity::media;
+use crate::{entity::media, state::MediaState};
 
 impl Db {
     pub async fn upsert_media(&self, media: media::Model) -> Result<()> {
@@ -42,6 +46,15 @@ impl Db {
 
     pub async fn delete_media(&self, id: i64) -> Result<()> {
         media::Entity::delete_by_id(id).exec(&self.db).await?;
+        Ok(())
+    }
+
+    pub async fn set_media_state(&self, id: i64, state: MediaState) -> Result<()> {
+        media::Entity::update(media::ActiveModel {
+            id: Unchanged(id),
+            state: Set(state.to_string()),
+            ..Default::default()
+        });
         Ok(())
     }
 

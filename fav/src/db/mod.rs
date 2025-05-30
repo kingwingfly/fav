@@ -4,6 +4,7 @@ mod media_set;
 mod media_up;
 mod set;
 mod set_account;
+mod up;
 
 use anyhow::{Context, Result};
 use bevy_ecs::resource::Resource;

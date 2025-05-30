@@ -11,7 +11,7 @@ use crate::{
     event::{
         ActivateAccount, ActivateAccountAll, ActivateSet, ActivateSetAll, DeactivateAccount,
         DeactivateAccountAll, DeactivateSet, DeactivateSetAll, Fetch, ListAccount, ListMedia,
-        ListSet, Login, Logout, LogoutAll,
+        ListSet, ListUp, Login, Logout, LogoutAll,
     },
     runtime::Runtime,
     system,
@@ -55,14 +55,14 @@ impl FavCommand {
                         .aliases(["ls", "l"])
                         .subcommands([
                             Command::new("account")
-                                .about("List accounts [alias: user, a, u]")
-                                .aliases(["user", "a", "u"]),
+                                .about("List accounts [alias: a]")
+                                .aliases(["a"]),
                             Command::new("set")
                                 .about("List sets [alias: list, collection, s, l, c]")
                                 .aliases(["list", "collection", "s", "l", "c"]),
                             Command::new("up")
-                                .about("List uppers [alias: upper]")
-                                .aliases(["upper"]),
+                                .about("List uppers [alias: upper, u]")
+                                .aliases(["upper", "u"]),
                             Command::new("media")
                                 .about("List medias [alias: video bv, m, v]")
                                 .aliases(["video", "bv", "m", "v"]),
@@ -205,7 +205,7 @@ impl FavCommand {
                     Some(("list", sub_matches)) => match sub_matches.subcommand() {
                         Some(("account", _)) => world.trigger(ListAccount),
                         Some(("set", _)) => world.trigger(ListSet),
-                        Some(("up", _)) => todo!(),
+                        Some(("up", _)) => world.trigger(ListUp),
                         Some(("media", _)) => world.trigger(ListMedia),
                         _ => unreachable!(),
                     },

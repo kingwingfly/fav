@@ -1,5 +1,9 @@
-use std::collections::HashSet;
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
+use anyhow::Context as _;
 use api_req::ApiCaller;
 use bevy_ecs::{
     observer::Trigger,
@@ -13,10 +17,10 @@ use crate::{
     api::BiliApi,
     cookies::{parse_cookies, set_cookie_jar},
     db::Db,
-    entity::{account, media, media_set, set, set_account},
+    entity::{account, media, media_set, media_up, set, set_account, up},
     event::{Fetch, ListMedia},
     payload::{InSetPayload, ListSetPayload, MediaInfoPayload},
-    response::{InSetData, InSetResp, ListSetData, ListSetResp, MediaInfoResp},
+    response::{InSetData, InSetResp, ListSetData, ListSetResp, MediaInfoData, MediaInfoResp},
     runtime::Runtime,
     state::{MediaState, SetState},
 };
@@ -85,7 +89,8 @@ pub fn pull(mut cmds: Commands) {
                                 pn,
                                 ps: 20,
                             })
-                            .await?;
+                            .await
+                            .context(format!("Failed to fetch sets' page {}", pn))?;
                             Ok::<_, anyhow::Error>(medias)
                         })
                         .buffer_unordered(8);
@@ -115,18 +120,62 @@ pub fn pull(mut cmds: Commands) {
                     fetched_sets.insert(set_id);
                 }
             }
-            let fetched_ups = DashSet::<i64>::new();
-            let fetched_medias = DashSet::<i64>::new();
+            let fetched_medias = Arc::new(DashSet::<i64>::new());
             for account in accounts.iter() {
                 info!("Fetching medias with account<{}>", account.name);
                 set_cookie_jar(parse_cookies(&account.cookies));
                 let account_id = account.account_id;
                 let medias = db.all_medias().await?;
-                for media in medias {
-                    let resp: MediaInfoResp =
-                        BiliApi::request(MediaInfoPayload { aid: media.id }).await?;
-                    dbg!(resp);
+                let mut tasks = futures::stream::iter(
+                    medias
+                        .into_iter()
+                        .filter(|media| !fetched_medias.contains(&media.id)),
+                )
+                .map(|media| {
+                    let db = db.clone();
+                    let fetched_medias = fetched_medias.clone();
+                    async move {
+                        fetched_medias.insert(media.id);
+                        let MediaInfoResp {
+                            data: MediaInfoData { owner, staff, .. },
+                        } = BiliApi::request(MediaInfoPayload { aid: media.id })
+                            .await
+                            .context(format!(
+                                "Info unreachable media<{} {}>",
+                                media.title, media.id
+                            ))?;
+                        Ok::<_, anyhow::Error>((owner, staff, media.id))
+                    }
+                })
+                .buffer_unordered(128);
+                let mut media_ups = vec![];
+                let mut ups = HashMap::new();
+                while let Some(res) = tasks.next().await {
+                    match res {
+                        Ok((owner, staff, media_id)) => {
+                            media_ups.push((media_id, owner.mid));
+                            ups.insert(owner.mid, owner);
+                            if let Some(staff) = staff {
+                                staff.into_iter().for_each(|staff| {
+                                    media_ups.push((media_id, staff.mid));
+                                    ups.insert(staff.mid, staff);
+                                });
+                            }
+                        }
+                        Err(e) => error!("{}", e),
+                    }
                 }
+                db.upsert_ups(ups.into_values().map(|up| up::Model {
+                    up_id: up.mid,
+                    name: up.name,
+                }))
+                .await?;
+                db.upsert_media_ups(
+                    media_ups
+                        .into_iter()
+                        .map(|(id, up_id)| media_up::Model { id, up_id }),
+                )
+                .await?;
             }
             Ok::<_, anyhow::Error>(())
         }) {
