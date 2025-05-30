@@ -39,7 +39,7 @@ impl_display_fromstr!(SetState {
     Unreachable,
 });
 
-impl_display_fromstr!(VideoState {
+impl_display_fromstr!(MediaState {
     Pending,
     Downloading,
     Completed,

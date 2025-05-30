@@ -13,6 +13,17 @@ impl Db {
         Ok(())
     }
 
+    pub async fn upsert_set_accounts(
+        &self,
+        set_accounts: impl IntoIterator<Item = set_account::Model>,
+    ) -> Result<()> {
+        set_account::Entity::insert_many(set_accounts.into_iter().map(|m| m.into_active_model()))
+            .on_conflict_do_nothing()
+            .exec(&self.db)
+            .await?;
+        Ok(())
+    }
+
     pub async fn get_set_ids_of_account(&self, account_id: i64) -> Result<Vec<i64>> {
         set_account::Entity::find()
             .filter(set_account::Column::AccountId.eq(account_id))

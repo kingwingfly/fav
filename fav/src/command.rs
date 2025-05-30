@@ -10,8 +10,8 @@ use crate::{
     db::Db,
     event::{
         ActivateAccount, ActivateAccountAll, ActivateSet, ActivateSetAll, DeactivateAccount,
-        DeactivateAccountAll, DeactivateSet, DeactivateSetAll, Fetch, ListAccount, ListSet, Login,
-        Logout, LogoutAll,
+        DeactivateAccountAll, DeactivateSet, DeactivateSetAll, Fetch, ListAccount, ListMedia,
+        ListSet, Login, Logout, LogoutAll,
     },
     runtime::Runtime,
     system,
@@ -50,7 +50,7 @@ impl FavCommand {
                                 ]),
                         ]),
                     Command::new("list")
-                        .about("List accounts/sets/videos [alias: ls, l]")
+                        .about("List accounts/sets/medias [alias: ls, l]")
                         .arg_required_else_help(true)
                         .aliases(["ls", "l"])
                         .subcommands([
@@ -63,9 +63,9 @@ impl FavCommand {
                             Command::new("up")
                                 .about("List uppers [alias: upper]")
                                 .aliases(["upper"]),
-                            Command::new("video")
-                                .about("List videos [alias: bv, v]")
-                                .aliases(["bv", "v"]),
+                            Command::new("media")
+                                .about("List medias [alias: video bv, m, v]")
+                                .aliases(["video", "bv", "m", "v"]),
                         ]),
                     Command::new("activate")
                         .about("Activate obj [alias: active, a]")
@@ -206,7 +206,7 @@ impl FavCommand {
                         Some(("account", _)) => world.trigger(ListAccount),
                         Some(("set", _)) => world.trigger(ListSet),
                         Some(("up", _)) => todo!(),
-                        Some(("video", _)) => todo!(),
+                        Some(("media", _)) => world.trigger(ListMedia),
                         _ => unreachable!(),
                     },
                     Some(("activate", sub_matches)) => match sub_matches.subcommand() {

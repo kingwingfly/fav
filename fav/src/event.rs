@@ -18,6 +18,9 @@ pub struct ListAccount;
 pub struct ListSet;
 
 #[derive(Debug, Event)]
+pub struct ListMedia;
+
+#[derive(Debug, Event)]
 pub struct ActivateAccount {
     pub account_id: i64,
 }

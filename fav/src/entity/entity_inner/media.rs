@@ -7,31 +7,35 @@ pub struct Entity;
 
 impl EntityName for Entity {
     fn table_name(&self) -> &str {
-        "video"
+        "media"
     }
 }
 
 #[derive(Clone, Debug, PartialEq, DeriveModel, DeriveActiveModel, Eq)]
 pub struct Model {
+    pub id: i64,
     pub bv_id: String,
     pub title: String,
+    pub r#type: String,
     pub state: String,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
 pub enum Column {
+    Id,
     BvId,
     Title,
+    Type,
     State,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
 pub enum PrimaryKey {
-    BvId,
+    Id,
 }
 
 impl PrimaryKeyTrait for PrimaryKey {
-    type ValueType = String;
+    type ValueType = i64;
     fn auto_increment() -> bool {
         false
     }
@@ -39,16 +43,18 @@ impl PrimaryKeyTrait for PrimaryKey {
 
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
-    VideoSet,
-    VideoUp,
+    MediaSet,
+    MediaUp,
 }
 
 impl ColumnTrait for Column {
     type EntityName = Entity;
     fn def(&self) -> ColumnDef {
         match self {
-            Self::BvId => ColumnType::String(StringLen::None).def(),
+            Self::Id => ColumnType::BigInteger.def(),
+            Self::BvId => ColumnType::String(StringLen::None).def().unique(),
             Self::Title => ColumnType::String(StringLen::None).def(),
+            Self::Type => ColumnType::custom("enum_text").def(),
             Self::State => ColumnType::custom("enum_text").def(),
         }
     }
@@ -57,39 +63,39 @@ impl ColumnTrait for Column {
 impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
-            Self::VideoSet => Entity::has_many(super::video_set::Entity).into(),
-            Self::VideoUp => Entity::has_many(super::video_up::Entity).into(),
+            Self::MediaSet => Entity::has_many(super::media_set::Entity).into(),
+            Self::MediaUp => Entity::has_many(super::media_up::Entity).into(),
         }
     }
 }
 
-impl Related<super::video_set::Entity> for Entity {
+impl Related<super::media_set::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::VideoSet.def()
+        Relation::MediaSet.def()
     }
 }
 
-impl Related<super::video_up::Entity> for Entity {
+impl Related<super::media_up::Entity> for Entity {
     fn to() -> RelationDef {
-        Relation::VideoUp.def()
+        Relation::MediaUp.def()
     }
 }
 
 impl Related<super::set::Entity> for Entity {
     fn to() -> RelationDef {
-        super::video_set::Relation::Set.def()
+        super::media_set::Relation::Set.def()
     }
     fn via() -> Option<RelationDef> {
-        Some(super::video_set::Relation::Video.def().rev())
+        Some(super::media_set::Relation::Media.def().rev())
     }
 }
 
 impl Related<super::up::Entity> for Entity {
     fn to() -> RelationDef {
-        super::video_up::Relation::Up.def()
+        super::media_up::Relation::Up.def()
     }
     fn via() -> Option<RelationDef> {
-        Some(super::video_up::Relation::Video.def().rev())
+        Some(super::media_up::Relation::Media.def().rev())
     }
 }
 

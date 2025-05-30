@@ -42,6 +42,7 @@ impl MigrationTrait for Migration {
                     .if_not_exists()
                     .col(big_unsigned_uniq(Set::SetId))
                     .col(string(Set::Name))
+                    .col(big_unsigned(Set::Count))
                     .col(
                         enumeration(Set::State, "state", ["Active", "Inactive", "Unreachable"])
                             .default("Inactive"),
@@ -53,13 +54,18 @@ impl MigrationTrait for Migration {
         manager
             .create_table(
                 Table::create()
-                    .table(Video::Table)
+                    .table(Media::Table)
                     .if_not_exists()
-                    .col(string_uniq(Video::BvId))
-                    .col(string(Video::Title))
+                    .col(big_unsigned_uniq(Media::Id))
+                    .col(string_uniq(Media::BvId))
+                    .col(string(Media::Title))
+                    .col(
+                        enumeration(Media::Type, "type", ["Video", "Audio", "Collection"])
+                            .default("Video"),
+                    )
                     .col(
                         enumeration(
-                            Video::State,
+                            Media::State,
                             "state",
                             [
                                 "Pending",
@@ -72,30 +78,30 @@ impl MigrationTrait for Migration {
                         )
                         .default("Pending"),
                     )
-                    .primary_key(Index::create().col(Video::BvId))
+                    .primary_key(Index::create().col(Media::Id))
                     .to_owned(),
             )
             .await?;
         manager
             .create_table(
                 Table::create()
-                    .table(VideoSet::Table)
+                    .table(MediaSet::Table)
                     .if_not_exists()
-                    .col(string(VideoSet::BvId))
-                    .col(big_unsigned(VideoSet::SetId))
-                    .primary_key(Index::create().col(VideoSet::BvId).col(VideoSet::SetId))
+                    .col(big_unsigned(MediaSet::Id))
+                    .col(big_unsigned(MediaSet::SetId))
+                    .primary_key(Index::create().col(MediaSet::Id).col(MediaSet::SetId))
                     .foreign_key(
                         ForeignKey::create()
-                            .name("bvset_bv_fk")
-                            .from(VideoSet::Table, VideoSet::BvId)
-                            .to(Video::Table, Video::BvId)
+                            .name("mediaset_media_fk")
+                            .from(MediaSet::Table, MediaSet::Id)
+                            .to(Media::Table, Media::Id)
                             .on_delete(ForeignKeyAction::Cascade)
                             .on_update(ForeignKeyAction::Cascade),
                     )
                     .foreign_key(
                         ForeignKey::create()
-                            .name("bvset_set_fk")
-                            .from(VideoSet::Table, VideoSet::SetId)
+                            .name("mediaset_set_fk")
+                            .from(MediaSet::Table, MediaSet::SetId)
                             .to(Set::Table, Set::SetId)
                             .on_delete(ForeignKeyAction::Cascade)
                             .on_update(ForeignKeyAction::Cascade),
@@ -106,23 +112,23 @@ impl MigrationTrait for Migration {
         manager
             .create_table(
                 Table::create()
-                    .table(VideoUp::Table)
+                    .table(MediaUp::Table)
                     .if_not_exists()
-                    .col(string(VideoUp::BvId))
-                    .col(big_unsigned(VideoUp::UpId))
-                    .primary_key(Index::create().col(VideoUp::BvId).col(VideoUp::UpId))
+                    .col(big_unsigned(MediaUp::Id))
+                    .col(big_unsigned(MediaUp::UpId))
+                    .primary_key(Index::create().col(MediaUp::Id).col(MediaUp::UpId))
                     .foreign_key(
                         ForeignKey::create()
-                            .name("bvup_bv_fk")
-                            .from(VideoUp::Table, VideoUp::BvId)
-                            .to(Video::Table, Video::BvId)
+                            .name("mediaup_media_fk")
+                            .from(MediaUp::Table, MediaUp::Id)
+                            .to(Media::Table, Media::Id)
                             .on_delete(ForeignKeyAction::Cascade)
                             .on_update(ForeignKeyAction::Cascade),
                     )
                     .foreign_key(
                         ForeignKey::create()
-                            .name("bvup_up_fk")
-                            .from(VideoUp::Table, VideoUp::UpId)
+                            .name("mediaup_up_fk")
+                            .from(MediaUp::Table, MediaUp::UpId)
                             .to(Up::Table, Up::UpId)
                             .on_delete(ForeignKeyAction::Cascade)
                             .on_update(ForeignKeyAction::Cascade),
@@ -166,11 +172,11 @@ impl MigrationTrait for Migration {
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
-            .drop_table(Table::drop().table(VideoUp::Table).to_owned())
+            .drop_table(Table::drop().table(MediaUp::Table).to_owned())
             .await
             .unwrap();
         manager
-            .drop_table(Table::drop().table(VideoSet::Table).to_owned())
+            .drop_table(Table::drop().table(MediaSet::Table).to_owned())
             .await
             .unwrap();
         manager
@@ -190,7 +196,7 @@ impl MigrationTrait for Migration {
             .await
             .unwrap();
         manager
-            .drop_table(Table::drop().table(Video::Table).to_owned())
+            .drop_table(Table::drop().table(Media::Table).to_owned())
             .await
             .unwrap();
         Ok(())
@@ -218,28 +224,31 @@ enum Set {
     Table,
     SetId,
     Name,
+    Count,
     State,
 }
 
 #[derive(DeriveIden)]
-enum Video {
+enum Media {
     Table,
+    Id,
     BvId,
     Title,
+    Type,
     State,
 }
 
 #[derive(DeriveIden)]
-enum VideoUp {
+enum MediaUp {
     Table,
-    BvId,
+    Id,
     UpId,
 }
 
 #[derive(DeriveIden)]
-enum VideoSet {
+enum MediaSet {
     Table,
-    BvId,
+    Id,
     SetId,
 }
 

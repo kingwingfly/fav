@@ -15,6 +15,7 @@ impl EntityName for Entity {
 pub struct Model {
     pub set_id: i64,
     pub name: String,
+    pub count: i64,
     pub state: String,
 }
 
@@ -22,6 +23,7 @@ pub struct Model {
 pub enum Column {
     SetId,
     Name,
+    Count,
     State,
 }
 
@@ -39,8 +41,8 @@ impl PrimaryKeyTrait for PrimaryKey {
 
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
+    MediaSet,
     SetAccount,
-    VideoSet,
 }
 
 impl ColumnTrait for Column {
@@ -49,6 +51,7 @@ impl ColumnTrait for Column {
         match self {
             Self::SetId => ColumnType::BigInteger.def(),
             Self::Name => ColumnType::String(StringLen::None).def(),
+            Self::Count => ColumnType::BigInteger.def(),
             Self::State => ColumnType::custom("enum_text").def(),
         }
     }
@@ -57,21 +60,21 @@ impl ColumnTrait for Column {
 impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
+            Self::MediaSet => Entity::has_many(super::media_set::Entity).into(),
             Self::SetAccount => Entity::has_many(super::set_account::Entity).into(),
-            Self::VideoSet => Entity::has_many(super::video_set::Entity).into(),
         }
+    }
+}
+
+impl Related<super::media_set::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::MediaSet.def()
     }
 }
 
 impl Related<super::set_account::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::SetAccount.def()
-    }
-}
-
-impl Related<super::video_set::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::VideoSet.def()
     }
 }
 
@@ -84,12 +87,12 @@ impl Related<super::account::Entity> for Entity {
     }
 }
 
-impl Related<super::video::Entity> for Entity {
+impl Related<super::media::Entity> for Entity {
     fn to() -> RelationDef {
-        super::video_set::Relation::Video.def()
+        super::media_set::Relation::Media.def()
     }
     fn via() -> Option<RelationDef> {
-        Some(super::video_set::Relation::Set.def().rev())
+        Some(super::media_set::Relation::Set.def().rev())
     }
 }
 

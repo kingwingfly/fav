@@ -206,9 +206,8 @@ See the [open issues](https://github.com/kingwingfly/fav/issues) for a full list
 
 ```sh
 cargo binstall sea-orm-cli # or `cargo install sea-orm-cli`
-sea-orm-cli migrate refresh -v
-rm -rf fav/src/entity/entity_inner/
-sea-orm-cli generate entity --expanded-format -o fav/src/entity/entity_inner/
+# generate ORM code
+./sea-orm.sh
 ```
 
 <!-- CONTRIBUTING -->

@@ -1,5 +1,7 @@
 use serde::Deserialize;
 
+use super::Media;
+
 #[derive(Debug, Deserialize)]
 pub struct ListSetResp {
     pub data: ListSetData,
@@ -13,5 +15,16 @@ pub struct ListSetData {
 #[derive(Debug, Deserialize)]
 pub struct Set {
     pub id: i64,
+    pub media_count: i64,
     pub title: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct InSetResp {
+    pub data: InSetData,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct InSetData {
+    pub medias: Vec<Media>,
 }

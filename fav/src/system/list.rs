@@ -7,7 +7,7 @@ use tracing::error;
 use crate::{
     db::Db,
     entity::ToTableRecord,
-    event::{ListAccount, ListSet},
+    event::{ListAccount, ListMedia, ListSet},
     runtime::Runtime,
     table::table,
 };
@@ -32,7 +32,7 @@ pub fn list(mut cmds: Commands) {
         if let Err(e) = runtime.block_on(async {
             let sets = db.all_sets().await?;
             let table = table(
-                ["set_id", "name", "state"],
+                ["set_id", "name", "count", "state"],
                 sets.into_iter().map(ToTableRecord::to_record),
             );
             println!("{}\nrows: {}", table, table.count_rows() - 1);
@@ -41,4 +41,20 @@ pub fn list(mut cmds: Commands) {
             error!("{}", e);
         };
     });
+
+    cmds.add_observer(
+        |_: Trigger<ListMedia>, runtime: Res<Runtime>, db: Res<Db>| {
+            if let Err(e) = runtime.block_on(async {
+                let medias = db.all_medias().await?;
+                let table = table(
+                    ["id", "bvid", "title", "type", "state"],
+                    medias.into_iter().map(ToTableRecord::to_record),
+                );
+                println!("{}\nrows: {}", table, table.count_rows() - 1);
+                Ok::<_, anyhow::Error>(())
+            }) {
+                error!("{}", e);
+            };
+        },
+    );
 }

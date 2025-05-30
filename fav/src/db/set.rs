@@ -16,7 +16,19 @@ impl Db {
         set::Entity::insert(set.into_active_model())
             .on_conflict(
                 OnConflict::column(set::Column::SetId)
-                    .update_columns([set::Column::Name])
+                    .update_columns([set::Column::Name, set::Column::Count])
+                    .to_owned(),
+            )
+            .exec(&self.db)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn upsert_sets(&self, sets: impl IntoIterator<Item = set::Model>) -> Result<()> {
+        set::Entity::insert_many(sets.into_iter().map(|s| s.into_active_model()))
+            .on_conflict(
+                OnConflict::column(set::Column::SetId)
+                    .update_columns([set::Column::Name, set::Column::Count])
                     .to_owned(),
             )
             .exec(&self.db)

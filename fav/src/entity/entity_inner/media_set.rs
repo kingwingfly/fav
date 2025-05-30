@@ -7,30 +7,30 @@ pub struct Entity;
 
 impl EntityName for Entity {
     fn table_name(&self) -> &str {
-        "video_set"
+        "media_set"
     }
 }
 
 #[derive(Clone, Debug, PartialEq, DeriveModel, DeriveActiveModel, Eq)]
 pub struct Model {
-    pub bv_id: String,
+    pub id: i64,
     pub set_id: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
 pub enum Column {
-    BvId,
+    Id,
     SetId,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
 pub enum PrimaryKey {
-    BvId,
+    Id,
     SetId,
 }
 
 impl PrimaryKeyTrait for PrimaryKey {
-    type ValueType = (String, i64);
+    type ValueType = (i64, i64);
     fn auto_increment() -> bool {
         false
     }
@@ -38,15 +38,15 @@ impl PrimaryKeyTrait for PrimaryKey {
 
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
+    Media,
     Set,
-    Video,
 }
 
 impl ColumnTrait for Column {
     type EntityName = Entity;
     fn def(&self) -> ColumnDef {
         match self {
-            Self::BvId => ColumnType::String(StringLen::None).def(),
+            Self::Id => ColumnType::BigInteger.def(),
             Self::SetId => ColumnType::BigInteger.def(),
         }
     }
@@ -55,27 +55,27 @@ impl ColumnTrait for Column {
 impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
+            Self::Media => Entity::belongs_to(super::media::Entity)
+                .from(Column::Id)
+                .to(super::media::Column::Id)
+                .into(),
             Self::Set => Entity::belongs_to(super::set::Entity)
                 .from(Column::SetId)
                 .to(super::set::Column::SetId)
                 .into(),
-            Self::Video => Entity::belongs_to(super::video::Entity)
-                .from(Column::BvId)
-                .to(super::video::Column::BvId)
-                .into(),
         }
+    }
+}
+
+impl Related<super::media::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::Media.def()
     }
 }
 
 impl Related<super::set::Entity> for Entity {
     fn to() -> RelationDef {
         Relation::Set.def()
-    }
-}
-
-impl Related<super::video::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::Video.def()
     }
 }
 

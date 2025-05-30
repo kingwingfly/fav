@@ -1,4 +1,7 @@
 mod account;
+mod media;
+mod media_set;
+mod media_up;
 mod set;
 mod set_account;
 
