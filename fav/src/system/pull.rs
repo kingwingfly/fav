@@ -1,12 +1,13 @@
 use std::io::Write;
 
 use anyhow::{Result, anyhow};
-use api_req::{ApiCaller as _, StreamExt};
+use api_req::ApiCaller as _;
 use bevy_ecs::{
     observer::Trigger,
     system::{Commands, Res},
 };
 use dashmap::DashSet;
+use futures::StreamExt as _;
 use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use reqwest::header::{CONTENT_LENGTH, HeaderValue};
 use tempfile::NamedTempFile;

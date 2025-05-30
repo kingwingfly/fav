@@ -221,7 +221,7 @@ impl FavCommand {
                     }
                     false => {
                         let filter = EnvFilter::from_default_env()
-                            .add_directive("fav=debug".parse().unwrap());
+                            .add_directive("fav=info".parse().unwrap());
                         tracing_subscriber::fmt()
                             .with_target(false)
                             .with_env_filter(filter)

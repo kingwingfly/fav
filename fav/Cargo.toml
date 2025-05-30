@@ -1,6 +1,6 @@
 [package]
 name = "fav"
-version = "1.0.0"
+version = "1.0.0-alpha.1"
 authors.workspace = true
 license.workspace = true
 edition.workspace = true
@@ -26,7 +26,7 @@ const_format = { version = "0.2", features = ["fmt"] }
 dashmap = { version = "6.1" }
 clap = { version = "4.5", features = ["cargo"] }
 clap_complete = { version = "4.5.51" }
-api_req = { version = "0.4.0-alpha", features = ["stream"] }
+api_req = { version = "0.4", features = ["cookies"] }
 reqwest = { version = "0.12" }
 url = { version = "2.5", features = ["serde"] }
 cookie = { version = "0.18.1" }
