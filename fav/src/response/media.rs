@@ -12,7 +12,6 @@ pub struct MediaInfoResp {
 pub struct MediaInfoData {
     pub owner: Up,
     pub staff: Option<Vec<Up>>,
-    pub state: i8,
 }
 
 #[derive(Debug, Deserialize)]

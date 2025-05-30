@@ -17,8 +17,8 @@ use crate::{
     api::BiliApi,
     cookies::{parse_cookies, set_cookie_jar},
     db::Db,
-    entity::{account, media, media_set, media_up, set, set_account, up, up_account},
-    event::{Fetch, ListMedia},
+    entity::{media, media_set, media_up, set, set_account, up, up_account},
+    event::Fetch,
     payload::{
         FollowingNumPayload, FollowingUpPayload, InSetPayload, InUpPayload, ListSetPayload,
         MediaInfoPayload, PublishNumPayload,

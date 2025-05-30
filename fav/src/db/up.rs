@@ -1,10 +1,10 @@
 use anyhow::{Context as _, Result};
 use fav::migration::OnConflict;
+use sea_orm::ColumnTrait as _;
 use sea_orm::{
     ActiveValue::{Set, Unchanged},
-    EntityTrait as _, IntoActiveModel as _, IntoActiveModel as _, QueryFilter as _,
+    EntityTrait as _, IntoActiveModel as _, QueryFilter as _,
 };
-use sea_orm::{ColumnTrait as _, EntityTrait as _};
 
 use super::Db;
 use crate::entity::up;

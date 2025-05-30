@@ -1,7 +1,6 @@
 use anyhow::{Context as _, Result};
 use fav::migration::OnConflict;
 use sea_orm::{
-    ActiveModelBehavior,
     ActiveValue::{Set, Unchanged},
     EntityTrait as _, IntoActiveModel as _,
 };
