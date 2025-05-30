@@ -6,10 +6,7 @@ use sea_orm::{
 };
 
 use super::Db;
-use crate::{
-    entity::set,
-    state::{AccountState, SetState},
-};
+use crate::{entity::set, state::SetState};
 
 impl Db {
     pub async fn upsert_set(&self, set: set::Model) -> Result<()> {
@@ -63,7 +60,7 @@ impl Db {
     pub async fn activate_set(&self, set_id: i64) -> Result<()> {
         set::Entity::update(set::ActiveModel {
             set_id: Unchanged(set_id),
-            state: Set(AccountState::Active.to_string()),
+            state: Set(SetState::Active.to_string()),
             ..Default::default()
         })
         .exec(&self.db)
@@ -74,7 +71,7 @@ impl Db {
     pub async fn deactivate_set(&self, set_id: i64) -> Result<()> {
         set::Entity::update(set::ActiveModel {
             set_id: Unchanged(set_id),
-            state: Set(AccountState::Inactive.to_string()),
+            state: Set(SetState::Inactive.to_string()),
             ..Default::default()
         })
         .exec(&self.db)

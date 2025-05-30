@@ -17,12 +17,17 @@ use crate::{
     api::BiliApi,
     cookies::{parse_cookies, set_cookie_jar},
     db::Db,
-    entity::{account, media, media_set, media_up, set, set_account, up},
+    entity::{account, media, media_set, media_up, set, set_account, up, up_account},
     event::{Fetch, ListMedia},
-    payload::{InSetPayload, ListSetPayload, MediaInfoPayload},
-    response::{InSetData, InSetResp, ListSetData, ListSetResp, MediaInfoData, MediaInfoResp},
+    payload::{
+        FollowingNumPayload, FollowingUpPayload, InSetPayload, ListSetPayload, MediaInfoPayload,
+    },
+    response::{
+        FollowingNumData, FollowingNumResp, FollowingUpData, FollowingUpResp, InSetData, InSetResp,
+        ListSetData, ListSetResp, MediaInfoData, MediaInfoResp,
+    },
     runtime::Runtime,
-    state::{MediaState, SetState},
+    state::{MediaState, SetState, UpState},
 };
 
 pub fn pull(mut cmds: Commands) {
@@ -34,11 +39,11 @@ pub fn pull(mut cmds: Commands) {
                 set_cookie_jar(parse_cookies(&account.cookies));
                 let account_id = account.account_id;
                 let ListSetResp {
-                    data: ListSetData { list },
+                    data: ListSetData { list: ups },
                 } = BiliApi::request(ListSetPayload { up_mid: account_id }).await?;
                 let mut old_set_ids: HashSet<i64> =
                     HashSet::from_iter(db.get_set_ids_of_account(account_id).await?);
-                db.upsert_sets(list.iter().map(|set| {
+                db.upsert_sets(ups.iter().map(|set| {
                     info!("Updating set<{}>", set.title);
                     set::Model {
                         set_id: set.id,
@@ -48,7 +53,7 @@ pub fn pull(mut cmds: Commands) {
                     }
                 }))
                 .await?;
-                db.upsert_set_accounts(list.iter().map(|set| {
+                db.upsert_set_accounts(ups.iter().map(|set| {
                     info!("Linking account<{}> and set<{}>", account.name, set.title,);
                     set_account::Model {
                         set_id: set.id,
@@ -56,13 +61,70 @@ pub fn pull(mut cmds: Commands) {
                     }
                 }))
                 .await?;
-                for set in list {
+                for set in ups {
                     old_set_ids.remove(&set.id);
                 }
                 for set_id in old_set_ids {
                     db.delete_set_account(set_account::Model { set_id, account_id })
                         .await?;
                     warn!("Unlinked account<{}> and set<{}>", account.name, set_id,);
+                }
+                info!("Fetching following users with account<{}>", account.name);
+                let FollowingNumResp {
+                    data: FollowingNumData { following },
+                } = BiliApi::request(FollowingNumPayload { vmid: account_id })
+                    .await
+                    .context("Failed to fetch following number")?;
+                let page = (following - 1) / 50 + 1;
+                let mut tasks = futures::stream::iter(1..=page)
+                    .map(|pn| async move {
+                        let FollowingUpResp {
+                            data: FollowingUpData { list },
+                        } = BiliApi::request(FollowingUpPayload {
+                            vmid: account_id,
+                            pn,
+                            ps: 50,
+                        })
+                        .await
+                        .context(format!("Failed to fetch sets' page {}", pn))?;
+                        Ok::<_, anyhow::Error>(list)
+                    })
+                    .buffer_unordered(8);
+                let mut ups = vec![];
+                while let Some(res) = tasks.next().await {
+                    match res {
+                        Ok(list) => ups.extend(list),
+                        Err(e) => error!("{}", e),
+                    }
+                }
+                let mut old_following_ids: HashSet<i64> =
+                    HashSet::from_iter(db.get_up_ids_of_account(account_id).await?);
+                if !ups.is_empty() {
+                    db.upsert_ups(ups.iter().map(|up| {
+                        info!("Updating following up<{}>", up.name);
+                        up::Model {
+                            up_id: up.mid,
+                            name: up.name.to_owned(),
+                            state: UpState::Inactive.to_string(),
+                        }
+                    }))
+                    .await?;
+                    db.upsert_up_accounts(ups.iter().map(|up| {
+                        info!("Linking account<{}> and up<{}>", account.name, up.name);
+                        up_account::Model {
+                            up_id: up.mid,
+                            account_id,
+                        }
+                    }))
+                    .await?;
+                    for up in ups {
+                        old_following_ids.remove(&up.mid);
+                    }
+                }
+                for up_id in old_following_ids {
+                    db.delete_up_account(up_account::Model { up_id, account_id })
+                        .await?;
+                    warn!("Unlinked account<{}> and up<{}>", account.name, up_id,);
                 }
             }
             let fetched_sets = DashSet::<i64>::new();
@@ -79,6 +141,7 @@ pub fn pull(mut cmds: Commands) {
                     if set.state != SetState::Active.to_string() || set.count == 0 {
                         continue;
                     }
+                    fetched_sets.insert(set_id);
                     let page = (set.count - 1) / 20 + 1;
                     let mut tasks = futures::stream::iter(1..=page)
                         .map(|pn| async move {
@@ -119,7 +182,6 @@ pub fn pull(mut cmds: Commands) {
                         }))
                         .await?;
                     }
-                    fetched_sets.insert(set_id);
                 }
             }
             let fetched_medias = Arc::new(DashSet::<i64>::new());
@@ -144,7 +206,7 @@ pub fn pull(mut cmds: Commands) {
                                 "Info unreachable media<{} {}>",
                                 media.title, media.id
                             ))?;
-                        Ok::<_, anyhow::Error>((owner, staff, media.id))
+                        Ok::<_, anyhow::Error>((owner, staff, media))
                     }
                 })
                 .buffer_unordered(128);
@@ -152,13 +214,13 @@ pub fn pull(mut cmds: Commands) {
                 let mut ups = HashMap::new();
                 while let Some(res) = tasks.next().await {
                     match res {
-                        Ok((owner, staff, media_id)) => {
-                            media_ups.push((media_id, owner.mid));
-                            ups.insert(owner.mid, owner);
+                        Ok((owner, staff, media)) => {
+                            ups.insert(owner.mid, owner.clone());
+                            media_ups.push((media.clone(), owner));
                             if let Some(staff) = staff {
                                 staff.into_iter().for_each(|staff| {
-                                    media_ups.push((media_id, staff.mid));
-                                    ups.insert(staff.mid, staff);
+                                    ups.insert(staff.mid, staff.clone());
+                                    media_ups.push((media.clone(), staff));
                                 });
                             }
                         }
@@ -166,18 +228,24 @@ pub fn pull(mut cmds: Commands) {
                     }
                 }
                 if !ups.is_empty() {
-                    db.upsert_ups(ups.into_values().map(|up| up::Model {
-                        up_id: up.mid,
-                        name: up.name,
+                    db.upsert_ups(ups.into_values().map(|up| {
+                        info!("Upserting up<{}>", up.name);
+                        up::Model {
+                            up_id: up.mid,
+                            name: up.name,
+                            state: UpState::Inactive.to_string(),
+                        }
                     }))
                     .await?;
                 }
                 if !media_ups.is_empty() {
-                    db.upsert_media_ups(
-                        media_ups
-                            .into_iter()
-                            .map(|(id, up_id)| media_up::Model { id, up_id }),
-                    )
+                    db.upsert_media_ups(media_ups.into_iter().map(|(media, up)| {
+                        info!("Linking media<{}> and up<{}>", media.title, up.name);
+                        media_up::Model {
+                            id: media.id,
+                            up_id: up.mid,
+                        }
+                    }))
                     .await?;
                 }
             }

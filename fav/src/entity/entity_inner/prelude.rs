@@ -7,3 +7,4 @@ pub use super::media_up::Entity as MediaUp;
 pub use super::set::Entity as Set;
 pub use super::set_account::Entity as SetAccount;
 pub use super::up::Entity as Up;
+pub use super::up_account::Entity as UpAccount;

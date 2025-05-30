@@ -7,31 +7,30 @@ pub struct Entity;
 
 impl EntityName for Entity {
     fn table_name(&self) -> &str {
-        "up"
+        "up_account"
     }
 }
 
 #[derive(Clone, Debug, PartialEq, DeriveModel, DeriveActiveModel, Eq)]
 pub struct Model {
     pub up_id: i64,
-    pub name: String,
-    pub state: String,
+    pub account_id: i64,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
 pub enum Column {
     UpId,
-    Name,
-    State,
+    AccountId,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
 pub enum PrimaryKey {
     UpId,
+    AccountId,
 }
 
 impl PrimaryKeyTrait for PrimaryKey {
-    type ValueType = i64;
+    type ValueType = (i64, i64);
     fn auto_increment() -> bool {
         false
     }
@@ -39,8 +38,8 @@ impl PrimaryKeyTrait for PrimaryKey {
 
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
-    MediaUp,
-    UpAccount,
+    Account,
+    Up,
 }
 
 impl ColumnTrait for Column {
@@ -48,8 +47,7 @@ impl ColumnTrait for Column {
     fn def(&self) -> ColumnDef {
         match self {
             Self::UpId => ColumnType::BigInteger.def(),
-            Self::Name => ColumnType::String(StringLen::None).def(),
-            Self::State => ColumnType::custom("enum_text").def(),
+            Self::AccountId => ColumnType::BigInteger.def(),
         }
     }
 }
@@ -57,39 +55,27 @@ impl ColumnTrait for Column {
 impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
-            Self::MediaUp => Entity::has_many(super::media_up::Entity).into(),
-            Self::UpAccount => Entity::has_many(super::up_account::Entity).into(),
+            Self::Account => Entity::belongs_to(super::account::Entity)
+                .from(Column::AccountId)
+                .to(super::account::Column::AccountId)
+                .into(),
+            Self::Up => Entity::belongs_to(super::up::Entity)
+                .from(Column::UpId)
+                .to(super::up::Column::UpId)
+                .into(),
         }
-    }
-}
-
-impl Related<super::media_up::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::MediaUp.def()
-    }
-}
-
-impl Related<super::up_account::Entity> for Entity {
-    fn to() -> RelationDef {
-        Relation::UpAccount.def()
     }
 }
 
 impl Related<super::account::Entity> for Entity {
     fn to() -> RelationDef {
-        super::up_account::Relation::Account.def()
-    }
-    fn via() -> Option<RelationDef> {
-        Some(super::up_account::Relation::Up.def().rev())
+        Relation::Account.def()
     }
 }
 
-impl Related<super::media::Entity> for Entity {
+impl Related<super::up::Entity> for Entity {
     fn to() -> RelationDef {
-        super::media_up::Relation::Media.def()
-    }
-    fn via() -> Option<RelationDef> {
-        Some(super::media_up::Relation::Up.def().rev())
+        Relation::Up.def()
     }
 }
 

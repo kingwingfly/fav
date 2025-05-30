@@ -31,6 +31,10 @@ impl MigrationTrait for Migration {
                     .if_not_exists()
                     .col(big_unsigned_uniq(Up::UpId))
                     .col(string(Up::Name))
+                    .col(
+                        enumeration(Up::State, "state", ["Active", "Inactive", "Deactivated"])
+                            .default("Inactive"),
+                    )
                     .primary_key(Index::create().col(Up::UpId))
                     .to_owned(),
             )
@@ -167,6 +171,37 @@ impl MigrationTrait for Migration {
                     .to_owned(),
             )
             .await?;
+        manager
+            .create_table(
+                Table::create()
+                    .table(UpAccount::Table)
+                    .if_not_exists()
+                    .col(big_unsigned(UpAccount::UpId))
+                    .col(big_unsigned(UpAccount::AccountId))
+                    .primary_key(
+                        Index::create()
+                            .col(UpAccount::UpId)
+                            .col(UpAccount::AccountId),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("upaccount_up_fk")
+                            .from(UpAccount::Table, UpAccount::UpId)
+                            .to(Up::Table, Up::UpId)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .foreign_key(
+                        ForeignKey::create()
+                            .name("upaccount_account_fk")
+                            .from(UpAccount::Table, UpAccount::AccountId)
+                            .to(Account::Table, Account::AccountId)
+                            .on_delete(ForeignKeyAction::Cascade)
+                            .on_update(ForeignKeyAction::Cascade),
+                    )
+                    .to_owned(),
+            )
+            .await?;
         Ok(())
     }
 
@@ -181,6 +216,10 @@ impl MigrationTrait for Migration {
             .unwrap();
         manager
             .drop_table(Table::drop().table(SetAccount::Table).to_owned())
+            .await
+            .unwrap();
+        manager
+            .drop_table(Table::drop().table(UpAccount::Table).to_owned())
             .await
             .unwrap();
         manager
@@ -217,6 +256,7 @@ enum Up {
     Table,
     UpId,
     Name,
+    State,
 }
 
 #[derive(DeriveIden)]
@@ -256,5 +296,12 @@ enum MediaSet {
 enum SetAccount {
     Table,
     SetId,
+    AccountId,
+}
+
+#[derive(DeriveIden)]
+enum UpAccount {
+    Table,
+    UpId,
     AccountId,
 }

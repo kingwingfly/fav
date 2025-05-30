@@ -47,3 +47,9 @@ impl_display_fromstr!(MediaState {
     Expired,
     PermissionDenied,
 });
+
+impl_display_fromstr!(UpState {
+    Active,
+    Inactive,
+    Deactivated,
+});

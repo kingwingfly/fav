@@ -42,6 +42,7 @@ impl PrimaryKeyTrait for PrimaryKey {
 #[derive(Copy, Clone, Debug, EnumIter)]
 pub enum Relation {
     SetAccount,
+    UpAccount,
 }
 
 impl ColumnTrait for Column {
@@ -60,6 +61,7 @@ impl RelationTrait for Relation {
     fn def(&self) -> RelationDef {
         match self {
             Self::SetAccount => Entity::has_many(super::set_account::Entity).into(),
+            Self::UpAccount => Entity::has_many(super::up_account::Entity).into(),
         }
     }
 }
@@ -70,12 +72,27 @@ impl Related<super::set_account::Entity> for Entity {
     }
 }
 
+impl Related<super::up_account::Entity> for Entity {
+    fn to() -> RelationDef {
+        Relation::UpAccount.def()
+    }
+}
+
 impl Related<super::set::Entity> for Entity {
     fn to() -> RelationDef {
         super::set_account::Relation::Set.def()
     }
     fn via() -> Option<RelationDef> {
         Some(super::set_account::Relation::Account.def().rev())
+    }
+}
+
+impl Related<super::up::Entity> for Entity {
+    fn to() -> RelationDef {
+        super::up_account::Relation::Up.def()
+    }
+    fn via() -> Option<RelationDef> {
+        Some(super::up_account::Relation::Account.def().rev())
     }
 }
 

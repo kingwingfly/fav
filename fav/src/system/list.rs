@@ -60,7 +60,7 @@ pub fn list(mut cmds: Commands) {
         if let Err(e) = runtime.block_on(async {
             let ups = db.all_ups().await?;
             let table = table(
-                ["id", "name"],
+                ["id", "name", "state"],
                 ups.into_iter().map(ToTableRecord::to_record),
             );
             println!("{}\nrows: {}", table, table.count_rows() - 1);

@@ -38,8 +38,8 @@ impl ToTableRecord<5> for media::Model {
     }
 }
 
-impl ToTableRecord<2> for up::Model {
-    fn to_record(self) -> [String; 2] {
-        [self.up_id.to_string(), head(self.name, 20)]
+impl ToTableRecord<3> for up::Model {
+    fn to_record(self) -> [String; 3] {
+        [self.up_id.to_string(), head(self.name, 20), self.state]
     }
 }
