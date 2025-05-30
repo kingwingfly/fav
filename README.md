@@ -49,7 +49,6 @@
       </ul>
     </li>
     <li><a href="#usage">Usage</a></li>
-    <li><a href="#roadmap">Roadmap</a></li>
     <li><a href="#contributing">Contributing</a></li>
     <li><a href="#license">License</a></li>
     <li><a href="#contact">Contact</a></li>
@@ -123,10 +122,10 @@ Options:
 
 ### Steps
 
-1. Init and Login first
+1. Login first
 2. Fetch the favorite sets(lists)
-3. Track the list_id you want. You can see them through `fav status -s`
-4. Fetch tracked resources
+3. Activate the list or up you want. You can see them through `fav ls`
+4. Fetch active resources
 5. Pull the resources
 
 ### Example
@@ -144,11 +143,10 @@ fav ls set
 # activate set
 fav activate <list_id>
 # fetch and pull videos
+fav fetch
 fav pull
 # deactivate list or video
 fav deactivate <list_id/bvid>
-# cron, run `fav pull` every 30 minutes
-fav cron 30
 # after fetching, you can find your favorite upper
 # limbo/sqlite3 .fav/fav.db
 SELECT u.up_id, u.name, COUNT(u.up_id) count FROM up u LEFT JOIN media_up mu ON u.up_id=mu.up_id JOIN media m ON mu.id=m.id GROUP BY u.up_id, u.name ORDER BY count;
@@ -175,23 +173,6 @@ WantedBy=multi-user.target
 You can also achieve the goal with `systemd timer` by yourself, but it's a little hard to learn.
 
 _For more examples, please refer to the [Documentation](https://github.com/kingwingfly/fav)_
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-<!-- ROADMAP -->
-
-## Roadmap
-
-- [x] Init
-- [x] Auth
-- [x] Fetch
-- [x] Status
-- [x] Track
-- [x] Untrack
-- [x] Pull
-- [ ] Dynamic completion
-
-See the [open issues](https://github.com/kingwingfly/fav/issues) for a full list of proposed features (and known issues).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
