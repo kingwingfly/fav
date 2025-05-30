@@ -52,7 +52,7 @@ impl FavCommand {
                                 ]),
                         ]),
                     Command::new("list")
-                        .about("List accounts/sets/medias [alias: ls, l]")
+                        .about("List accounts/sets/ups/medias [alias: ls, l]")
                         .arg_required_else_help(true)
                         .aliases(["ls", "l"])
                         .subcommands([
@@ -63,7 +63,7 @@ impl FavCommand {
                                 .about("List sets [alias: list, collection, s, l, c]")
                                 .aliases(["list", "collection", "s", "l", "c"]),
                             Command::new("up")
-                                .about("List uppers [alias: upper, u]")
+                                .about("List ups [alias: upper, u]")
                                 .aliases(["upper", "u"]),
                             Command::new("media")
                                 .about("List medias [alias: video bv, m, v]")
@@ -124,7 +124,7 @@ impl FavCommand {
                                 ]),
                         ]),
                     Command::new("deactivate")
-                        .about("Deactivate authorized accounts [alias: d]")
+                        .about("Deactivate obj [alias: d]")
                         .aliases(["d"])
                         .arg_required_else_help(true)
                         .subcommands([
@@ -209,18 +209,26 @@ impl FavCommand {
                 clap_complete::generate(shell, &mut self.0, bin_name, &mut std::io::stdout());
             }
             sub_cmd => {
-                let mut log_level = "fav=info";
-                if matches.get_flag("verbose") {
-                    log_level = "fav=debug";
+                match matches.get_flag("verbose") {
+                    true => {
+                        let filter = EnvFilter::from_default_env()
+                            .add_directive("fav=debug".parse().unwrap());
+                        tracing_subscriber::fmt()
+                            .with_env_filter(filter)
+                            .with_thread_ids(true)
+                            .with_line_number(true)
+                            .init();
+                    }
+                    false => {
+                        let filter = EnvFilter::from_default_env()
+                            .add_directive("fav=debug".parse().unwrap());
+                        tracing_subscriber::fmt()
+                            .with_target(false)
+                            .with_env_filter(filter)
+                            .without_time()
+                            .init();
+                    }
                 }
-                let filter =
-                    EnvFilter::from_default_env().add_directive(log_level.parse().unwrap());
-                tracing_subscriber::fmt()
-                    .with_env_filter(filter)
-                    .with_writer(std::io::stdout)
-                    .with_line_number(true)
-                    .with_thread_ids(true)
-                    .init();
                 let mut world = World::new();
                 let mut schedule = Schedule::new(FavSchedule);
                 schedule.set_executor_kind(ExecutorKind::SingleThreaded);

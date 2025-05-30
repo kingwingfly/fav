@@ -101,26 +101,24 @@ Or you can compile by yourself:
 Need `ffmpeg` usable, and able to be directly called in cli.
 
 ```
-Fav's CLI, helping persist the remote source. Repo: https://github.com/kingwingfly/fav
+Back up your favorite bilibili online resources with CLI.
 
-Usage: fav [OPTIONS] <COMMAND>
+Usage: fav [OPTIONS] [COMMAND]
 
 Commands:
-  init        Initialize the folder for fav
-  auth        Login your account
-  fetch       Fetch from remote
-  status      Show status of local, default to show sets' status
-  track       Track a remote source
-  untrack     Untrack a remote source
-  pull        Pull remote resource to local.  If no id provided, then pull all and skip those having been saved
-  cron        Interval fetch and pull
-  completion  Completions for the shell
+  auth        Auth account
+  list        List accounts/sets/ups/medias [alias: ls, l]
+  activate    Activate obj [alias: active, a]
+  deactivate  Deactivate obj [alias: d]
+  fetch       Fetch metadata of following ups, fav sets, medias, ups [alias: f]
+  pull        Pull fetched medias [alias: p]
+  completion  Generate completion script
   help        Print this message or the help of the given subcommand(s)
 
 Options:
-  -d, --working-dir <WORKING_DIR>  [default: /Users/louis]
-  -h, --help                       Print help
-  -V, --version                    Print version
+  -v, --verbose  Show debug messages
+  -h, --help     Print help
+  -V, --version  Print version
 ```
 
 ### Steps
