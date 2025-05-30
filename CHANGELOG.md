@@ -18,7 +18,7 @@ is considered over-designed by me.
 
 As my being more familar with Rust, I decide to re-factor again this CRUD-oriented application.
 
-# 🆕 update of fav v1.*
+🆕 update of fav v1.*
 
 - **sqlite & sea-orm**: to support more media attributes management
 - **more powerful**: support pull medias in fav collections and upper space
