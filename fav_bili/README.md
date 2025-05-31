@@ -1,5 +1,7 @@
 A CLI tool to download your favorite Bilibili medias from up and favorite collections.
 
+Need `ffmpeg` usable, and able to be directly called in cli.
+
 ```sh
 Back up your favorite bilibili online resources with CLI.
 
@@ -19,4 +21,69 @@ Options:
   -v, --verbose  Show debug messages
   -h, --help     Print help
   -V, --version  Print version
+```
+
+### Steps
+
+1. Login first
+2. Fetch the favorite sets(lists)
+3. Activate the list or up you want. You can see them through `fav ls`
+4. Fetch active resources
+5. Pull the resources
+
+### Example
+
+```sh
+# auto completion is supported; e.g. fish
+fav completion fish > ~/.config/fish/completions/fav.fish
+# For Windows users
+echo "fav completion powershell | Out-String | Invoke-Expression" >> $PROFILE
+# scan code to login
+fav auth login
+# a fetch will auto run after login
+# show status
+fav ls set
+# activate set
+fav activate <list_id>
+# fetch and pull videos
+fav fetch
+fav pull
+# deactivate list or video
+fav deactivate <list_id/bvid>
+# after fetching, you can find your favorite upper
+# limbo/sqlite3 .fav/fav.db
+SELECT u.up_id, u.name, COUNT(u.up_id) count FROM up u LEFT JOIN media_up mu ON u.up_id=mu.up_id JOIN media m ON mu.id=m.id GROUP BY u.up_id, u.name ORDER BY count;
+```
+
+Service example:
+```ini
+# /etc/systemd/system/fav.service
+[Unit]
+Description=Fav Service
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=your_user
+WorkingDirectory=/path/to/fav_set
+ExecStart=/bin/sh -c "/usr/local/bin/fav fetch && /usr/local/bin/fav pull"
+
+# /etc/systemd/system/fav.timer
+[Unit]
+Description=Run fav service every 3 hours
+
+[Timer]
+OnCalendar=*-*-* 0/3:00:00
+# or OnUnitActiveSec=3h
+AccuracySec=1m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+```sh
+sudo systemctl daemon-reload
+sudo systemctl enable fav.timer
+sudo systemctl start fav.timer
 ```

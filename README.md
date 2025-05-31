@@ -101,7 +101,7 @@ Or you can compile by yourself:
 
 Need `ffmpeg` usable, and able to be directly called in cli.
 
-```
+```sh
 Back up your favorite bilibili online resources with CLI.
 
 Usage: fav [OPTIONS] [COMMAND]
