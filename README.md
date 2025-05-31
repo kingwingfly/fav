@@ -64,6 +64,8 @@
 
 Back up your favorite bilibili online resources with CLI.
 
+⚠️: There's a broken change between v0 and v1, details in [CHANGELOG.md](CHANGELOG.md)
+
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ### Built With
@@ -156,18 +158,18 @@ Service example:
 ```ini
 # /etc/systemd/system/fav.service
 [Unit]
-Description=Fav Pull Service
+Description=Fav Service
 After=network-online.target
 
 [Service]
 Type=oneshot
 User=your_user
 WorkingDirectory=/path/to/fav_set
-ExecStart=/usr/local/bin/fav pull
+ExecStart=/bin/sh -c "/usr/local/bin/fav fetch && /usr/local/bin/fav pull"
 
 # /etc/systemd/system/fav.timer
 [Unit]
-Description=Run fav pull every 3 hours
+Description=Run fav service every 3 hours
 
 [Timer]
 OnCalendar=*-*-* 0/3:00:00
