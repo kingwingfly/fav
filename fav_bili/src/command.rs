@@ -209,7 +209,12 @@ impl FavCommand {
 
         match matches.subcommand() {
             Some(("completion", sub_matches)) => {
-                let bin_name = self.0.get_name().to_string();
+                let bin_name = std::env::current_exe()
+                    .unwrap()
+                    .file_name()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string();
                 let shell = *sub_matches.get_one::<Shell>("shell").unwrap();
                 clap_complete::generate(shell, &mut self.0, bin_name, &mut std::io::stdout());
             }
