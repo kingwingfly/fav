@@ -12,7 +12,7 @@ use crate::{
     event::{
         ActivateAccount, ActivateAccountAll, ActivateSet, ActivateSetAll, ActivateUp,
         ActivateUpAll, DeactivateAccount, DeactivateAccountAll, DeactivateSet, DeactivateSetAll,
-        DeactivateUp, DeactivateUpAll, Fetch, ListAccount, ListMedia, ListSet, ListUp, Login,
+        DeactivateUp, DeactivateUpAll, Fetch, Like, ListAccount, ListMedia, ListSet, ListUp, Login,
         Logout, LogoutAll, Pull,
     },
     runtime::Runtime,
@@ -188,6 +188,15 @@ impl FavCommand {
                     Command::new("pull")
                         .about("Pull fetched medias [alias: p]")
                         .aliases(["p"]),
+                    Command::new("like")
+                        .about("Like medias")
+                        .arg_required_else_help(true)
+                        .args([
+                            Arg::new("avids")
+                                .help("The avids to like")
+                                .value_parser(value_parser!(i64))
+                                .action(ArgAction::Append)
+                        ]),
                     Command::new("completion")
                         .about("Generate completion script")
                         .arg_required_else_help(true)
@@ -255,6 +264,7 @@ impl FavCommand {
                     system::list,
                     system::fetch,
                     system::pull,
+                    system::like,
                 ));
                 world.add_schedule(schedule);
 
@@ -344,6 +354,9 @@ impl FavCommand {
                     },
                     Some(("fetch", sub_matches)) => world.trigger(Fetch {
                         prune: sub_matches.get_flag("prune"),
+                    }),
+                    Some(("like", sub_matches)) => world.trigger(Like {
+                        avids: sub_matches.get_many("avids").unwrap().copied().collect(),
                     }),
                     Some(("pull", _)) => world.trigger(Pull),
                     _ => unreachable!(),

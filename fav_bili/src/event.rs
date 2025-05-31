@@ -78,3 +78,8 @@ pub struct Fetch {
 
 #[derive(Debug, Event)]
 pub struct Pull;
+
+#[derive(Debug, Event)]
+pub struct Like {
+    pub avids: Vec<i64>,
+}
