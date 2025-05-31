@@ -1,7 +1,7 @@
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 [workspace]
-members = ["fav", "migration"]
-default-members = ["fav"]
+members = ["fav_bili", "migration"]
+default-members = ["fav_bili"]
 resolver = "2"
 
 [workspace.package]

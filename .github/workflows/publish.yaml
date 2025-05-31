@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       fav:
-        description: "publish fav"
+        description: "publish fav_bili"
         type: boolean
         default: false
 
@@ -23,6 +23,6 @@ jobs:
       - name: login to crates.io
         run: cargo login ${{ secrets.CRATESIO }}
 
-      - name: publish fav
-        if: ${{ inputs.fav }}
-        run: .github/scripts/publish_test.sh fav && .github/scripts/publish.sh fav
+      - name: publish fav_bili
+        if: ${{ inputs.fav_bili }}
+        run: .github/scripts/publish_test.sh fav_bili && .github/scripts/publish.sh fav_bili

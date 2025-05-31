@@ -1,8 +1,8 @@
 use anyhow::{Context as _, Result};
-use fav::migration::OnConflict;
 use sea_orm::{
     ActiveValue::{Set, Unchanged},
     ConnectionTrait, DatabaseBackend, EntityTrait as _, IntoActiveModel as _, Statement,
+    sea_query::OnConflict,
 };
 
 use super::Db;

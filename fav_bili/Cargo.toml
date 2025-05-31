@@ -1,5 +1,5 @@
 [package]
-name = "fav"
+name = "fav_bili"
 version = "1.0.0-alpha.2"
 authors.workspace = true
 license.workspace = true
