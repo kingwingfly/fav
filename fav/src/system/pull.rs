@@ -31,7 +31,7 @@ pub fn pull(mut cmds: Commands) {
         if let Err(e) = runtime.block_on(async {
             let accounts = db.all_active_accounts().await?;
             let pulled_medias = DashSet::<i64>::new();
-            let medias = db.all_pending_medias().await?;
+            let medias = db.all_active_pending_medias().await?;
             let bars = MultiProgress::with_draw_target(ProgressDrawTarget::stderr());
             for account in accounts {
                 info!("Pulling medias with account<{}>", account.name);
@@ -42,7 +42,6 @@ pub fn pull(mut cmds: Commands) {
                         .iter()
                         .filter(|media| !pulled_medias.contains(&media.id)),
                 )
-                .take(1)
                 .map(|media| {
                     let token = token.clone();
                     let db = db.clone();
@@ -143,7 +142,7 @@ async fn download(avid: i64, db: Db, bars: MultiProgress) -> Result<()> {
                                 "copy",
                                 "-f",
                                 "mp4",
-                                &format!("./{}.mp4", title),
+                                &format!("./{}", title),
                             ])
                             .stderr(std::process::Stdio::null())
                             .status()

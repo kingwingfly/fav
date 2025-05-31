@@ -2,7 +2,7 @@ use anyhow::{Context as _, Result};
 use fav::migration::OnConflict;
 use sea_orm::{
     ActiveValue::{Set, Unchanged},
-    ColumnTrait, EntityTrait as _, IntoActiveModel as _, QueryFilter,
+    DatabaseBackend, EntityTrait as _, IntoActiveModel as _, Statement,
 };
 
 use super::Db;
@@ -66,9 +66,31 @@ impl Db {
             .map_err(Into::into)
     }
 
-    pub async fn all_pending_medias(&self) -> Result<Vec<media::Model>> {
+    pub async fn all_active_pending_medias(&self) -> Result<Vec<media::Model>> {
         media::Entity::find()
-            .filter(media::Column::State.eq(MediaState::Pending.to_string()))
+            .from_raw_sql(Statement::from_string(
+                DatabaseBackend::Sqlite,
+                r#"
+SELECT DISTINCT m.*
+FROM media m
+WHERE
+m.state = 'Pending'
+AND (
+    EXISTS (
+        SELECT 1
+        FROM media_up mu
+        JOIN up u ON mu.up_id = u.up_id
+        WHERE mu.id = m.id AND u.state = 'Active'
+    )
+    OR
+    EXISTS (
+        SELECT 1
+        FROM media_set ms
+        JOIN "set" s ON ms.set_id = s.set_id
+        WHERE ms.id = m.id AND s.state = 'Active'
+    )
+);"#,
+            ))
             .all(&self.db)
             .await
             .map_err(Into::into)
