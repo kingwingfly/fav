@@ -1,1 +1,1 @@
-pub use fav::migration::*;
+pub use fav_bili::migration::*;
