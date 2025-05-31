@@ -72,7 +72,9 @@ pub struct DeactivateUp {
 pub struct DeactivateUpAll;
 
 #[derive(Debug, Event)]
-pub struct Fetch;
+pub struct Fetch {
+    pub prune: bool,
+}
 
 #[derive(Debug, Event)]
 pub struct Pull;

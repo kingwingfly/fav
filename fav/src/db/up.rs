@@ -1,10 +1,10 @@
 use anyhow::{Context as _, Result};
 use fav::migration::OnConflict;
-use sea_orm::ColumnTrait as _;
 use sea_orm::{
     ActiveValue::{Set, Unchanged},
-    EntityTrait as _, IntoActiveModel as _, QueryFilter as _,
+    ConnectionTrait as _, EntityTrait as _, IntoActiveModel as _, QueryFilter as _,
 };
+use sea_orm::{ColumnTrait as _, DatabaseBackend, Statement};
 
 use super::Db;
 use crate::entity::up;
@@ -78,6 +78,33 @@ impl Db {
         })
         .exec(&self.db)
         .await?;
+        Ok(())
+    }
+
+    /// Cleanup the ups followd by no account
+    pub async fn prune_ups(&self) -> Result<()> {
+        self.db
+            .execute(Statement::from_string(
+                DatabaseBackend::Sqlite,
+                r#"
+DELETE FROM up
+WHERE up_id IN (
+    SELECT up_id
+    FROM up u
+    WHERE NOT EXISTS (
+        SELECT 1 FROM up_account ua
+        JOIN account a ON ua.account_id = a.account_id
+        WHERE ua.up_id = u.up_id
+    )
+    AND NOT EXISTS (
+        SELECT 1 FROM media_up mu
+        JOIN media m ON mu.id = m.id
+        WHERE mu.up_id = u.up_id
+    )
+);
+"#,
+            ))
+            .await?;
         Ok(())
     }
 }

@@ -1,4 +1,4 @@
-use std::io::Write;
+use std::{io::Write, sync::Arc};
 
 use anyhow::{Result, anyhow};
 use api_req::ApiCaller as _;
@@ -12,7 +12,7 @@ use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use reqwest::header::{CONTENT_LENGTH, HeaderValue};
 use tempfile::NamedTempFile;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::{
     api::BiliApi,
@@ -30,7 +30,7 @@ pub fn pull(mut cmds: Commands) {
     cmds.add_observer(|_: Trigger<Pull>, runtime: Res<Runtime>, db: Res<Db>| {
         if let Err(e) = runtime.block_on(async {
             let accounts = db.all_active_accounts().await?;
-            let pulled_medias = DashSet::<i64>::new();
+            let pulled_medias = Arc::new(DashSet::<i64>::new());
             let medias = db.all_active_pending_medias().await?;
             let bars = MultiProgress::with_draw_target(ProgressDrawTarget::stderr());
             for account in accounts {
@@ -46,13 +46,14 @@ pub fn pull(mut cmds: Commands) {
                     let token = token.clone();
                     let db = db.clone();
                     let bars = bars.clone();
+                    let pulled_medias = pulled_medias.clone();
                     async move {
-                        if token.is_cancelled() {
-                            return Ok::<_, anyhow::Error>(());
-                        }
                         tokio::select! {
-                            res = download(media.id, db, bars) => res,
-                            _ = token.cancelled() => Ok(()),
+                            res = download(media.id, db, bars), if !token.is_cancelled() => match res {
+                                Ok(_) => { pulled_medias.insert(media.id); }
+                                Err(e) => error!("{}", e),
+                            },
+                            _ = token.cancelled() => {},
                         }
                     }
                 })
@@ -60,15 +61,13 @@ pub fn pull(mut cmds: Commands) {
                 loop {
                     tokio::select! {
                         res = tasks.next() => {
-                            match res {
-                                Some(res) => if let Err(e) = res {
-                                    error!("{}", e);
-                                }
-                                None => break,
+                            if res.is_none() {
+                                break;
                             }
                         }
                         _ = tokio::signal::ctrl_c() => {
                             token.cancel();
+                            warn!("Received Ctrl-C");
                             break;
                         }
                     }
@@ -88,7 +87,7 @@ async fn download(avid: i64, db: Db, bars: MultiProgress) -> Result<()> {
             code: 0,
             ..
         } => {
-            'a: for Page { cid, page, part } in pages {
+            for Page { cid, page, part } in pages {
                 let DashResp {
                     data:
                         DashData {
@@ -114,23 +113,42 @@ async fn download(avid: i64, db: Db, bars: MultiProgress) -> Result<()> {
                         );
                         let mut file_v = NamedTempFile::new()?;
                         let mut file_a = NamedTempFile::new()?;
+                        let (mut finished_v, mut finished_a) = (false, false);
                         loop {
                             tokio::select! {
-                                Ok(Some(chunk)) = resp_v.chunk() => {
-                                    file_v.write_all(&chunk)?;
-                                    file_v.flush()?;
-                                    pb.inc(chunk.len() as u64);
+                                res = resp_v.chunk(), if !finished_v => {
+                                    match res {
+                                        Ok(Some(chunk)) => {
+                                            file_v.write_all(&chunk)?;
+                                            file_v.flush()?;
+                                            pb.inc(chunk.len() as u64);
+                                        }
+                                        Ok(None) => finished_v = true,
+                                        Err(e) => return Err(anyhow!(
+                                            "Failed to download video {avid} part<{part}>({page}): {e}"
+                                        ))
+                                    }
                                 }
-                                Ok(Some(chunk)) = resp_a.chunk() => {
-                                    file_a.write_all(&chunk)?;
-                                    file_a.flush()?;
-                                    pb.inc(chunk.len() as u64);
+                                res = resp_a.chunk(), if !finished_a => {
+                                    match res {
+                                        Ok(Some(chunk)) => {
+                                            file_a.write_all(&chunk)?;
+                                            file_a.flush()?;
+                                            pb.inc(chunk.len() as u64);
+                                        }
+                                        Ok(None) => finished_a = true,
+                                        Err(e) => return Err(anyhow!(
+                                            "Failed to download audio {avid} part<{part}>({page}): {e}"
+                                        ))
+                                    }
                                 }
                                 else => break,
                             }
                         }
-                        let mut title = sanitize_filename::sanitize(&part);
-                        title.push_str(&format!(" {}({}).mp4", avid, page));
+                        let title = format!(
+                            "{avid}-{title}({page}).mp4",
+                            title = sanitize_filename::sanitize(&part)
+                        );
                         let status = tokio::process::Command::new("ffmpeg")
                             .args([
                                 "-y",
@@ -149,7 +167,9 @@ async fn download(avid: i64, db: Db, bars: MultiProgress) -> Result<()> {
                             .await
                             .unwrap();
                         if !status.success() {
-                            return Err(anyhow!("Failed to merge video and audio part<{}>", part));
+                            return Err(anyhow!(
+                                "Failed to merge video and audio {avid} part<{part}>({page})"
+                            ));
                         }
                     }
                     (Some(v), None) => {
@@ -175,13 +195,16 @@ async fn download(avid: i64, db: Db, bars: MultiProgress) -> Result<()> {
                                 }
                                 Ok(None) => break,
                                 Err(e) => {
-                                    error!("{}", e);
-                                    continue 'a;
+                                    return Err(anyhow!(
+                                        "Failed to download video {avid} part<{part}>({page}): {e}"
+                                    ));
                                 }
                             }
                         }
-                        let mut title = sanitize_filename::sanitize(&part);
-                        title.push_str(&format!(" {}({}).mp4", avid, page));
+                        let title = format!(
+                            "{avid} {title}({page}).mp4",
+                            title = sanitize_filename::sanitize(&part)
+                        );
                         tokio::fs::rename(file_v.path(), format!("./{}", title)).await?;
                     }
                     (None, Some(a)) => {
@@ -207,13 +230,16 @@ async fn download(avid: i64, db: Db, bars: MultiProgress) -> Result<()> {
                                 }
                                 Ok(None) => break,
                                 Err(e) => {
-                                    error!("{}", e);
-                                    continue 'a;
+                                    return Err(anyhow!(
+                                        "Failed to download audio {avid} part<{part}>({page}): {e}"
+                                    ));
                                 }
                             }
                         }
-                        let mut title = sanitize_filename::sanitize(&part);
-                        title.push_str(&format!(" {}({}).mp3", avid, page));
+                        let title = format!(
+                            "{avid} {title}({page}).mp3",
+                            title = sanitize_filename::sanitize(&part)
+                        );
                         tokio::fs::rename(file_a.path(), format!("./{}", title)).await?;
                     }
                     _ => {}

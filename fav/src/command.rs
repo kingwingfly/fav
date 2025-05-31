@@ -179,7 +179,12 @@ impl FavCommand {
                         ]),
                     Command::new("fetch")
                         .about("Fetch metadata of following ups, fav sets, medias, ups [alias: f]")
-                        .aliases(["f"]),
+                        .aliases(["f"])
+                        .args([Arg::new("prune")
+                            .long("prune")
+                            .short('p')
+                            .help("Prune the objs: remove unfaved sets, unfollowed ups and medias not belonging to active set or up")
+                            .action(ArgAction::SetTrue)]),
                     Command::new("pull")
                         .about("Pull fetched medias [alias: p]")
                         .aliases(["p"]),
@@ -332,7 +337,9 @@ impl FavCommand {
                         },
                         _ => unreachable!(),
                     },
-                    Some(("fetch", _)) => world.trigger(Fetch),
+                    Some(("fetch", sub_matches)) => world.trigger(Fetch {
+                        prune: sub_matches.get_flag("prune"),
+                    }),
                     Some(("pull", _)) => world.trigger(Pull),
                     _ => unreachable!(),
                 }

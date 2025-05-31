@@ -2,7 +2,7 @@ use anyhow::{Context as _, Result};
 use fav::migration::OnConflict;
 use sea_orm::{
     ActiveValue::{Set, Unchanged},
-    DatabaseBackend, EntityTrait as _, IntoActiveModel as _, Statement,
+    ConnectionTrait, DatabaseBackend, EntityTrait as _, IntoActiveModel as _, Statement,
 };
 
 use super::Db;
@@ -82,17 +82,44 @@ AND (
         JOIN up u ON mu.up_id = u.up_id
         WHERE mu.id = m.id AND u.state = 'Active'
     )
-    OR
-    EXISTS (
+    OR EXISTS (
         SELECT 1
         FROM media_set ms
         JOIN "set" s ON ms.set_id = s.set_id
         WHERE ms.id = m.id AND s.state = 'Active'
     )
-);"#,
+);
+"#,
             ))
             .all(&self.db)
             .await
             .map_err(Into::into)
+    }
+
+    /// Cleanup the medias whose up and set both are inactive/null
+    pub async fn prune_medias(&self) -> Result<()> {
+        self.db
+            .execute(Statement::from_string(
+                DatabaseBackend::Sqlite,
+                r#"
+DELETE FROM media
+WHERE id IN (
+    SELECT m.id
+    FROM media m
+    WHERE NOT EXISTS (
+        SELECT 1 FROM media_up mu
+        JOIN up u ON mu.up_id = u.up_id
+        WHERE mu.id = m.id AND u.state != 'Inactive'
+    )
+    AND NOT EXISTS (
+        SELECT 1 FROM media_set ms
+        JOIN "set" s ON ms.set_id = s.set_id
+        WHERE ms.id = m.id AND s.state != 'Inactive'
+    )
+);
+"#,
+            ))
+            .await?;
+        Ok(())
     }
 }
