@@ -99,7 +99,7 @@ Or you can compile by yourself:
 
 ## Usage
 
-Need `ffmpeg` usable, and able to be directly called in cli.
+Need `ffmpeg` usable, and added to the PATH.
 
 ```sh
 Back up your favorite bilibili online resources with CLI.

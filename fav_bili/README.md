@@ -1,6 +1,6 @@
 A CLI tool to download your favorite Bilibili medias from up and favorite collections.
 
-Need `ffmpeg` usable, and able to be directly called in cli.
+Need `ffmpeg` usable, and added to the PATH.
 
 ```sh
 Back up your favorite bilibili online resources with CLI.
