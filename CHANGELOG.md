@@ -9,6 +9,10 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 -->
 
 ## [Unreleased]
+## [1.0.4] - 2025-06-01
+
+- fix missing alias `c` for `collecion` for `deactivate` sub command
+
 ## [1.0.3] - 2025-06-01
 
 - fix a few bugs in fetching
