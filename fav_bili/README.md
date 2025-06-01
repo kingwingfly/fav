@@ -14,6 +14,7 @@ Commands:
   deactivate  Deactivate obj [alias: d]
   fetch       Fetch metadata of following ups, fav sets, medias, ups [alias: f]
   pull        Pull fetched medias [alias: p]
+  like        Like medias
   completion  Generate completion script
   help        Print this message or the help of the given subcommand(s)
 
@@ -40,19 +41,23 @@ fav completion fish > ~/.config/fish/completions/fav.fish
 echo "fav completion powershell | Out-String | Invoke-Expression" >> $PROFILE
 # scan code to login
 fav auth login
-# a fetch will auto run after login
+# you can also login with `fav usecookies`
+# fetch following ups and fav sets
+fav fetch
 # show status
 fav ls set
-# activate set
-fav activate <list_id>
-# fetch and pull videos
+# activate set or up
+fav activate <id>
+# pull videos
 fav fetch
 fav pull
-# deactivate list or video
-fav deactivate <list_id/bvid>
+# deactivate set or up
+fav deactivate
 # after fetching, you can find your favorite upper
 # limbo/sqlite3 .fav/fav.db
 SELECT u.up_id, u.name, COUNT(u.up_id) count FROM up u LEFT JOIN media_up mu ON u.up_id=mu.up_id JOIN media m ON mu.id=m.id GROUP BY u.up_id, u.name ORDER BY count;
+# you can also like medias, should usecookies when login
+fav like
 ```
 
 Service example:

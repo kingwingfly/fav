@@ -15,7 +15,7 @@ use crate::{
     cookies::{parse_cookies, set_cookie_jar},
     db::Db,
     entity::account,
-    event::{Login, Logout, LogoutAll},
+    event::{Login, Logout, LogoutAll, UseCookies},
     payload::{LogoutPayload, QrPayload, QrPollPayload, WbiPayload},
     response::{LogoutResp, QrData, QrPollData, QrPollResp, QrResp, WbiData, WbiResp},
     runtime::Runtime,
@@ -56,14 +56,14 @@ pub fn auth(mut cmds: Commands) {
                         }
                     }
                 }
-                let WbiResp {
-                    data: WbiData { mid, uname, .. },
-                } = BiliApi::request(WbiPayload).await?;
                 let cookies = COOKIE_JAR
                     .cookies(&"https://bilibili.com".parse().unwrap())
                     .context("Auth related cookies should be set by bilibili.")?
                     .to_str()?
                     .to_owned();
+                let WbiResp {
+                    data: WbiData { mid, uname, .. },
+                } = BiliApi::request(WbiPayload).await?;
                 db.upsert_account(account::Model {
                     account_id: mid,
                     name: uname.to_owned(),
@@ -76,6 +76,33 @@ pub fn auth(mut cmds: Commands) {
             }) {
                 error!("{}", e);
             }
+        },
+    );
+    cmds.add_observer(
+        |trigger: Trigger<UseCookies>, runtime: Res<Runtime>, db: Res<Db>| {
+            let UseCookies { cookies } = trigger.event();
+            if let Err(e) = runtime.block_on(async {
+                set_cookie_jar(parse_cookies(cookies));
+                let cookies = COOKIE_JAR
+                    .cookies(&"https://bilibili.com".parse().unwrap())
+                    .context("Auth related cookies should be set by fav.")?
+                    .to_str()?
+                    .to_owned();
+                let WbiResp {
+                    data: WbiData { mid, uname, .. },
+                } = BiliApi::request(WbiPayload).await?;
+                db.upsert_account(account::Model {
+                    account_id: mid,
+                    name: uname.to_owned(),
+                    cookies,
+                    state: AccountState::Active.to_string(),
+                })
+                .await?;
+                println!("Hello😊, {}.", uname);
+                Ok::<_, anyhow::Error>(())
+            }) {
+                error!("{}", e);
+            };
         },
     );
     cmds.add_observer(

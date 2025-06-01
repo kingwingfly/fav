@@ -13,7 +13,7 @@ use crate::{
         ActivateAccount, ActivateAccountAll, ActivateSet, ActivateSetAll, ActivateUp,
         ActivateUpAll, DeactivateAccount, DeactivateAccountAll, DeactivateSet, DeactivateSetAll,
         DeactivateUp, DeactivateUpAll, Fetch, Like, ListAccount, ListMedia, ListSet, ListUp, Login,
-        Logout, LogoutAll, Pull,
+        Logout, LogoutAll, Pull, UseCookies,
     },
     runtime::Runtime,
     system,
@@ -35,6 +35,15 @@ impl FavCommand {
                         .arg_required_else_help(true)
                         .subcommands([
                             Command::new("login").about("Login with QR code"),
+                            Command::new("usecookies")
+                                .about("Add accounts with user-provided cookies (recommended);")
+                                .arg_required_else_help(true)
+                                .args([
+                                    Arg::new("cookies")
+                                        .help(
+"Cookies at least including SESSDATA; For logout, plus DedeUserID, bili_jct; For liking medias, please copy directly from browser"
+                                        ).action(ArgAction::Append)
+                                ]),
                             Command::new("logout")
                                 .about("Logout")
                                 .arg_required_else_help(true)
@@ -273,8 +282,16 @@ impl FavCommand {
                 match sub_cmd {
                     Some(("auth", sub_matches)) => match sub_matches.subcommand() {
                         Some(("login", _)) => world.trigger(Login),
+                        Some(("usecookies", sub_matches)) => sub_matches
+                            .get_many::<String>("cookies")
+                            .unwrap() // arg_required_else_help has been set to true
+                            .for_each(|cookies| {
+                                world.trigger(UseCookies {
+                                    cookies: cookies.to_owned(),
+                                });
+                            }),
                         Some(("logout", sub_matches)) if sub_matches.get_flag("all") => {
-                            world.trigger(LogoutAll)
+                            world.trigger(LogoutAll);
                         }
                         Some(("logout", sub_matches)) => sub_matches
                             .get_many::<i64>("account_id")

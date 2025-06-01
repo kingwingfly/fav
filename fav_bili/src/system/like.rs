@@ -6,7 +6,7 @@ use bevy_ecs::{
 };
 use cookie::Cookie;
 use futures::StreamExt;
-use tracing::error;
+use tracing::{error, info};
 
 use crate::{
     api::BiliApi,
@@ -50,7 +50,10 @@ pub fn like(mut cmds: Commands) {
                                 })
                                 .await?;
                                 match code {
-                                    0 => Ok::<_, anyhow::Error>(()),
+                                    0 => {
+                                        info!("Liked {}", aid);
+                                        Ok::<_, anyhow::Error>(())
+                                    }
                                     _ => Err(anyhow!("{}", message)),
                                 }
                             }

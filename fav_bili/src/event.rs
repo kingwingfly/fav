@@ -4,6 +4,11 @@ use bevy_ecs::event::Event;
 pub struct Login;
 
 #[derive(Debug, Event)]
+pub struct UseCookies {
+    pub cookies: String,
+}
+
+#[derive(Debug, Event)]
 pub struct Logout {
     pub account_id: i64,
 }
