@@ -272,7 +272,7 @@ impl FavCommand {
                     },
                     Some(("activate", sub_matches)) => match sub_matches.subcommand() {
                         Some(("account", sub_matches)) => match sub_matches.get_flag("all") {
-                            true => activate_account_all().await?,
+                            true => activate_all_accounts().await?,
                             false => {
                                 for account_id in sub_matches.get_many::<i64>("account_id").unwrap()
                                 // arg_required_else_help has been set to true
@@ -282,7 +282,7 @@ impl FavCommand {
                             }
                         },
                         Some(("set", sub_matches)) => match sub_matches.get_flag("all") {
-                            true => activate_set_all().await?,
+                            true => activate_all_sets().await?,
                             false => {
                                 for set_id in sub_matches.get_many::<i64>("set_id").unwrap()
                                 // arg_required_else_help has been set to true
@@ -292,7 +292,7 @@ impl FavCommand {
                             }
                         },
                         Some(("up", sub_matches)) => match sub_matches.get_flag("all") {
-                            true => activate_up_all().await?,
+                            true => activate_all_ups().await?,
                             false => {
                                 for up_id in sub_matches.get_many::<i64>("up_id").unwrap()
                                 // arg_required_else_help has been up to true
@@ -305,7 +305,7 @@ impl FavCommand {
                     },
                     Some(("deactivate", sub_matches)) => match sub_matches.subcommand() {
                         Some(("account", sub_matches)) => match sub_matches.get_flag("all") {
-                            true => deactivate_account_all().await?,
+                            true => deactivate_all_accounts().await?,
                             false => {
                                 for account_id in sub_matches.get_many::<i64>("account_id").unwrap()
                                 // arg_required_else_help has been set to true
@@ -315,7 +315,7 @@ impl FavCommand {
                             }
                         },
                         Some(("set", sub_matches)) => match sub_matches.get_flag("all") {
-                            true => deactivate_set_all().await?,
+                            true => deactivate_all_sets().await?,
                             false => {
                                 for set_id in sub_matches.get_many::<i64>("set_id").unwrap()
                                 // arg_required_else_help has been set to true
@@ -325,7 +325,7 @@ impl FavCommand {
                             }
                         },
                         Some(("up", sub_matches)) => match sub_matches.get_flag("all") {
-                            true => deactivate_up_all().await?,
+                            true => deactivate_all_ups().await?,
                             false => {
                                 for up_id in sub_matches.get_many::<i64>("up_id").unwrap()
                                 // arg_required_else_help has been up to true
