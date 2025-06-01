@@ -260,7 +260,7 @@ pub fn fetch(mut cmds: Commands) {
                 }
                 let fetched_medias = Arc::new(DashSet::<i64>::new());
                 for account in accounts.iter() {
-                    info!("Fetching medias with account<{}>", account.name);
+                    info!("Fetching media metadatas with account<{}>", account.name);
                     set_cookie_jar(parse_cookies(&account.cookies));
                     let medias = db.all_medias().await?;
                     let mut tasks = futures::stream::iter(
