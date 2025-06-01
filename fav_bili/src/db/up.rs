@@ -2,9 +2,9 @@ use anyhow::{Context as _, Result};
 use sea_orm::{
     ActiveValue::{Set, Unchanged},
     ConnectionTrait as _, EntityTrait as _, IntoActiveModel as _, QueryFilter as _,
-    sea_query::OnConflict,
+    sea_query::{OnConflict, SimpleExpr},
 };
-use sea_orm::{ColumnTrait as _, DatabaseBackend, Statement};
+use sea_orm::{DatabaseBackend, Statement};
 
 use super::Db;
 use crate::entity::up;
@@ -42,6 +42,14 @@ impl Db {
             .context(format!("Unknown up<{}>", up_id))
     }
 
+    pub async fn get_ups_filtered(&self, filter: SimpleExpr) -> Result<Vec<up::Model>> {
+        up::Entity::find()
+            .filter(filter)
+            .all(&self.db)
+            .await
+            .map_err(Into::into)
+    }
+
     pub async fn delete_up(&self, up_id: i64) -> Result<()> {
         up::Entity::delete_by_id(up_id).exec(&self.db).await?;
         Ok(())
@@ -49,14 +57,6 @@ impl Db {
 
     pub async fn all_ups(&self) -> Result<Vec<up::Model>> {
         up::Entity::find().all(&self.db).await.map_err(Into::into)
-    }
-
-    pub async fn all_active_ups(&self) -> Result<Vec<up::Model>> {
-        up::Entity::find()
-            .filter(up::Column::State.eq(UpState::Active.to_string()))
-            .all(&self.db)
-            .await
-            .map_err(Into::into)
     }
 
     pub async fn activate_up(&self, up_id: i64) -> Result<()> {

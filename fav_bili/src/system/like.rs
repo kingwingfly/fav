@@ -6,16 +6,19 @@ use bevy_ecs::{
 };
 use cookie::Cookie;
 use futures::StreamExt;
+use sea_orm::ColumnTrait as _;
 use tracing::{error, info};
 
 use crate::{
     api::BiliApi,
     cookies::{parse_cookies, set_cookie_jar},
     db::Db,
+    entity::account,
     event::Like,
     payload::{Buvid3Payload, LikePayload},
     response::{Buvid3Data, Buvid3Resp, LikeResp},
     runtime::Runtime,
+    state::AccountState,
 };
 
 pub fn like(mut cmds: Commands) {
@@ -23,7 +26,9 @@ pub fn like(mut cmds: Commands) {
         |trigger: Trigger<Like>, runtime: Res<Runtime>, db: Res<Db>| {
             let Like { avids } = trigger.event();
             if let Err(e) = runtime.block_on(async move {
-                let accounts = db.all_active_accounts().await?;
+                let accounts = db
+                    .get_accounts_filtered(account::Column::State.eq(AccountState::Active))
+                    .await?;
                 for account in accounts {
                     let cookies = parse_cookies(&account.cookies).collect::<Vec<_>>();
                     let bili_jct = cookies

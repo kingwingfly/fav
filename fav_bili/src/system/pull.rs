@@ -10,6 +10,7 @@ use dashmap::DashSet;
 use futures::StreamExt as _;
 use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
 use reqwest::header::{CONTENT_LENGTH, HeaderValue};
+use sea_orm::ColumnTrait as _;
 use tempfile::NamedTempFile;
 use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
@@ -18,19 +19,21 @@ use crate::{
     api::BiliApi,
     cookies::{parse_cookies, set_cookie_jar},
     db::Db,
-    entity::media,
+    entity::{account, media},
     event::Pull,
     payload::{DashPayload, MediaInfoPayload},
     response::{Dash, DashData, DashResp, MediaInfoData, MediaInfoResp, Page},
     runtime::Runtime,
-    state::MediaState,
+    state::{AccountState, MediaState},
     table::head,
 };
 
 pub fn pull(mut cmds: Commands) {
     cmds.add_observer(|_: Trigger<Pull>, runtime: Res<Runtime>, db: Res<Db>| {
         if let Err(e) = runtime.block_on(async {
-            let accounts = db.all_active_accounts().await?;
+            let accounts = db
+                .get_accounts_filtered(account::Column::State.eq(AccountState::Active))
+                .await?;
             let pulled_medias = Arc::new(DashSet::<i64>::new());
             let medias = db.all_active_pending_medias().await?;
             let bars = MultiProgress::with_draw_target(ProgressDrawTarget::stderr());

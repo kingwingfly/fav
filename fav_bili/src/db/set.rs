@@ -1,9 +1,9 @@
 use anyhow::{Context as _, Result};
 use sea_orm::{
     ActiveValue::{Set, Unchanged},
-    ColumnTrait as _, ConnectionTrait as _, DatabaseBackend, EntityTrait as _,
-    IntoActiveModel as _, QueryFilter as _, Statement,
-    sea_query::OnConflict,
+    ConnectionTrait as _, DatabaseBackend, EntityTrait as _, IntoActiveModel as _,
+    QueryFilter as _, Statement,
+    sea_query::{OnConflict, SimpleExpr},
 };
 
 use super::Db;
@@ -41,21 +41,21 @@ impl Db {
             .context(format!("Unknown set<{}>", set_id))
     }
 
-    pub async fn delete_set(&self, set_id: i64) -> Result<()> {
-        set::Entity::delete_by_id(set_id).exec(&self.db).await?;
-        Ok(())
-    }
-
     pub async fn all_sets(&self) -> Result<Vec<set::Model>> {
         set::Entity::find().all(&self.db).await.map_err(Into::into)
     }
 
-    pub async fn all_active_sets(&self) -> Result<Vec<set::Model>> {
+    pub async fn get_sets_filtered(&self, filter: SimpleExpr) -> Result<Vec<set::Model>> {
         set::Entity::find()
-            .filter(set::Column::State.eq(SetState::Active.to_string()))
+            .filter(filter)
             .all(&self.db)
             .await
             .map_err(Into::into)
+    }
+
+    pub async fn delete_set(&self, set_id: i64) -> Result<()> {
+        set::Entity::delete_by_id(set_id).exec(&self.db).await?;
+        Ok(())
     }
 
     pub async fn activate_set(&self, set_id: i64) -> Result<()> {

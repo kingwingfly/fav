@@ -1,8 +1,8 @@
 use anyhow::{Context as _, Result};
 use sea_orm::{
     ActiveValue::{Set, Unchanged},
-    ColumnTrait as _, EntityTrait as _, IntoActiveModel as _, QueryFilter as _,
-    sea_query::OnConflict,
+    EntityTrait as _, IntoActiveModel as _, QueryFilter as _,
+    sea_query::{OnConflict, SimpleExpr},
 };
 
 use super::Db;
@@ -28,13 +28,6 @@ impl Db {
             .context(format!("Unknown account<{}>", account_id))
     }
 
-    pub async fn delete_account(&self, account_id: i64) -> Result<()> {
-        account::Entity::delete_by_id(account_id)
-            .exec(&self.db)
-            .await?;
-        Ok(())
-    }
-
     pub async fn all_accounts(&self) -> Result<Vec<account::Model>> {
         account::Entity::find()
             .all(&self.db)
@@ -42,12 +35,19 @@ impl Db {
             .map_err(Into::into)
     }
 
-    pub async fn all_active_accounts(&self) -> Result<Vec<account::Model>> {
+    pub async fn get_accounts_filtered(&self, filter: SimpleExpr) -> Result<Vec<account::Model>> {
         account::Entity::find()
-            .filter(account::Column::State.eq(AccountState::Active.to_string()))
+            .filter(filter)
             .all(&self.db)
             .await
             .map_err(Into::into)
+    }
+
+    pub async fn delete_account(&self, account_id: i64) -> Result<()> {
+        account::Entity::delete_by_id(account_id)
+            .exec(&self.db)
+            .await?;
+        Ok(())
     }
 
     pub async fn activate_account(&self, account_id: i64) -> Result<()> {

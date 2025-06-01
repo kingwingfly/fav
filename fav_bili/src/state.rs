@@ -24,9 +24,17 @@ macro_rules! impl_display_fromstr {
                 }
             }
         }
+
+        #[allow(clippy::from_over_into)]
+        impl Into<::sea_orm::Value> for $enum_name {
+            fn into(self) -> ::sea_orm::Value {
+                match self {
+                    $( $enum_name::$variant => ::sea_orm::Value::String(Some(::std::boxed::Box::new(stringify!($variant).to_string()))),)*
+                }
+            }
+        }
     };
 }
-
 impl_display_fromstr!(AccountState {
     Active,
     Inactive,

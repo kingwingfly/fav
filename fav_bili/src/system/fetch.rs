@@ -11,13 +11,14 @@ use bevy_ecs::{
 };
 use dashmap::DashSet;
 use futures::StreamExt as _;
+use sea_orm::ColumnTrait as _;
 use tracing::{debug, error, info, warn};
 
 use crate::{
     api::BiliApi,
     cookies::{parse_cookies, set_cookie_jar},
     db::Db,
-    entity::{media, media_set, media_up, set, set_account, up, up_account},
+    entity::{account, media, media_set, media_up, set, set_account, up, up_account},
     event::Fetch,
     payload::{
         FollowingNumPayload, FollowingUpPayload, InSetPayload, InUpPayload, ListSetPayload,
@@ -29,7 +30,7 @@ use crate::{
         PublishNumData, PublishNumResp,
     },
     runtime::Runtime,
-    state::{MediaState, SetState, UpState},
+    state::{AccountState, MediaState, SetState, UpState},
 };
 
 pub fn fetch(mut cmds: Commands) {
@@ -37,7 +38,9 @@ pub fn fetch(mut cmds: Commands) {
         |trigger: Trigger<Fetch>, runtime: Res<Runtime>, db: Res<Db>| {
             let Fetch { prune } = *trigger;
             if let Err(e) = runtime.block_on(async {
-                let accounts = db.all_active_accounts().await?;
+                let accounts = db
+                    .get_accounts_filtered(account::Column::State.eq(AccountState::Active))
+                    .await?;
                 for account in accounts.iter() {
                     info!("Fetching sets with account<{}>", account.name);
                     set_cookie_jar(parse_cookies(&account.cookies));

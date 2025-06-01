@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 mod account;
 mod media;
 mod media_set;
