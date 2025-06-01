@@ -88,7 +88,13 @@ async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<(
             code: 0,
             ..
         } => {
+            let only1p = pages.len() == 1;
             for Page { cid, page, part } in pages {
+                let filename = if only1p {
+                    part.to_owned()
+                } else {
+                    format!("{}({page})-{part}", media.title)
+                };
                 let DashResp {
                     data:
                         DashData {
@@ -106,7 +112,7 @@ async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<(
                             + hv2u64(&resp_a.headers()[CONTENT_LENGTH]);
                         let pb = ProgressBar::new(size);
                         bars.add(pb.clone());
-                        pb.set_message(head(part.to_owned(), 10));
+                        pb.set_message(head(part, 10));
                         pb.set_style(
                             ProgressStyle::with_template("{msg} {spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
                                 .unwrap()
@@ -126,7 +132,7 @@ async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<(
                                         }
                                         Ok(None) => finished_v = true,
                                         Err(e) => return Err(anyhow!(
-                                            "Failed to download video {} part<{part}>({page}): {e}", media.title
+                                            "Failed to download video {filename}: {e}"
                                         ))
                                     }
                                 }
@@ -139,7 +145,7 @@ async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<(
                                         }
                                         Ok(None) => finished_a = true,
                                         Err(e) => return Err(anyhow!(
-                                            "Failed to download audio {} part<{part}>({page}): {e}", media.title
+                                            "Failed to download audio {filename}: {e}"
                                         ))
                                     }
                                 }
@@ -147,9 +153,8 @@ async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<(
                             }
                         }
                         let title = format!(
-                            "{}-{part}({page}).mp4",
-                            media.title,
-                            part = sanitize_filename::sanitize(&part)
+                            "{filename}.mp4",
+                            filename = sanitize_filename::sanitize(&filename)
                         );
                         let status = tokio::process::Command::new("ffmpeg")
                             .args([
@@ -169,10 +174,7 @@ async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<(
                             .await
                             .unwrap();
                         if !status.success() {
-                            return Err(anyhow!(
-                                "Failed to merge video and audio {} part<{part}>({page})",
-                                media.title
-                            ));
+                            return Err(anyhow!("Failed to merge video and audio {filename}"));
                         }
                     }
                     (Some(v), None) => {
@@ -182,7 +184,7 @@ async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<(
                         let size = hv2u64(&resp_v.headers()[CONTENT_LENGTH]);
                         let pb = ProgressBar::new(size);
                         bars.add(pb.clone());
-                        pb.set_message(head(part.to_owned(), 10));
+                        pb.set_message(head(part, 10));
                         pb.set_style(
                             ProgressStyle::with_template("{msg} {spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
                                 .unwrap()
@@ -199,16 +201,14 @@ async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<(
                                 Ok(None) => break,
                                 Err(e) => {
                                     return Err(anyhow!(
-                                        "Failed to download video {} part<{part}>({page}): {e}",
-                                        media.title
+                                        "Failed to download video {filename}: {e}"
                                     ));
                                 }
                             }
                         }
                         let title = format!(
-                            "{}-{part}({page}).mp4",
-                            media.title,
-                            part = sanitize_filename::sanitize(&part)
+                            "{filename}.mp4",
+                            filename = sanitize_filename::sanitize(&filename)
                         );
                         tokio::fs::rename(file_v.path(), format!("./{}", title)).await?;
                     }
@@ -219,7 +219,7 @@ async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<(
                         let size = hv2u64(&resp_a.headers()[CONTENT_LENGTH]);
                         let pb = ProgressBar::new(size);
                         bars.add(pb.clone());
-                        pb.set_message(head(part.to_owned(), 10));
+                        pb.set_message(head(part, 10));
                         pb.set_style(
                             ProgressStyle::with_template("{msg} {spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
                                 .unwrap()
@@ -236,16 +236,14 @@ async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<(
                                 Ok(None) => break,
                                 Err(e) => {
                                     return Err(anyhow!(
-                                        "Failed to download audio {} part<{part}>({page}): {e}",
-                                        media.title
+                                        "Failed to download audio {filename}: {e}"
                                     ));
                                 }
                             }
                         }
                         let title = format!(
-                            "{}-{part}({page}).mp3",
-                            media.title,
-                            part = sanitize_filename::sanitize(&part)
+                            "{filename}.mp3",
+                            filename = sanitize_filename::sanitize(&filename)
                         );
                         tokio::fs::rename(file_a.path(), format!("./{}", title)).await?;
                     }
@@ -269,8 +267,9 @@ async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<(
             )
             .await?;
             Err(anyhow!(
-                "Info unreachable media<{}>: {}",
+                "Info unreachable media<{}-{}>: {}",
                 media.id,
+                media.title,
                 option_msg.unwrap_or_default()
             ))
         }
