@@ -93,7 +93,7 @@ async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<(
                 let filename = if only1p {
                     part.to_owned()
                 } else {
-                    format!("{}({page})-{part}", media.title)
+                    format!("{}-{}({page})-{part}", media.id, media.title)
                 };
                 let DashResp {
                     data:
