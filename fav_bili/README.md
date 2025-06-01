@@ -58,6 +58,8 @@ fav deactivate
 SELECT u.up_id, u.name, COUNT(u.up_id) count FROM up u LEFT JOIN media_up mu ON u.up_id=mu.up_id JOIN media m ON mu.id=m.id GROUP BY u.up_id, u.name ORDER BY count;
 # you can also like medias, should usecookies when login
 fav like
+# or like all medias faved
+fav ls v | sed '1d;$d' | awk '{print $2;}' | xargs fav like
 ```
 
 Service example:
