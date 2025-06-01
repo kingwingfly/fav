@@ -9,21 +9,20 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 -->
 
 ## [Unreleased]
-## [1.0.0] - 2025-06-01 {1.0.0}
+## [1.0.1] - 2025-06-01 {1.0.0}
 
 ⚠️ fav v0.* is archived [branch](https://github.com/kingwingfly/fav/tree/fav_v0)
 
 `fav v0.*`, based on `fav_core` `fav_utils` (which heavily depends on **protobuf** and many traits),
-is considered over-designed by me.
+is considered over-designed.
 
-As my being more familar with Rust, I decide to re-factor again this CRUD-oriented application.
+As my being more familar with Rust, decision has been made to re-factor again this CRUD-oriented application.
 
 🆕 update of fav v1.*
 
 - **sqlite & sea-orm**: to support more media attributes management
 - **more powerful**: support pull medias in fav collections and upper space
 - **dep:api_req**: my published api request helper crate
-- **dep:bevy_ecs**: make the app more maintainable
 - **migrating tool**: [WIP] migrator from `fav v0.*` to `fav v1.*`
 
 ## [1.0.0-alpha.*] - 2025-05-31
