@@ -139,9 +139,9 @@ impl FavCommand {
                                         .action(ArgAction::Append),
                                 ]),
                             Command::new("set")
-                                .about("Deactivate sets [alias: list, s, l]")
+                                .about("Deactivate sets [alias: list, collection, s, l, c]")
                                 .arg_required_else_help(true)
-                                .aliases(["list", "s", "l"])
+                                .aliases(["list", "collection", "s", "l", "c"])
                                 .args([
                                     Arg::new("all")
                                         .help("Deactivate all sets")
