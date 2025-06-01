@@ -23,7 +23,7 @@ pub async fn like(avids: Vec<i64>) -> Result<()> {
         .get_accounts_filtered(account::Column::State.eq(AccountState::Active))
         .await?;
     for account in accounts {
-        let cookies = parse_cookies(&account.cookies)
+        let mut cookies = parse_cookies(&account.cookies)
             .map(|c| (c.name().to_owned(), c))
             .collect::<HashMap<_, _>>();
         let bili_jct = cookies
@@ -65,12 +65,13 @@ pub async fn like(avids: Vec<i64>) -> Result<()> {
                             ttl,
                         },
                 } = BiliApi::request(TicketPayload::new(bili_jct.to_owned())).await?;
-                add_cookie_jar(
+                cookies.extend(
                     [
                         Cookie::new("bili_ticket", ticket),
                         Cookie::new("bili_ticket_expires", (created_at + ttl).to_string()),
                     ]
-                    .into_iter(),
+                    .into_iter()
+                    .map(|c| (c.value().to_owned(), c)),
                 );
             }
         }
@@ -79,7 +80,7 @@ pub async fn like(avids: Vec<i64>) -> Result<()> {
             let Buvid3Resp {
                 data: Buvid3Data { buvid },
             } = BiliApi::request(Buvid3Payload).await?;
-            add_cookie_jar([Cookie::new("buvid3", buvid)].into_iter());
+            cookies.insert("buvid3".to_string(), Cookie::new("buvid3", buvid));
         }
         add_cookie_jar(cookies.into_values());
         info!("Saving cookies account<{}>", account.name);
