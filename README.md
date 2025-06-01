@@ -142,10 +142,10 @@ echo "fav completion powershell | Out-String | Invoke-Expression" >> $PROFILE
 fav auth login # you can also login with `fav usecookies`
 # fetch following ups and fav sets
 fav fetch
-# show status
+# show sets
 fav ls set
 # activate set or up
-fav activate <id>
+fav activate
 # pull videos
 fav fetch
 fav pull
