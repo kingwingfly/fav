@@ -18,6 +18,7 @@ use crate::{
     api::BiliApi,
     cookies::{parse_cookies, set_cookie_jar},
     db::Db,
+    entity::media,
     event::Pull,
     payload::{DashPayload, MediaInfoPayload},
     response::{Dash, DashData, DashResp, MediaInfoData, MediaInfoResp, Page},
@@ -49,7 +50,7 @@ pub fn pull(mut cmds: Commands) {
                     let pulled_medias = pulled_medias.clone();
                     async move {
                         tokio::select! {
-                            res = download(media.id, db, bars), if !token.is_cancelled() => match res {
+                            res = download(media, db, bars), if !token.is_cancelled() => match res {
                                 Ok(_) => { pulled_medias.insert(media.id); }
                                 Err(e) => error!("{}", e),
                             },
@@ -80,8 +81,8 @@ pub fn pull(mut cmds: Commands) {
     });
 }
 
-async fn download(avid: i64, db: Db, bars: MultiProgress) -> Result<()> {
-    match BiliApi::request(MediaInfoPayload { aid: avid }).await? {
+async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<()> {
+    match BiliApi::request(MediaInfoPayload { aid: media.id }).await? {
         MediaInfoResp {
             data: Some(MediaInfoData { pages, .. }),
             code: 0,
@@ -93,7 +94,7 @@ async fn download(avid: i64, db: Db, bars: MultiProgress) -> Result<()> {
                         DashData {
                             dash: Dash { video, audio },
                         },
-                } = BiliApi::request(DashPayload::new(avid, cid).await?).await?;
+                } = BiliApi::request(DashPayload::new(media.id, cid).await?).await?;
 
                 match (video.into_iter().next(), audio.into_iter().next()) {
                     (Some(v), Some(a)) => {
@@ -125,7 +126,7 @@ async fn download(avid: i64, db: Db, bars: MultiProgress) -> Result<()> {
                                         }
                                         Ok(None) => finished_v = true,
                                         Err(e) => return Err(anyhow!(
-                                            "Failed to download video {avid} part<{part}>({page}): {e}"
+                                            "Failed to download video {} part<{part}>({page}): {e}", media.title
                                         ))
                                     }
                                 }
@@ -138,7 +139,7 @@ async fn download(avid: i64, db: Db, bars: MultiProgress) -> Result<()> {
                                         }
                                         Ok(None) => finished_a = true,
                                         Err(e) => return Err(anyhow!(
-                                            "Failed to download audio {avid} part<{part}>({page}): {e}"
+                                            "Failed to download audio {} part<{part}>({page}): {e}", media.title
                                         ))
                                     }
                                 }
@@ -146,8 +147,9 @@ async fn download(avid: i64, db: Db, bars: MultiProgress) -> Result<()> {
                             }
                         }
                         let title = format!(
-                            "{avid}-{title}({page}).mp4",
-                            title = sanitize_filename::sanitize(&part)
+                            "{}-{part}({page}).mp4",
+                            media.title,
+                            part = sanitize_filename::sanitize(&part)
                         );
                         let status = tokio::process::Command::new("ffmpeg")
                             .args([
@@ -168,7 +170,8 @@ async fn download(avid: i64, db: Db, bars: MultiProgress) -> Result<()> {
                             .unwrap();
                         if !status.success() {
                             return Err(anyhow!(
-                                "Failed to merge video and audio {avid} part<{part}>({page})"
+                                "Failed to merge video and audio {} part<{part}>({page})",
+                                media.title
                             ));
                         }
                     }
@@ -196,14 +199,16 @@ async fn download(avid: i64, db: Db, bars: MultiProgress) -> Result<()> {
                                 Ok(None) => break,
                                 Err(e) => {
                                     return Err(anyhow!(
-                                        "Failed to download video {avid} part<{part}>({page}): {e}"
+                                        "Failed to download video {} part<{part}>({page}): {e}",
+                                        media.title
                                     ));
                                 }
                             }
                         }
                         let title = format!(
-                            "{avid} {title}({page}).mp4",
-                            title = sanitize_filename::sanitize(&part)
+                            "{}-{part}({page}).mp4",
+                            media.title,
+                            part = sanitize_filename::sanitize(&part)
                         );
                         tokio::fs::rename(file_v.path(), format!("./{}", title)).await?;
                     }
@@ -231,21 +236,23 @@ async fn download(avid: i64, db: Db, bars: MultiProgress) -> Result<()> {
                                 Ok(None) => break,
                                 Err(e) => {
                                     return Err(anyhow!(
-                                        "Failed to download audio {avid} part<{part}>({page}): {e}"
+                                        "Failed to download audio {} part<{part}>({page}): {e}",
+                                        media.title
                                     ));
                                 }
                             }
                         }
                         let title = format!(
-                            "{avid} {title}({page}).mp3",
-                            title = sanitize_filename::sanitize(&part)
+                            "{}-{part}({page}).mp3",
+                            media.title,
+                            part = sanitize_filename::sanitize(&part)
                         );
                         tokio::fs::rename(file_a.path(), format!("./{}", title)).await?;
                     }
                     _ => {}
                 }
             }
-            db.set_media_state(avid, MediaState::Completed).await?;
+            db.set_media_state(media.id, MediaState::Completed).await?;
             Ok(())
         }
         MediaInfoResp {
@@ -254,7 +261,7 @@ async fn download(avid: i64, db: Db, bars: MultiProgress) -> Result<()> {
             ..
         } => {
             db.set_media_state(
-                avid,
+                media.id,
                 match code {
                     -403 | 62012 | 62002 => MediaState::PermissionDenied,
                     _ => MediaState::Expired,
@@ -263,7 +270,7 @@ async fn download(avid: i64, db: Db, bars: MultiProgress) -> Result<()> {
             .await?;
             Err(anyhow!(
                 "Info unreachable media<{}>: {}",
-                avid,
+                media.id,
                 option_msg.unwrap_or_default()
             ))
         }
