@@ -2,7 +2,7 @@ use anyhow::{Context as _, Result};
 use sea_orm::{
     ActiveValue::{Set, Unchanged},
     ConnectionTrait as _, DatabaseBackend, EntityTrait as _, IntoActiveModel as _,
-    QueryFilter as _, Statement,
+    QueryFilter as _, Statement, Value,
     sea_query::{OnConflict, SimpleExpr},
 };
 
@@ -69,6 +69,17 @@ impl Db {
         Ok(())
     }
 
+    pub async fn activate_all_sets(&self) -> Result<()> {
+        set::Entity::update_many()
+            .col_expr(
+                set::Column::State,
+                SimpleExpr::Value(Value::String(Some(Box::new(SetState::Active.to_string())))),
+            )
+            .exec(&self.db)
+            .await?;
+        Ok(())
+    }
+
     pub async fn deactivate_set(&self, set_id: i64) -> Result<()> {
         set::Entity::update(set::ActiveModel {
             set_id: Unchanged(set_id),
@@ -77,6 +88,19 @@ impl Db {
         })
         .exec(&self.db)
         .await?;
+        Ok(())
+    }
+
+    pub async fn deactivate_all_sets(&self) -> Result<()> {
+        set::Entity::update_many()
+            .col_expr(
+                set::Column::State,
+                SimpleExpr::Value(Value::String(Some(Box::new(
+                    SetState::Inactive.to_string(),
+                )))),
+            )
+            .exec(&self.db)
+            .await?;
         Ok(())
     }
 

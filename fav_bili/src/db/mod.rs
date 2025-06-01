@@ -7,14 +7,30 @@ mod set_account;
 mod up;
 mod up_account;
 
+use std::process::exit;
+
 use anyhow::{Context, Result};
-use bevy_ecs::resource::Resource;
 use sea_orm::{Database, DatabaseConnection};
 use sea_orm_migration::MigratorTrait as _;
+use tokio::sync::OnceCell;
+use tracing::error;
 
 use crate::migration::Migrator;
 
-#[derive(Debug, Clone, Resource)]
+static DB: OnceCell<Db> = OnceCell::const_new();
+
+pub async fn db() -> &'static Db {
+    DB.get_or_init(async || match Db::connect().await {
+        Ok(db) => db,
+        Err(e) => {
+            error!("{}", e);
+            exit(-1)
+        }
+    })
+    .await
+}
+
+#[derive(Debug, Clone)]
 pub struct Db {
     db: DatabaseConnection,
 }

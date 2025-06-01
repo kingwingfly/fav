@@ -1,7 +1,7 @@
 use anyhow::{Context as _, Result};
 use sea_orm::{
     ActiveValue::{Set, Unchanged},
-    ConnectionTrait as _, EntityTrait as _, IntoActiveModel as _, QueryFilter as _,
+    ConnectionTrait as _, EntityTrait as _, IntoActiveModel as _, QueryFilter as _, Value,
     sea_query::{OnConflict, SimpleExpr},
 };
 use sea_orm::{DatabaseBackend, Statement};
@@ -70,6 +70,17 @@ impl Db {
         Ok(())
     }
 
+    pub async fn activate_all_ups(&self) -> Result<()> {
+        up::Entity::update_many()
+            .col_expr(
+                up::Column::State,
+                SimpleExpr::Value(Value::String(Some(Box::new(UpState::Active.to_string())))),
+            )
+            .exec(&self.db)
+            .await?;
+        Ok(())
+    }
+
     pub async fn deactivate_up(&self, up_id: i64) -> Result<()> {
         up::Entity::update(up::ActiveModel {
             up_id: Unchanged(up_id),
@@ -78,6 +89,17 @@ impl Db {
         })
         .exec(&self.db)
         .await?;
+        Ok(())
+    }
+
+    pub async fn deactivate_all_ups(&self) -> Result<()> {
+        up::Entity::update_many()
+            .col_expr(
+                up::Column::State,
+                SimpleExpr::Value(Value::String(Some(Box::new(UpState::Inactive.to_string())))),
+            )
+            .exec(&self.db)
+            .await?;
         Ok(())
     }
 

@@ -2,10 +2,6 @@ use std::{io::Write, sync::Arc};
 
 use anyhow::{Result, anyhow};
 use api_req::ApiCaller as _;
-use bevy_ecs::{
-    observer::Trigger,
-    system::{Commands, Res},
-};
 use dashmap::DashSet;
 use futures::StreamExt as _;
 use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
@@ -18,72 +14,65 @@ use tracing::{error, info, warn};
 use crate::{
     api::BiliApi,
     cookies::{parse_cookies, set_cookie_jar},
-    db::Db,
+    db::{Db, db},
     entity::{account, media},
-    event::Pull,
     payload::{DashPayload, MediaInfoPayload},
     response::{Dash, DashData, DashResp, MediaInfoData, MediaInfoResp, Page},
-    runtime::Runtime,
     state::{AccountState, MediaState},
     table::head,
 };
 
-pub fn pull(mut cmds: Commands) {
-    cmds.add_observer(|_: Trigger<Pull>, runtime: Res<Runtime>, db: Res<Db>| {
-        if let Err(e) = runtime.block_on(async {
-            let accounts = db
-                .get_accounts_filtered(account::Column::State.eq(AccountState::Active))
-                .await?;
-            let pulled_medias = Arc::new(DashSet::<i64>::new());
-            let medias = db.all_active_pending_medias().await?;
-            let bars = MultiProgress::with_draw_target(ProgressDrawTarget::stderr());
-            for account in accounts {
-                info!("Pulling medias with account<{}>", account.name);
-                set_cookie_jar(parse_cookies(&account.cookies));
-                let token = CancellationToken::new();
-                let mut tasks = futures::stream::iter(
-                    medias
-                        .iter()
-                        .filter(|media| !pulled_medias.contains(&media.id)),
-                )
-                .map(|media| {
-                    let token = token.clone();
-                    let db = db.clone();
-                    let bars = bars.clone();
-                    let pulled_medias = pulled_medias.clone();
-                    async move {
-                        tokio::select! {
-                            res = download(media, db, bars), if !token.is_cancelled() => match res {
-                                Ok(_) => { pulled_medias.insert(media.id); }
-                                Err(e) => error!("{}", e),
-                            },
-                            _ = token.cancelled() => {},
-                        }
-                    }
-                })
-                .buffer_unordered(8);
-                loop {
-                    tokio::select! {
-                        res = tasks.next() => {
-                            if res.is_none() {
-                                break;
-                            }
-                        }
-                        _ = tokio::signal::ctrl_c() => {
-                            token.cancel();
-                            warn!("Received Ctrl-C");
-                            break;
-                        }
-                    }
+pub async fn pull() -> Result<()> {
+    let db = db().await;
+    let accounts = db
+        .get_accounts_filtered(account::Column::State.eq(AccountState::Active))
+        .await?;
+    let pulled_medias = Arc::new(DashSet::<i64>::new());
+    let medias = db.all_active_pending_medias().await?;
+    let bars = MultiProgress::with_draw_target(ProgressDrawTarget::stderr());
+    for account in accounts {
+        info!("Pulling medias with account<{}>", account.name);
+        set_cookie_jar(parse_cookies(&account.cookies));
+        let token = CancellationToken::new();
+        let mut tasks = futures::stream::iter(
+            medias
+                .iter()
+                .filter(|media| !pulled_medias.contains(&media.id)),
+        )
+        .map(|media| {
+            let token = token.clone();
+            let db = db.clone();
+            let bars = bars.clone();
+            let pulled_medias = pulled_medias.clone();
+            async move {
+                tokio::select! {
+                    res = download(media, db, bars), if !token.is_cancelled() => match res {
+                        Ok(_) => { pulled_medias.insert(media.id); }
+                        Err(e) => error!("{}", e),
+                    },
+                    _ = token.cancelled() => {},
                 }
             }
-            drop(bars);
-            info!("Finished pulling");
-            Ok::<_, anyhow::Error>(())
-        }) {
-            error!("{}", e);
+        })
+        .buffer_unordered(8);
+        loop {
+            tokio::select! {
+                res = tasks.next() => {
+                    if res.is_none() {
+                        break;
+                    }
+                }
+                _ = tokio::signal::ctrl_c() => {
+                    token.cancel();
+                    warn!("Received Ctrl-C");
+                    break;
+                }
+            }
         }
-    });
+    }
+    drop(bars);
+    info!("Finished pulling");
+    Ok(())
 }
 
 async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<()> {

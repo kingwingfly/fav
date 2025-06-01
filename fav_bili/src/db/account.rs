@@ -1,7 +1,7 @@
 use anyhow::{Context as _, Result};
 use sea_orm::{
     ActiveValue::{Set, Unchanged},
-    EntityTrait as _, IntoActiveModel as _, QueryFilter as _,
+    EntityTrait as _, IntoActiveModel as _, QueryFilter as _, Value,
     sea_query::{OnConflict, SimpleExpr},
 };
 
@@ -61,6 +61,19 @@ impl Db {
         Ok(())
     }
 
+    pub async fn activate_all_accounts(&self) -> Result<()> {
+        account::Entity::update_many()
+            .col_expr(
+                account::Column::State,
+                SimpleExpr::Value(Value::String(Some(Box::new(
+                    AccountState::Active.to_string(),
+                )))),
+            )
+            .exec(&self.db)
+            .await?;
+        Ok(())
+    }
+
     pub async fn deactivate_account(&self, account_id: i64) -> Result<()> {
         account::Entity::update(account::ActiveModel {
             account_id: Unchanged(account_id),
@@ -69,6 +82,19 @@ impl Db {
         })
         .exec(&self.db)
         .await?;
+        Ok(())
+    }
+
+    pub async fn deactivate_all_accounts(&self) -> Result<()> {
+        account::Entity::update_many()
+            .col_expr(
+                account::Column::State,
+                SimpleExpr::Value(Value::String(Some(Box::new(
+                    AccountState::Inactive.to_string(),
+                )))),
+            )
+            .exec(&self.db)
+            .await?;
         Ok(())
     }
 }

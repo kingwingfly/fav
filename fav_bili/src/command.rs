@@ -1,24 +1,9 @@
 use anyhow::Result;
-use bevy_ecs::{
-    schedule::{ExecutorKind, Schedule, ScheduleLabel},
-    world::World,
-};
 use clap::{Arg, ArgAction, Command, command, value_parser};
 use clap_complete::Shell;
 use tracing_subscriber::EnvFilter;
 
-use crate::{
-    db::Db,
-    event::{
-        ActivateAccount, ActivateAccountAll, ActivateSet, ActivateSetAll, ActivateUp,
-        ActivateUpAll, DeactivateAccount, DeactivateAccountAll, DeactivateSet, DeactivateSetAll,
-        DeactivateUp, DeactivateUpAll, Fetch, Like, ListAccount, ListMedia, ListSet, ListUp, Login,
-        Logout, LogoutAll, Pull, UseCookies,
-    },
-    runtime::Runtime,
-    system,
-    version::VERSION,
-};
+use crate::{action::*, version::VERSION};
 
 #[derive(Debug, Default)]
 pub struct FavCommand(Command);
@@ -222,7 +207,7 @@ impl FavCommand {
     }
 
     /// Parse the commands and args, return the Event to trigger.
-    pub fn run(mut self) -> Result<()> {
+    pub async fn run(mut self) -> Result<()> {
         let matches = self.0.get_matches_mut();
 
         match matches.subcommand() {
@@ -257,134 +242,109 @@ impl FavCommand {
                             .init();
                     }
                 }
-                let mut world = World::new();
-                let mut schedule = Schedule::new(FavSchedule);
-                schedule.set_executor_kind(ExecutorKind::SingleThreaded);
-
-                let runtime = Runtime::new()?;
-                let db = runtime.block_on(Db::connect())?;
-                world.insert_resource(db);
-                world.insert_resource(runtime);
-
-                schedule.add_systems((
-                    system::auth,
-                    system::activate,
-                    system::deactivate,
-                    system::list,
-                    system::fetch,
-                    system::pull,
-                    system::like,
-                ));
-                world.add_schedule(schedule);
-
-                world.run_schedule(FavSchedule);
 
                 match sub_cmd {
                     Some(("auth", sub_matches)) => match sub_matches.subcommand() {
-                        Some(("login", _)) => world.trigger(Login),
-                        Some(("usecookies", sub_matches)) => sub_matches
-                            .get_many::<String>("cookies")
-                            .unwrap() // arg_required_else_help has been set to true
-                            .for_each(|cookies| {
-                                world.trigger(UseCookies {
-                                    cookies: cookies.to_owned(),
-                                });
-                            }),
-                        Some(("logout", sub_matches)) if sub_matches.get_flag("all") => {
-                            world.trigger(LogoutAll);
+                        Some(("login", _)) => login().await?,
+                        Some(("usecookies", sub_matches)) => {
+                            for cookies in sub_matches.get_many::<String>("cookies").unwrap()
+                            // arg_required_else_help has been set to true
+                            {
+                                usecookies(cookies.to_owned()).await?;
+                            }
                         }
-                        Some(("logout", sub_matches)) => sub_matches
-                            .get_many::<i64>("account_id")
-                            .unwrap() // arg_required_else_help has been set to true
-                            .for_each(|&account_id| {
-                                world.trigger(Logout { account_id });
-                            }),
-
+                        Some(("logout", sub_matches)) if sub_matches.get_flag("all") => {
+                            logout_all().await?;
+                        }
+                        Some(("logout", sub_matches)) => {
+                            for account_id in sub_matches.get_many::<i64>("account_id").unwrap() {
+                                logout(*account_id).await?;
+                            }
+                        }
                         _ => unreachable!(),
                     },
                     Some(("list", sub_matches)) => match sub_matches.subcommand() {
-                        Some(("account", _)) => world.trigger(ListAccount),
-                        Some(("set", _)) => world.trigger(ListSet),
-                        Some(("up", _)) => world.trigger(ListUp),
-                        Some(("media", _)) => world.trigger(ListMedia),
+                        Some(("account", _)) => list_accounts().await?,
+                        Some(("set", _)) => list_sets().await?,
+                        Some(("up", _)) => list_ups().await?,
+                        Some(("media", _)) => list_medias().await?,
                         _ => unreachable!(),
                     },
                     Some(("activate", sub_matches)) => match sub_matches.subcommand() {
                         Some(("account", sub_matches)) => match sub_matches.get_flag("all") {
-                            true => world.trigger(ActivateAccountAll),
-                            false => sub_matches
-                                .get_many::<i64>("account_id")
-                                .unwrap() // arg_required_else_help has been set to true
-                                .for_each(|&account_id| {
-                                    world.trigger(ActivateAccount { account_id });
-                                }),
+                            true => activate_account_all().await?,
+                            false => {
+                                for account_id in sub_matches.get_many::<i64>("account_id").unwrap()
+                                // arg_required_else_help has been set to true
+                                {
+                                    activate_account(*account_id).await?;
+                                }
+                            }
                         },
                         Some(("set", sub_matches)) => match sub_matches.get_flag("all") {
-                            true => world.trigger(ActivateSetAll),
-                            false => sub_matches
-                                .get_many::<i64>("set_id")
-                                .unwrap() // arg_required_else_help has been set to true
-                                .for_each(|&set_id| {
-                                    world.trigger(ActivateSet { set_id });
-                                }),
+                            true => activate_set_all().await?,
+                            false => {
+                                for set_id in sub_matches.get_many::<i64>("set_id").unwrap()
+                                // arg_required_else_help has been set to true
+                                {
+                                    activate_set(*set_id).await?;
+                                }
+                            }
                         },
                         Some(("up", sub_matches)) => match sub_matches.get_flag("all") {
-                            true => world.trigger(ActivateUpAll),
-                            false => sub_matches
-                                .get_many::<i64>("up_id")
-                                .unwrap() // arg_required_else_help has been set to true
-                                .for_each(|&up_id| {
-                                    world.trigger(ActivateUp { up_id });
-                                }),
+                            true => activate_up_all().await?,
+                            false => {
+                                for up_id in sub_matches.get_many::<i64>("up_id").unwrap()
+                                // arg_required_else_help has been up to true
+                                {
+                                    activate_up(*up_id).await?;
+                                }
+                            }
                         },
                         _ => unreachable!(),
                     },
                     Some(("deactivate", sub_matches)) => match sub_matches.subcommand() {
                         Some(("account", sub_matches)) => match sub_matches.get_flag("all") {
-                            true => world.trigger(DeactivateAccountAll),
-                            false => sub_matches
-                                .get_many::<i64>("account_id")
-                                .unwrap() // arg_required_else_help has been set to true
-                                .for_each(|&account_id| {
-                                    world.trigger(DeactivateAccount { account_id });
-                                }),
+                            true => deactivate_account_all().await?,
+                            false => {
+                                for account_id in sub_matches.get_many::<i64>("account_id").unwrap()
+                                // arg_required_else_help has been set to true
+                                {
+                                    deactivate_account(*account_id).await?;
+                                }
+                            }
                         },
                         Some(("set", sub_matches)) => match sub_matches.get_flag("all") {
-                            true => world.trigger(DeactivateSetAll),
-                            false => sub_matches
-                                .get_many::<i64>("set_id")
-                                .unwrap() // arg_required_else_help has been set to true
-                                .for_each(|&set_id| {
-                                    world.trigger(DeactivateSet { set_id });
-                                }),
+                            true => deactivate_set_all().await?,
+                            false => {
+                                for set_id in sub_matches.get_many::<i64>("set_id").unwrap()
+                                // arg_required_else_help has been set to true
+                                {
+                                    deactivate_set(*set_id).await?;
+                                }
+                            }
                         },
                         Some(("up", sub_matches)) => match sub_matches.get_flag("all") {
-                            true => world.trigger(DeactivateUpAll),
-                            false => sub_matches
-                                .get_many::<i64>("up_id")
-                                .unwrap() // arg_required_else_help has been set to true
-                                .for_each(|&up_id| {
-                                    world.trigger(DeactivateUp { up_id });
-                                }),
+                            true => deactivate_up_all().await?,
+                            false => {
+                                for up_id in sub_matches.get_many::<i64>("up_id").unwrap()
+                                // arg_required_else_help has been up to true
+                                {
+                                    deactivate_up(*up_id).await?;
+                                }
+                            }
                         },
                         _ => unreachable!(),
                     },
-                    Some(("fetch", sub_matches)) => world.trigger(Fetch {
-                        prune: sub_matches.get_flag("prune"),
-                    }),
-                    Some(("like", sub_matches)) => world.trigger(Like {
-                        avids: sub_matches.get_many("avids").unwrap().copied().collect(),
-                    }),
-                    Some(("pull", _)) => world.trigger(Pull),
+                    Some(("fetch", sub_matches)) => fetch(sub_matches.get_flag("prune")).await?,
+                    Some(("like", sub_matches)) => {
+                        like(sub_matches.get_many("avids").unwrap().copied().collect()).await?
+                    }
+                    Some(("pull", _)) => pull().await?,
                     _ => unreachable!(),
                 }
-
-                world.run_schedule(FavSchedule);
             }
         }
         Ok(())
     }
 }
-
-#[derive(Debug, Clone, Eq, PartialEq, Hash, ScheduleLabel)]
-struct FavSchedule;
