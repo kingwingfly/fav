@@ -91,7 +91,7 @@ async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<(
             let only1p = pages.len() == 1;
             for Page { cid, page, part } in pages {
                 let filename = if only1p {
-                    part.to_owned()
+                    format!("{}-{}", media.id, media.title)
                 } else {
                     format!("{}-{}({page})-{part}", media.id, media.title)
                 };
