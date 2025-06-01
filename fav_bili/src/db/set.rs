@@ -17,7 +17,7 @@ impl Db {
                     .update_columns([set::Column::Name, set::Column::Count])
                     .to_owned(),
             )
-            .exec(&self.db)
+            .exec_without_returning(&self.db)
             .await?;
         Ok(())
     }

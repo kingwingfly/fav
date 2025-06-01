@@ -19,7 +19,7 @@ impl Db {
                     .update_columns([media::Column::Title, media::Column::Id, media::Column::Type])
                     .to_owned(),
             )
-            .exec(&self.db)
+            .exec_without_returning(&self.db)
             .await?;
         Ok(())
     }

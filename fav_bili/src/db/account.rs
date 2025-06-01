@@ -16,7 +16,7 @@ impl Db {
                     .update_columns([account::Column::Name, account::Column::Cookies])
                     .to_owned(),
             )
-            .exec(&self.db)
+            .exec_without_returning(&self.db)
             .await?;
         Ok(())
     }

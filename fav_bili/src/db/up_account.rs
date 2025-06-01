@@ -11,7 +11,7 @@ impl Db {
     ) -> Result<()> {
         up_account::Entity::insert_many(up_accounts.into_iter().map(|m| m.into_active_model()))
             .on_conflict_do_nothing()
-            .exec(&self.db)
+            .exec_without_returning(&self.db)
             .await?;
         Ok(())
     }
