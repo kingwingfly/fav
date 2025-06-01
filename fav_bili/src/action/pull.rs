@@ -13,7 +13,7 @@ use tracing::{error, info, warn};
 
 use crate::{
     api::BiliApi,
-    cookies::{parse_cookies, set_cookie_jar},
+    cookies::{add_cookie_jar, parse_cookies},
     db::{Db, db},
     entity::{account, media},
     payload::{DashPayload, MediaInfoPayload},
@@ -32,7 +32,7 @@ pub async fn pull() -> Result<()> {
     let bars = MultiProgress::with_draw_target(ProgressDrawTarget::stderr());
     for account in accounts {
         info!("Pulling medias with account<{}>", account.name);
-        set_cookie_jar(parse_cookies(&account.cookies));
+        add_cookie_jar(parse_cookies(&account.cookies));
         let token = CancellationToken::new();
         let mut tasks = futures::stream::iter(
             medias

@@ -1,6 +1,6 @@
 [package]
 name = "fav_bili"
-version = "1.0.5"
+version = "1.0.6"
 authors.workspace = true
 license.workspace = true
 edition.workspace = true
@@ -37,6 +37,8 @@ tabled = { version = "0.19.0" }
 indicatif = { version = "0.17.11" }
 unicode-width = { version = "0.2.0" }
 md5 = { version = "0.7" }
+hex = { version = "0.4" }
+ring = { version = "0.17" }
 sea-orm = { version = "1.1.0", features = [
     "sqlx-sqlite",
     "runtime-tokio",

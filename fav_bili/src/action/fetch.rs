@@ -12,7 +12,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::{
     api::BiliApi,
-    cookies::{parse_cookies, set_cookie_jar},
+    cookies::{add_cookie_jar, parse_cookies},
     db::db,
     entity::{account, media, media_set, media_up, set, set_account, up, up_account},
     payload::{
@@ -33,7 +33,7 @@ pub async fn fetch(prune: bool) -> Result<()> {
         .get_accounts_filtered(account::Column::State.eq(AccountState::Active))
         .await?;
     for account in accounts.iter() {
-        set_cookie_jar(parse_cookies(&account.cookies));
+        add_cookie_jar(parse_cookies(&account.cookies));
         let account_id = account.account_id;
         info!("Fetching sets with account<{}>", account.name);
         let ListSetResp {
@@ -133,7 +133,7 @@ pub async fn fetch(prune: bool) -> Result<()> {
     let fetched_sets = DashSet::<i64>::new();
     for account in accounts.iter() {
         info!("Fetching set medias with account<{}>", account.name);
-        set_cookie_jar(parse_cookies(&account.cookies));
+        add_cookie_jar(parse_cookies(&account.cookies));
         let account_id = account.account_id;
         let set_ids_of_account = db.get_set_ids_of_account(account_id).await?;
         for set_id in set_ids_of_account {
@@ -194,7 +194,7 @@ pub async fn fetch(prune: bool) -> Result<()> {
             "Fetching published contents of ups with account<{}>",
             account.name
         );
-        set_cookie_jar(parse_cookies(&account.cookies));
+        add_cookie_jar(parse_cookies(&account.cookies));
         let account_id = account.account_id;
         let up_ids_of_account = db.get_up_ids_of_account(account_id).await?;
         for up_id in up_ids_of_account {
@@ -257,7 +257,7 @@ pub async fn fetch(prune: bool) -> Result<()> {
     let fetched_medias = Arc::new(DashSet::<i64>::new());
     for account in accounts.iter() {
         info!("Fetching media metadatas with account<{}>", account.name);
-        set_cookie_jar(parse_cookies(&account.cookies));
+        add_cookie_jar(parse_cookies(&account.cookies));
         let medias = db.all_medias().await?;
         let mut tasks = futures::stream::iter(
             medias

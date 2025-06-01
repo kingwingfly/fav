@@ -9,6 +9,10 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 -->
 
 ## [Unreleased]
+## [1.0.5] - 2025-06-02
+
+- `fav like` will check `bili_ticket` cookies or generate one.
+
 ## [1.0.5] - 2025-06-01
 
 - `fav auth check` to check cookies usablity.

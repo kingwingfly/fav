@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow};
-use api_req::{ApiCaller as _, COOKIE_JAR, CookieStore as _, error::ApiErr};
+use api_req::{ApiCaller as _, error::ApiErr};
 use futures::StreamExt as _;
 use qrcode::{QrCode, render::unicode};
 use tokio::time::sleep;
@@ -9,7 +9,7 @@ use tracing::{error, info};
 
 use crate::{
     api::{AuthApi, BiliApi},
-    cookies::{parse_cookies, set_cookie_jar},
+    cookies::{add_cookie_jar, current_cookies, parse_cookies},
     db::db,
     entity::account,
     payload::{LogoutPayload, QrPayload, QrPollPayload, WbiPayload},
@@ -49,11 +49,7 @@ pub async fn login() -> Result<()> {
             }
         }
     }
-    let cookies = COOKIE_JAR
-        .cookies(&"https://bilibili.com".parse().unwrap())
-        .context("Auth related cookies should be set by bilibili.")?
-        .to_str()?
-        .to_owned();
+    let cookies = current_cookies()?;
     let WbiResp {
         data: WbiData { mid, uname, .. },
     } = BiliApi::request(WbiPayload).await?;
@@ -70,12 +66,8 @@ pub async fn login() -> Result<()> {
 
 pub async fn usecookies(cookies: String) -> Result<()> {
     let db = db().await;
-    set_cookie_jar(parse_cookies(&cookies));
-    let cookies = COOKIE_JAR
-        .cookies(&"https://bilibili.com".parse().unwrap())
-        .context("Auth related cookies should be set by fav.")?
-        .to_str()?
-        .to_owned();
+    add_cookie_jar(parse_cookies(&cookies));
+    let cookies = current_cookies()?;
     let WbiResp {
         data: WbiData { mid, uname, .. },
     } = BiliApi::request(WbiPayload).await?;
@@ -130,7 +122,7 @@ async fn logout_account(account_id: i64, cookies: String) -> Result<()> {
             "No bili_jct in cookies of account_id<{}>.",
             account_id
         ))?;
-    set_cookie_jar(cookies.into_iter());
+    add_cookie_jar(cookies.into_iter());
     let LogoutResp { code, message } =
         AuthApi::request(LogoutPayload { biliCSRF: bili_jct }).await?;
     match code {
@@ -156,7 +148,7 @@ pub async fn check_all() -> Result<()> {
 }
 
 async fn check_account(account: account::Model) -> Result<()> {
-    set_cookie_jar(parse_cookies(&account.cookies));
+    add_cookie_jar(parse_cookies(&account.cookies));
     match BiliApi::request(WbiPayload).await {
         Ok(WbiResp {
             data: WbiData { mid, .. },
@@ -164,12 +156,15 @@ async fn check_account(account: account::Model) -> Result<()> {
             if mid == account.account_id {
                 info!("Check passed. Hello😊, {}.", account.name);
             } else {
-                error!("Bilibili returned unmatched user id")
+                error!(
+                    "Bilibili returned unmatched user id account<{}>",
+                    account.name
+                )
             }
         }
         Err(ApiErr::UnDeserializeable(_)) => error!(
-            "Bilibili returned unexpected json, cookies expired: account<{} {}>",
-            account.name, account.account_id
+            "Bilibili returned unexpected json, cookies expired: account<{}>",
+            account.name
         ),
         Err(e) => return Err(e.into()),
     }
