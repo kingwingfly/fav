@@ -74,6 +74,8 @@ pub fn pull(mut cmds: Commands) {
                     }
                 }
             }
+            drop(bars);
+            info!("Finished pulling");
             Ok::<_, anyhow::Error>(())
         }) {
             error!("{}", e);

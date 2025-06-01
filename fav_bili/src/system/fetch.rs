@@ -338,6 +338,7 @@ pub fn fetch(mut cmds: Commands) {
                     info!("Pruning unfollowed medias");
                     db.prune_medias().await?;
                 }
+                info!("Finished fetching");
                 Ok::<_, anyhow::Error>(())
             }) {
                 error!("{}", e)
