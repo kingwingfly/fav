@@ -30,7 +30,7 @@ impl FavCommand {
                                         ).action(ArgAction::Append)
                                 ]),
                             Command::new("logout")
-                                .about("Logout")
+                                .about("Logout accounts")
                                 .arg_required_else_help(true)
                                 .args([
                                     Arg::new("all")
@@ -41,6 +41,21 @@ impl FavCommand {
                                         .conflicts_with("account_id"),
                                     Arg::new("account_id")
                                         .help("The account to logout")
+                                        .value_parser(value_parser!(i64))
+                                        .action(ArgAction::Append),
+                                ]),
+                            Command::new("check")
+                                .about("Check accounts cookies usability")
+                                .arg_required_else_help(true)
+                                .args([
+                                    Arg::new("all")
+                                        .help("Check all accounts cookies usability")
+                                        .long("all")
+                                        .short('a')
+                                        .action(ArgAction::SetTrue)
+                                        .conflicts_with("account_id"),
+                                    Arg::new("account_id")
+                                        .help("The account to check cookies usability")
                                         .value_parser(value_parser!(i64))
                                         .action(ArgAction::Append),
                                 ]),
@@ -259,6 +274,14 @@ impl FavCommand {
                         Some(("logout", sub_matches)) => {
                             for account_id in sub_matches.get_many::<i64>("account_id").unwrap() {
                                 logout(*account_id).await?;
+                            }
+                        }
+                        Some(("check", sub_matches)) if sub_matches.get_flag("all") => {
+                            check_all().await?;
+                        }
+                        Some(("check", sub_matches)) => {
+                            for account_id in sub_matches.get_many::<i64>("account_id").unwrap() {
+                                check(*account_id).await?;
                             }
                         }
                         _ => unreachable!(),

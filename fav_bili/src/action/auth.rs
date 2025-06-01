@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use anyhow::{Context as _, Result, anyhow};
-use api_req::{ApiCaller as _, COOKIE_JAR, CookieStore as _};
+use api_req::{ApiCaller as _, COOKIE_JAR, CookieStore as _, error::ApiErr};
 use futures::StreamExt as _;
 use qrcode::{QrCode, render::unicode};
 use tokio::time::sleep;
@@ -137,4 +137,41 @@ async fn logout_account(account_id: i64, cookies: String) -> Result<()> {
         0 => Ok(()),
         _ => Err(anyhow!("Failed to logout: {}", message.unwrap_or_default())),
     }
+}
+
+pub async fn check(account_id: i64) -> Result<()> {
+    let db = db().await;
+    let account = db.get_account(account_id).await?;
+    check_account(account).await?;
+    Ok(())
+}
+
+pub async fn check_all() -> Result<()> {
+    let db = db().await;
+    let accounts = db.all_accounts().await?;
+    for account in accounts {
+        check_account(account).await?;
+    }
+    Ok(())
+}
+
+async fn check_account(account: account::Model) -> Result<()> {
+    set_cookie_jar(parse_cookies(&account.cookies));
+    match BiliApi::request(WbiPayload).await {
+        Ok(WbiResp {
+            data: WbiData { mid, .. },
+        }) => {
+            if mid == account.account_id {
+                info!("Check passed. Hello😊, {}.", account.name);
+            } else {
+                error!("Bilibili returned unmatched user id")
+            }
+        }
+        Err(ApiErr::UnDeserializeable(_)) => error!(
+            "Bilibili returned unexpected json, cookies expired: account<{} {}>",
+            account.name, account.account_id
+        ),
+        Err(e) => return Err(e.into()),
+    }
+    Ok(())
 }

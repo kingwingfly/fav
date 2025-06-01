@@ -60,6 +60,8 @@ SELECT u.up_id, u.name, COUNT(u.up_id) count FROM up u LEFT JOIN media_up mu ON 
 fav like
 # or like all medias faved
 fav ls v | sed '1d;$d' | awk '{print $2;}' | xargs fav like
+# check cookies usability
+fav auth check -a
 ```
 
 Service example:
