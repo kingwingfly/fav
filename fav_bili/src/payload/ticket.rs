@@ -6,9 +6,9 @@ const KEY: &str = "XgwSnGZ1p";
 
 #[derive(Debug, Serialize, Payload)]
 #[api_req(path =
-    "/bapis/bilibili.api.ticket.v1.Ticket/GenWebTicket?key_id={key_id}&hexsign={hexsign}&context[ts]={context_ts}&csrf={csrf}",
+    "/bapis/bilibili.api.ticket.v1.Ticket/GenWebTicket",
     method = Method::POST,
-    req = json,
+    req = query,
 )]
 pub struct TicketPayload {
     key_id: String,
