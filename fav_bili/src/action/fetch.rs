@@ -264,25 +264,22 @@ pub async fn fetch(prune: bool) -> Result<()> {
                 .into_iter()
                 .filter(|media| !fetched_medias.contains(&media.id)),
         )
-        .map(|media| {
-            let fetched_medias = fetched_medias.clone();
-            async move {
-                match BiliApi::request(MediaInfoPayload { aid: media.id }).await? {
-                    MediaInfoResp {
-                        data: Some(MediaInfoData { owner, staff, .. }),
-                        code: 0,
-                        ..
-                    } => Ok((owner, staff, media)),
-                    MediaInfoResp {
-                        message: option_msg,
-                        ..
-                    } => Err(anyhow!(
-                        "Info unreachable media<{} {}>: {}",
-                        media.title,
-                        media.id,
-                        option_msg.unwrap_or_default()
-                    )),
-                }
+        .map(|media| async move {
+            match BiliApi::request(MediaInfoPayload { aid: media.id }).await? {
+                MediaInfoResp {
+                    data: Some(MediaInfoData { owner, staff, .. }),
+                    code: 0,
+                    ..
+                } => Ok((owner, staff, media)),
+                MediaInfoResp {
+                    message: option_msg,
+                    ..
+                } => Err(anyhow!(
+                    "Info unreachable media<{} {}>: {}",
+                    media.title,
+                    media.id,
+                    option_msg.unwrap_or_default()
+                )),
             }
         })
         .buffer_unordered(128);
