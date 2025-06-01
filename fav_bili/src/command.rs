@@ -21,7 +21,7 @@ impl FavCommand {
                         .subcommands([
                             Command::new("login").about("Login with QR code"),
                             Command::new("usecookies")
-                                .about("Add accounts with user-provided cookies (recommended);")
+                                .about("Add accounts with user-provided cookies (recommended)")
                                 .arg_required_else_help(true)
                                 .args([
                                     Arg::new("cookies")
