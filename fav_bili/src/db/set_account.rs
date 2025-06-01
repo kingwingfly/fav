@@ -5,14 +5,6 @@ use super::Db;
 use crate::entity::set_account;
 
 impl Db {
-    pub async fn upsert_set_account(&self, set_account: set_account::Model) -> Result<()> {
-        set_account::Entity::insert(set_account.into_active_model())
-            .on_conflict_do_nothing()
-            .exec(&self.db)
-            .await?;
-        Ok(())
-    }
-
     pub async fn upsert_set_accounts(
         &self,
         set_accounts: impl IntoIterator<Item = set_account::Model>,
@@ -31,15 +23,6 @@ impl Db {
             .await
             .map_err(Into::into)
             .map(|res| res.into_iter().map(|m| m.set_id).collect())
-    }
-
-    pub async fn get_account_ids_of_set(&self, set_id: i64) -> Result<Vec<i64>> {
-        set_account::Entity::find()
-            .filter(set_account::Column::SetId.eq(set_id))
-            .all(&self.db)
-            .await
-            .map_err(Into::into)
-            .map(|res| res.into_iter().map(|m| m.account_id).collect())
     }
 
     pub async fn delete_set_account(&self, set_account: set_account::Model) -> Result<()> {

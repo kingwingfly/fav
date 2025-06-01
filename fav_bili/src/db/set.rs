@@ -1,8 +1,8 @@
 use anyhow::{Context as _, Result};
 use sea_orm::{
     ActiveValue::{Set, Unchanged},
-    ConnectionTrait as _, DatabaseBackend, EntityTrait as _, IntoActiveModel as _,
-    QueryFilter as _, Statement, Value,
+    ConnectionTrait as _, DatabaseBackend, EntityTrait as _, IntoActiveModel as _, Statement,
+    Value,
     sea_query::{OnConflict, SimpleExpr},
 };
 
@@ -10,18 +10,6 @@ use super::Db;
 use crate::{entity::set, state::SetState};
 
 impl Db {
-    pub async fn upsert_set(&self, set: set::Model) -> Result<()> {
-        set::Entity::insert(set.into_active_model())
-            .on_conflict(
-                OnConflict::column(set::Column::SetId)
-                    .update_columns([set::Column::Name, set::Column::Count])
-                    .to_owned(),
-            )
-            .exec(&self.db)
-            .await?;
-        Ok(())
-    }
-
     pub async fn upsert_sets(&self, sets: impl IntoIterator<Item = set::Model>) -> Result<()> {
         set::Entity::insert_many(sets.into_iter().map(|s| s.into_active_model()))
             .on_conflict(
@@ -43,19 +31,6 @@ impl Db {
 
     pub async fn all_sets(&self) -> Result<Vec<set::Model>> {
         set::Entity::find().all(&self.db).await.map_err(Into::into)
-    }
-
-    pub async fn get_sets_filtered(&self, filter: SimpleExpr) -> Result<Vec<set::Model>> {
-        set::Entity::find()
-            .filter(filter)
-            .all(&self.db)
-            .await
-            .map_err(Into::into)
-    }
-
-    pub async fn delete_set(&self, set_id: i64) -> Result<()> {
-        set::Entity::delete_by_id(set_id).exec(&self.db).await?;
-        Ok(())
     }
 
     pub async fn activate_set(&self, set_id: i64) -> Result<()> {
