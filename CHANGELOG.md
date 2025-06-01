@@ -9,6 +9,10 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 -->
 
 ## [Unreleased]
+## [1.0.2] - 2025-06-01
+
+- Simplify code with paste macro
+
 ## [1.0.1] - 2025-06-01 {1.0.0}
 
 ⚠️ fav v0.* is archived [branch](https://github.com/kingwingfly/fav/tree/fav_v0)
