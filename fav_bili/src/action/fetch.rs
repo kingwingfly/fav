@@ -258,7 +258,7 @@ pub async fn fetch(prune: bool) -> Result<()> {
     for account in accounts.iter() {
         info!("Fetching media metadatas with account<{}>", account.name);
         add_cookie_jar(parse_cookies(&account.cookies));
-        let medias = db.all_medias().await?;
+        let medias = db.all_active_medias().await?;
         let mut tasks = futures::stream::iter(
             medias
                 .into_iter()
