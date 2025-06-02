@@ -107,7 +107,7 @@ pub async fn like(avids: Vec<i64>) -> Result<()> {
                             info!("Liked {}", aid);
                             Ok::<_, anyhow::Error>(())
                         }
-                        _ => Err(anyhow!("{}", message)),
+                        _ => Err(anyhow!("{} {}", message, aid)),
                     }
                 }
             })

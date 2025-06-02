@@ -1,5 +1,4 @@
-use anyhow::anyhow;
-use api_req::{ApiCaller, RedirectPolicy, header};
+use api_req::{ApiCaller, header};
 
 const USER_AGENT: &str = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.5 Safari/605.1.15";
 const REFERER: &str = "https://www.bilibili.com/";
@@ -11,10 +10,6 @@ const REFERER: &str = "https://www.bilibili.com/";
         (header::USER_AGENT, USER_AGENT),
         (header::REFERER, REFERER),
     ),
-    redirect = RedirectPolicy::custom(|attempt| {
-        let url = attempt.url().to_string();
-        attempt.error(anyhow!("Bili risk control redirectes to {}", url))
-    })
 )]
 pub struct AuthApi;
 
@@ -25,9 +20,5 @@ pub struct AuthApi;
         (header::USER_AGENT, USER_AGENT),
         (header::REFERER, REFERER),
     ),
-    redirect = RedirectPolicy::custom(|attempt| {
-        let url = attempt.url().to_string();
-        attempt.error(anyhow!("Bili risk control redirectes to {}", url))
-    })
 )]
 pub struct BiliApi;
