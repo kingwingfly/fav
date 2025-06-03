@@ -9,6 +9,10 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 -->
 
 ## [Unreleased]
+## [1.0.9] - 2025-06-03
+
+- fix bug when `fav fetch` checking if the media is active or up.
+
 ## [1.0.8] - 2025-06-02
 
 - When fetching medias' details, only fetch those with active set or up.

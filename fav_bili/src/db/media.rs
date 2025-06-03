@@ -49,7 +49,7 @@ impl Db {
                 r#"
 SELECT DISTINCT m.*
 FROM media m
-AND (
+WHERE
     EXISTS (
         SELECT 1
         FROM media_up mu
@@ -61,8 +61,7 @@ AND (
         FROM media_set ms
         JOIN "set" s ON ms.set_id = s.set_id
         WHERE ms.id = m.id AND s.state = 'Active'
-    )
-);
+    );
 "#,
             ))
             .all(&self.db)
