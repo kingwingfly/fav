@@ -222,9 +222,9 @@ checksum = "c08606f8c3cbf4ce6ec8e28fb0014a2c086708fe954eaa885384a6165172e7e8"
 
 [[package]]
 name = "avmux"
-version = "0.1.0"
+version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0afc64aceff28ac81123b56a734d77b3813f7526b03f555cded36eb969ea96a1"
+checksum = "d03ad9acc4faf38a9443425db32f599ccc7cea962b0e42a7a41c7ab4de550ae1"
 dependencies = [
  "rsmpeg",
  "terrors",
@@ -1569,7 +1569,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "07033963ba89ebaf1584d767badaa2e8fcec21aedea6b8c0346d487d49c28667"
 dependencies = [
  "cfg-if",
- "windows-targets 0.52.6",
+ "windows-targets 0.48.5",
 ]
 
 [[package]]
