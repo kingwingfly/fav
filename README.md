@@ -99,7 +99,7 @@ Or you can compile by yourself:
 
 ## Usage
 
-Need `ffmpeg` usable, and added to the PATH.
+Need `libavformat` able to be dynamic linked.
 
 ```sh
 Back up your favorite bilibili online resources with CLI.
