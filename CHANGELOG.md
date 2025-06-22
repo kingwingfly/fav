@@ -9,6 +9,11 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 -->
 
 ## [Unreleased]
+## [1.1.0] - 2025-06-22
+
+- bump deps
+- instead of calling `ffmpeg` directly, now use `rsmpeg` (via `avmux` create) to handle media muxing.
+
 ## [1.0.9] - 2025-06-03
 
 - fix bug when `fav fetch` checking if the media is active or up.

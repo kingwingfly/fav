@@ -1,7 +1,8 @@
-use std::{io::Write, sync::Arc};
+use std::{io::Write as _, sync::Arc};
 
 use anyhow::{Result, anyhow};
 use api_req::ApiCaller as _;
+use avmux::{AVFile, Mux as _};
 use dashmap::DashSet;
 use futures::StreamExt as _;
 use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
@@ -21,6 +22,8 @@ use crate::{
     state::{AccountState, MediaState},
     table::head,
 };
+
+const BAR_TEMPLATE: &str = "{msg} {spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})";
 
 pub async fn pull() -> Result<()> {
     let db = db().await;
@@ -108,9 +111,9 @@ async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<(
                         bars.add(pb.clone());
                         pb.set_message(head(part, 10));
                         pb.set_style(
-                            ProgressStyle::with_template("{msg} {spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
+                            ProgressStyle::with_template(BAR_TEMPLATE)
                                 .unwrap()
-                                .progress_chars("#>-")
+                                .progress_chars("#>-"),
                         );
                         let mut file_v = NamedTempFile::new()?;
                         let mut file_a = NamedTempFile::new()?;
@@ -150,26 +153,16 @@ async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<(
                             "{filename}.mp4",
                             filename = sanitize_filename::sanitize(&filename)
                         );
-                        let status = tokio::process::Command::new("ffmpeg")
-                            .args([
-                                "-y",
-                                "-i",
-                                file_v.path().to_str().unwrap(),
-                                "-i",
-                                file_a.path().to_str().unwrap(),
-                                "-codec",
-                                "copy",
-                                "-f",
-                                "mp4",
-                                &format!("./{}", title),
-                            ])
-                            .stderr(std::process::Stdio::null())
-                            .status()
-                            .await
-                            .unwrap();
-                        if !status.success() {
-                            return Err(anyhow!("Failed to merge video and audio {filename}"));
-                        }
+                        let output_path = format!("./{}", title);
+                        [
+                            AVFile::new(file_v.path().to_string_lossy()),
+                            AVFile::new(file_a.path().to_string_lossy()),
+                        ]
+                        .mux(AVFile::new(&output_path))
+                        .map_err(|e| {
+                            std::fs::remove_file(output_path).ok();
+                            anyhow!("Failed to mux video and audio {filename}: {e:?}")
+                        })?;
                     }
                     (Some(v), None) => {
                         let mut resp_v = BiliApi::client().get(v.base_url).send().await?;
@@ -180,9 +173,9 @@ async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<(
                         bars.add(pb.clone());
                         pb.set_message(head(part, 10));
                         pb.set_style(
-                            ProgressStyle::with_template("{msg} {spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
+                            ProgressStyle::with_template(BAR_TEMPLATE)
                                 .unwrap()
-                                .progress_chars("#>-")
+                                .progress_chars("#>-"),
                         );
                         let mut file_v = NamedTempFile::new()?;
                         loop {
@@ -215,9 +208,9 @@ async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<(
                         bars.add(pb.clone());
                         pb.set_message(head(part, 10));
                         pb.set_style(
-                            ProgressStyle::with_template("{msg} {spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})")
+                            ProgressStyle::with_template(BAR_TEMPLATE)
                                 .unwrap()
-                                .progress_chars("#>-")
+                                .progress_chars("#>-"),
                         );
                         let mut file_a = NamedTempFile::new()?;
                         loop {
