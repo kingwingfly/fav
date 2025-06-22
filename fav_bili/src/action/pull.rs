@@ -163,6 +163,7 @@ async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<(
                             std::fs::remove_file(output_path).ok();
                             anyhow!("Failed to mux video and audio {filename}: {e:?}")
                         })?;
+                        pb.finish();
                     }
                     (Some(v), None) => {
                         let mut resp_v = BiliApi::client().get(v.base_url).send().await?;
@@ -198,6 +199,7 @@ async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<(
                             filename = sanitize_filename::sanitize(&filename)
                         );
                         tokio::fs::rename(file_v.path(), format!("./{}", title)).await?;
+                        pb.finish();
                     }
                     (None, Some(a)) => {
                         let mut resp_a = BiliApi::client().get(a.base_url).send().await?;
@@ -233,6 +235,7 @@ async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<(
                             filename = sanitize_filename::sanitize(&filename)
                         );
                         tokio::fs::rename(file_a.path(), format!("./{}", title)).await?;
+                        pb.finish();
                     }
                     _ => {}
                 }

@@ -1,3 +1,5 @@
+use std::iter::repeat;
+
 use tabled::{Table, builder::Builder, settings::Style};
 use unicode_width::{UnicodeWidthChar as _, UnicodeWidthStr as _};
 
@@ -33,5 +35,5 @@ pub fn head(s: String, len: usize) -> String {
         }
         n += 1;
     }
-    s.chars().take(n).collect()
+    s.chars().chain(repeat(' ')).take(n).collect()
 }
