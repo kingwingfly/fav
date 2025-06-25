@@ -152,6 +152,7 @@ async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<(
                                     else => break,
                                 }
                             }
+                            pb.finish();
                             let title = format!(
                                 "{filename}.mp4",
                                 filename = sanitize_filename::sanitize(&filename)
@@ -167,7 +168,6 @@ async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<(
                                 std::fs::remove_file(output_path).ok();
                                 continue;
                             }
-                            pb.finish();
                         }
                         (Some(v), None) => {
                             let mut resp_v = BiliApi::client().get(v.base_url).send().await?;
@@ -198,12 +198,12 @@ async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<(
                                     }
                                 }
                             }
+                            pb.finish();
                             let title = format!(
                                 "{filename}.mp4",
                                 filename = sanitize_filename::sanitize(&filename)
                             );
                             tokio::fs::rename(file_v.path(), format!("./{}", title)).await?;
-                            pb.finish();
                         }
                         (None, Some(a)) => {
                             let mut resp_a = BiliApi::client().get(a.base_url).send().await?;
@@ -234,12 +234,12 @@ async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<(
                                     }
                                 }
                             }
+                            pb.finish();
                             let title = format!(
                                 "{filename}.mp3",
                                 filename = sanitize_filename::sanitize(&filename)
                             );
                             tokio::fs::rename(file_a.path(), format!("./{}", title)).await?;
-                            pb.finish();
                         }
                         (None, None) => return Err(anyhow!("No legal stream in {}", filename)),
                     }
