@@ -99,145 +99,151 @@ async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<(
                         },
                 } = BiliApi::request(DashPayload::new(media.id, cid).await?).await?;
 
-                match (video.into_iter().next(), audio.into_iter().next()) {
-                    (Some(v), Some(a)) => {
-                        let mut resp_v = BiliApi::client().get(v.base_url).send().await?;
-                        let mut resp_a = BiliApi::client().get(a.base_url).send().await?;
-                        let hv2u64 =
-                            |hv: &HeaderValue| -> u64 { hv.to_str().unwrap().parse().unwrap() };
-                        let size = hv2u64(&resp_v.headers()[CONTENT_LENGTH])
-                            + hv2u64(&resp_a.headers()[CONTENT_LENGTH]);
-                        let pb = ProgressBar::new(size);
-                        bars.add(pb.clone());
-                        pb.set_message(head(part, 10));
-                        pb.set_style(
-                            ProgressStyle::with_template(BAR_TEMPLATE)
-                                .unwrap()
-                                .progress_chars("#>-"),
-                        );
-                        let mut file_v = NamedTempFile::new()?;
-                        let mut file_a = NamedTempFile::new()?;
-                        let (mut finished_v, mut finished_a) = (false, false);
-                        loop {
-                            tokio::select! {
-                                res = resp_v.chunk(), if !finished_v => {
-                                    match res {
-                                        Ok(Some(chunk)) => {
-                                            file_v.write_all(&chunk)?;
-                                            file_v.flush()?;
-                                            pb.inc(chunk.len() as u64);
+                let mut video = video.into_iter();
+                let mut audio = audio.into_iter();
+                loop {
+                    match (video.next(), audio.next()) {
+                        (Some(v), Some(a)) => {
+                            let mut resp_v = BiliApi::client().get(v.base_url).send().await?;
+                            let mut resp_a = BiliApi::client().get(a.base_url).send().await?;
+                            let hv2u64 =
+                                |hv: &HeaderValue| -> u64 { hv.to_str().unwrap().parse().unwrap() };
+                            let size = hv2u64(&resp_v.headers()[CONTENT_LENGTH])
+                                + hv2u64(&resp_a.headers()[CONTENT_LENGTH]);
+                            let pb = ProgressBar::new(size);
+                            bars.add(pb.clone());
+                            pb.set_message(head(&part, 10));
+                            pb.set_style(
+                                ProgressStyle::with_template(BAR_TEMPLATE)
+                                    .unwrap()
+                                    .progress_chars("#>-"),
+                            );
+                            let mut file_v = NamedTempFile::new()?;
+                            let mut file_a = NamedTempFile::new()?;
+                            let (mut finished_v, mut finished_a) = (false, false);
+                            loop {
+                                tokio::select! {
+                                    res = resp_v.chunk(), if !finished_v => {
+                                        match res {
+                                            Ok(Some(chunk)) => {
+                                                file_v.write_all(&chunk)?;
+                                                file_v.flush()?;
+                                                pb.inc(chunk.len() as u64);
+                                            }
+                                            Ok(None) => finished_v = true,
+                                            Err(e) => return Err(anyhow!(
+                                                "Failed to download video {filename}: {e}"
+                                            ))
                                         }
-                                        Ok(None) => finished_v = true,
-                                        Err(e) => return Err(anyhow!(
+                                    }
+                                    res = resp_a.chunk(), if !finished_a => {
+                                        match res {
+                                            Ok(Some(chunk)) => {
+                                                file_a.write_all(&chunk)?;
+                                                file_a.flush()?;
+                                                pb.inc(chunk.len() as u64);
+                                            }
+                                            Ok(None) => finished_a = true,
+                                            Err(e) => return Err(anyhow!(
+                                                "Failed to download audio {filename}: {e}"
+                                            ))
+                                        }
+                                    }
+                                    else => break,
+                                }
+                            }
+                            let title = format!(
+                                "{filename}.mp4",
+                                filename = sanitize_filename::sanitize(&filename)
+                            );
+                            let output_path = format!("./{}", title);
+                            if [
+                                AVFile::new(file_v.path().to_string_lossy()),
+                                AVFile::new(file_a.path().to_string_lossy()),
+                            ]
+                            .mux(AVFile::new(&output_path))
+                            .is_err()
+                            {
+                                std::fs::remove_file(output_path).ok();
+                                continue;
+                            }
+                            pb.finish();
+                        }
+                        (Some(v), None) => {
+                            let mut resp_v = BiliApi::client().get(v.base_url).send().await?;
+                            let hv2u64 =
+                                |hv: &HeaderValue| -> u64 { hv.to_str().unwrap().parse().unwrap() };
+                            let size = hv2u64(&resp_v.headers()[CONTENT_LENGTH]);
+                            let pb = ProgressBar::new(size);
+                            bars.add(pb.clone());
+                            pb.set_message(head(part, 10));
+                            pb.set_style(
+                                ProgressStyle::with_template(BAR_TEMPLATE)
+                                    .unwrap()
+                                    .progress_chars("#>-"),
+                            );
+                            let mut file_v = NamedTempFile::new()?;
+                            loop {
+                                match resp_v.chunk().await {
+                                    Ok(Some(chunk)) => {
+                                        file_v.write_all(&chunk)?;
+                                        file_v.flush()?;
+                                        pb.inc(chunk.len() as u64);
+                                    }
+                                    Ok(None) => break,
+                                    Err(e) => {
+                                        return Err(anyhow!(
                                             "Failed to download video {filename}: {e}"
-                                        ))
+                                        ));
                                     }
                                 }
-                                res = resp_a.chunk(), if !finished_a => {
-                                    match res {
-                                        Ok(Some(chunk)) => {
-                                            file_a.write_all(&chunk)?;
-                                            file_a.flush()?;
-                                            pb.inc(chunk.len() as u64);
-                                        }
-                                        Ok(None) => finished_a = true,
-                                        Err(e) => return Err(anyhow!(
+                            }
+                            let title = format!(
+                                "{filename}.mp4",
+                                filename = sanitize_filename::sanitize(&filename)
+                            );
+                            tokio::fs::rename(file_v.path(), format!("./{}", title)).await?;
+                            pb.finish();
+                        }
+                        (None, Some(a)) => {
+                            let mut resp_a = BiliApi::client().get(a.base_url).send().await?;
+                            let hv2u64 =
+                                |hv: &HeaderValue| -> u64 { hv.to_str().unwrap().parse().unwrap() };
+                            let size = hv2u64(&resp_a.headers()[CONTENT_LENGTH]);
+                            let pb = ProgressBar::new(size);
+                            bars.add(pb.clone());
+                            pb.set_message(head(part, 10));
+                            pb.set_style(
+                                ProgressStyle::with_template(BAR_TEMPLATE)
+                                    .unwrap()
+                                    .progress_chars("#>-"),
+                            );
+                            let mut file_a = NamedTempFile::new()?;
+                            loop {
+                                match resp_a.chunk().await {
+                                    Ok(Some(chunk)) => {
+                                        file_a.write_all(&chunk)?;
+                                        file_a.flush()?;
+                                        pb.inc(chunk.len() as u64);
+                                    }
+                                    Ok(None) => break,
+                                    Err(e) => {
+                                        return Err(anyhow!(
                                             "Failed to download audio {filename}: {e}"
-                                        ))
+                                        ));
                                     }
                                 }
-                                else => break,
                             }
+                            let title = format!(
+                                "{filename}.mp3",
+                                filename = sanitize_filename::sanitize(&filename)
+                            );
+                            tokio::fs::rename(file_a.path(), format!("./{}", title)).await?;
+                            pb.finish();
                         }
-                        let title = format!(
-                            "{filename}.mp4",
-                            filename = sanitize_filename::sanitize(&filename)
-                        );
-                        let output_path = format!("./{}", title);
-                        [
-                            AVFile::new(file_v.path().to_string_lossy()),
-                            AVFile::new(file_a.path().to_string_lossy()),
-                        ]
-                        .mux(AVFile::new(&output_path))
-                        .map_err(|e| {
-                            std::fs::remove_file(output_path).ok();
-                            anyhow!("Failed to mux video and audio {filename}: {e:?}")
-                        })?;
-                        pb.finish();
+                        (None, None) => return Err(anyhow!("No legal stream in {}", filename)),
                     }
-                    (Some(v), None) => {
-                        let mut resp_v = BiliApi::client().get(v.base_url).send().await?;
-                        let hv2u64 =
-                            |hv: &HeaderValue| -> u64 { hv.to_str().unwrap().parse().unwrap() };
-                        let size = hv2u64(&resp_v.headers()[CONTENT_LENGTH]);
-                        let pb = ProgressBar::new(size);
-                        bars.add(pb.clone());
-                        pb.set_message(head(part, 10));
-                        pb.set_style(
-                            ProgressStyle::with_template(BAR_TEMPLATE)
-                                .unwrap()
-                                .progress_chars("#>-"),
-                        );
-                        let mut file_v = NamedTempFile::new()?;
-                        loop {
-                            match resp_v.chunk().await {
-                                Ok(Some(chunk)) => {
-                                    file_v.write_all(&chunk)?;
-                                    file_v.flush()?;
-                                    pb.inc(chunk.len() as u64);
-                                }
-                                Ok(None) => break,
-                                Err(e) => {
-                                    return Err(anyhow!(
-                                        "Failed to download video {filename}: {e}"
-                                    ));
-                                }
-                            }
-                        }
-                        let title = format!(
-                            "{filename}.mp4",
-                            filename = sanitize_filename::sanitize(&filename)
-                        );
-                        tokio::fs::rename(file_v.path(), format!("./{}", title)).await?;
-                        pb.finish();
-                    }
-                    (None, Some(a)) => {
-                        let mut resp_a = BiliApi::client().get(a.base_url).send().await?;
-                        let hv2u64 =
-                            |hv: &HeaderValue| -> u64 { hv.to_str().unwrap().parse().unwrap() };
-                        let size = hv2u64(&resp_a.headers()[CONTENT_LENGTH]);
-                        let pb = ProgressBar::new(size);
-                        bars.add(pb.clone());
-                        pb.set_message(head(part, 10));
-                        pb.set_style(
-                            ProgressStyle::with_template(BAR_TEMPLATE)
-                                .unwrap()
-                                .progress_chars("#>-"),
-                        );
-                        let mut file_a = NamedTempFile::new()?;
-                        loop {
-                            match resp_a.chunk().await {
-                                Ok(Some(chunk)) => {
-                                    file_a.write_all(&chunk)?;
-                                    file_a.flush()?;
-                                    pb.inc(chunk.len() as u64);
-                                }
-                                Ok(None) => break,
-                                Err(e) => {
-                                    return Err(anyhow!(
-                                        "Failed to download audio {filename}: {e}"
-                                    ));
-                                }
-                            }
-                        }
-                        let title = format!(
-                            "{filename}.mp3",
-                            filename = sanitize_filename::sanitize(&filename)
-                        );
-                        tokio::fs::rename(file_a.path(), format!("./{}", title)).await?;
-                        pb.finish();
-                    }
-                    _ => {}
+                    break;
                 }
             }
             db.set_media_state(media.id, MediaState::Completed).await?;

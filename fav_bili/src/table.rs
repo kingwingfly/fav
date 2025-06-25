@@ -22,18 +22,18 @@ where
 }
 
 /// Return head len sub-string of s (unicode-width)
-pub fn head(s: String, len: usize) -> String {
-    if s.width_cjk() <= len {
-        return s;
+pub fn head(s: impl AsRef<str>, len: usize) -> String {
+    if s.as_ref().width_cjk() <= len {
+        return s.as_ref().chars().chain(repeat(' ')).take(len).collect();
     }
     let mut n = 0;
     let mut cur = 0;
-    for c in s.chars() {
+    for c in s.as_ref().chars() {
         cur += c.width_cjk().unwrap_or_default();
         if cur > len {
             break;
         }
         n += 1;
     }
-    s.chars().chain(repeat(' ')).take(n).collect()
+    s.as_ref().chars().chain(repeat(' ')).take(n).collect()
 }
