@@ -33,10 +33,10 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
 serde_urlencoded = { version = "0.7" }
 qrcode = { version = "0.14", default-features = false }
-tabled = { version = "0.19" }
+tabled = { version = "0.20" }
 indicatif = { version = "0.17" }
 unicode-width = { version = "0.2" }
-md5 = { version = "0.7" }
+md5 = { version = "0.8" }
 hex = { version = "0.4" }
 ring = { version = "0.17" }
 sea-orm = { version = "1.1", features = [
