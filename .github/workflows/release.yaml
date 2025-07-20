@@ -41,18 +41,40 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: install dependencies macos
-        if: ${{ matrix.os == "macos-latest" }}
+        if: ${{ matrix.os == 'macos-latest' }}
         run: brew install ffmpeg pkgconf
       - name: install dependencies linux
-        if: ${{ matrix.os == "ubuntu-24.04" }}
+        if: ${{ matrix.os == 'ubuntu-24.04' }}
         run: |
           sudo apt-get update
-          sudo apt install -y libavcodec-dev libavdevice-dev libavfilter-dev libavformat-dev libavutil-dev libpostproc-dev libswresample-dev libswscale-dev pkg-config
+          sudo apt-get install libssl-dev autoconf automake build-essential cmake git-core libass-dev libfreetype6-dev libgnutls28-dev libmp3lame-dev libtool libvorbis-dev meson ninja-build pkg-config texinfo wget curl yasm zlib1g-dev nasm
+          mkdir -p ~/ffmpeg_sources /tmp/bin /tmp/ffmpeg
+          cd ~/ffmpeg_sources
+          git clone --depth 1 -b release/7.1 https://git.ffmpeg.org/ffmpeg.git ffmpeg
+          cd ffmpeg
+          PATH="/tmp/bin:$PATH" PKG_CONFIG_PATH="/tmp/ffmpeg/lib/pkgconfig" ./configure \
+              --prefix="/tmp/ffmpeg" \
+              --pkg-config-flags="--static" \
+              --extra-cflags="-I/tmp/ffmpeg/include" \
+              --extra-ldflags="-L/tmp/ffmpeg/lib" \
+              --extra-libs="-lpthread -lm" \
+              --ld="g++" \
+              --bindir="/tmp/bin" \
+              --disable-autodetect \
+              --enable-shared --disable-debug --enable-lto \
+              --enable-version3 \
+              --disable-programs \
+              --disable-doc \
+              --disable-everything \
+              --enable-protocol=file --enable-muxer=mp4 | tee ffmpeg.txt
+          PATH="/tmp/bin:$PATH" make
+          make install
+          echo "FFMPEG_PKG_CONFIG_PATH=/tmp/ffmpeg/lib/pkgconfig" >> $GITHUB_ENV
       - name: Install winget
-        if: ${{ matrix.os == "windows-latest" }}
+        if: ${{ matrix.os == 'windows-latest' }}
         uses: Cyberboss/install-winget@v1
       - name: install ffmpeg windows
-        if: ${{ matrix.os == "windows-latest" }}
+        if: ${{ matrix.os == 'windows-latest' }}
         run: |
           mkdir ffmpeg
           winget install --id BtbN.FFmpeg.GPL.Shared.7.1 -l ffmpeg --accept-package-agreements --accept-source-agreements
