@@ -41,18 +41,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: install dependencies macos
-        if: ${{ matrix.os }} == "macos-latest"
+        if: ${{ matrix.os == "macos-latest" }}
         run: brew install ffmpeg pkgconf
       - name: install dependencies linux
-        if: ${{ matrix.os }} == "ubuntu-24.04"
+        if: ${{ matrix.os == "ubuntu-24.04" }}
         run: |
           sudo apt-get update
           sudo apt install -y libavcodec-dev libavdevice-dev libavfilter-dev libavformat-dev libavutil-dev libpostproc-dev libswresample-dev libswscale-dev pkg-config
       - name: Install winget
-        if: ${{ matrix.os }} == "windows-latest"
+        if: ${{ matrix.os == "windows-latest" }}
         uses: Cyberboss/install-winget@v1
       - name: install ffmpeg windows
-        if: ${{ matrix.os }} == "windows-latest"
+        if: ${{ matrix.os == "windows-latest" }}
         run: |
           mkdir ffmpeg
           winget install --id BtbN.FFmpeg.GPL.Shared.7.1 -l ffmpeg --accept-package-agreements --accept-source-agreements
