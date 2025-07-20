@@ -27,7 +27,7 @@ impl Db {
         up::Entity::find_by_id(up_id)
             .one(&self.db)
             .await?
-            .context(format!("Unknown up<{}>", up_id))
+            .context(format!("Unknown up<{up_id}>"))
     }
 
     pub async fn all_ups(&self) -> Result<Vec<up::Model>> {

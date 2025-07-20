@@ -32,7 +32,7 @@ jobs:
             target: "aarch64-apple-darwin"
           - os: "macos-latest" # for Intel based macs.
             target: "x86_64-apple-darwin"
-          - os: "ubuntu-22.04"
+          - os: "ubuntu-24.04"
             target: x86_64-unknown-linux-gnu
           - os: "windows-latest"
             target: x86_64-pc-windows-msvc
@@ -40,6 +40,28 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: install dependencies macos
+        if: ${{ matrix.os }} == "macos-latest"
+        run: brew install ffmpeg pkgconf
+      - name: install dependencies linux
+        if: ${{ matrix.os }} == "ubuntu-24.04"
+        run: |
+          sudo apt-get update
+          sudo apt install -y libavcodec-dev libavdevice-dev libavfilter-dev libavformat-dev libavutil-dev libpostproc-dev libswresample-dev libswscale-dev pkg-config
+      - name: Install winget
+        if: ${{ matrix.os }} == "windows-latest"
+        uses: Cyberboss/install-winget@v1
+      - name: install ffmpeg windows
+        if: ${{ matrix.os }} == "windows-latest"
+        run: |
+          mkdir ffmpeg
+          winget install --id BtbN.FFmpeg.GPL.Shared.7.1 -l ffmpeg --accept-package-agreements --accept-source-agreements
+          $dir = Get-Item ffmpeg/ffmpeg-* | Select-Object -First 1
+          Rename-Item -Path $dir.FullName -NewName "ffmpeg"
+          ls -l ffmpeg/ffmpeg
+          $ffmpeg = Resolve-Path -Path "ffmpeg/ffmpeg" | Select-Object -ExpandProperty Path
+          echo "FFMPEG_LIBS_DIR=$ffmpeg/lib" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          echo "FFMPEG_INCLUDE_DIR=$ffmpeg/include" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
           # (required) Comma-separated list of binary names (non-extension portion of filename) to build and upload.

@@ -13,6 +13,6 @@ mod tests {
     #[test]
     #[ignore = "human check needed"]
     fn print_version() {
-        println!("{}", VERSION);
+        println!("{VERSION}");
     }
 }

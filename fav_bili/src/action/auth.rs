@@ -28,7 +28,7 @@ pub async fn login() -> Result<()> {
         .dark_color(unicode::Dense1x2::Light)
         .light_color(unicode::Dense1x2::Dark)
         .build();
-    println!("{}", image);
+    println!("{image}");
     loop {
         sleep(Duration::from_secs(3)).await;
         let QrPollResp {
@@ -60,7 +60,7 @@ pub async fn login() -> Result<()> {
         state: AccountState::Active.to_string(),
     })
     .await?;
-    println!("Hello😊, {}.", uname);
+    println!("Hello😊, {uname}.");
     Ok(())
 }
 
@@ -78,7 +78,7 @@ pub async fn usecookies(cookies: String) -> Result<()> {
         state: AccountState::Active.to_string(),
     })
     .await?;
-    println!("Hello😊, {}.", uname);
+    println!("Hello😊, {uname}.");
     Ok(())
 }
 
@@ -119,8 +119,7 @@ async fn logout_account(account_id: i64, cookies: String) -> Result<()> {
         .find(|c| c.name() == "bili_jct")
         .map(|c| c.value().to_owned())
         .context(format!(
-            "No bili_jct in cookies of account_id<{}>.",
-            account_id
+            "No bili_jct in cookies of account_id<{account_id}>."
         ))?;
     add_cookie_jar(cookies.into_iter());
     let LogoutResp { code, message } =

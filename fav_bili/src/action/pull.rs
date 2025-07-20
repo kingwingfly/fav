@@ -157,7 +157,7 @@ async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<(
                                 "{filename}.mp4",
                                 filename = sanitize_filename::sanitize(&filename)
                             );
-                            let output_path = format!("./{}", title);
+                            let output_path = format!("./{title}");
                             if [
                                 AVFile::new(file_v.path().to_string_lossy()),
                                 AVFile::new(file_a.path().to_string_lossy()),
@@ -203,7 +203,7 @@ async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<(
                                 "{filename}.mp4",
                                 filename = sanitize_filename::sanitize(&filename)
                             );
-                            tokio::fs::rename(file_v.path(), format!("./{}", title)).await?;
+                            tokio::fs::rename(file_v.path(), format!("./{title}")).await?;
                         }
                         (None, Some(a)) => {
                             let mut resp_a = BiliApi::client().get(a.base_url).send().await?;
@@ -239,7 +239,7 @@ async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<(
                                 "{filename}.mp3",
                                 filename = sanitize_filename::sanitize(&filename)
                             );
-                            tokio::fs::rename(file_a.path(), format!("./{}", title)).await?;
+                            tokio::fs::rename(file_a.path(), format!("./{title}")).await?;
                         }
                         (None, None) => return Err(anyhow!("No legal stream in {}", filename)),
                     }

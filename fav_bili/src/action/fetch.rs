@@ -89,7 +89,7 @@ pub async fn fetch(prune: bool) -> Result<()> {
                     ps: 50,
                 })
                 .await
-                .context(format!("Failed to fetch following ups' page {}", pn))?;
+                .context(format!("Failed to fetch following ups' page {pn}"))?;
                 Ok::<_, anyhow::Error>(list)
             })
             .buffer_unordered(8);
@@ -156,7 +156,7 @@ pub async fn fetch(prune: bool) -> Result<()> {
                         ps: 20,
                     })
                     .await
-                    .context(format!("Failed to fetch sets' page {}", pn))?;
+                    .context(format!("Failed to fetch sets' page {pn}"))?;
                     Ok::<_, anyhow::Error>(medias)
                 })
                 .buffer_unordered(8);
@@ -222,7 +222,7 @@ pub async fn fetch(prune: bool) -> Result<()> {
                             },
                     } = BiliApi::request(InUpPayload::new(up_id, pn, 30).await?)
                         .await
-                        .context(format!("Failed to fetch up space page {}", pn))?;
+                        .context(format!("Failed to fetch up space page {pn}"))?;
                     Ok::<_, anyhow::Error>(vlist)
                 })
                 .buffer_unordered(8);

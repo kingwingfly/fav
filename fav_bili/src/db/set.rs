@@ -26,7 +26,7 @@ impl Db {
         set::Entity::find_by_id(set_id)
             .one(&self.db)
             .await?
-            .context(format!("Unknown set<{}>", set_id))
+            .context(format!("Unknown set<{set_id}>"))
     }
 
     pub async fn all_sets(&self) -> Result<Vec<set::Model>> {

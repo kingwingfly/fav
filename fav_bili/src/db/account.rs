@@ -25,7 +25,7 @@ impl Db {
         account::Entity::find_by_id(account_id)
             .one(&self.db)
             .await?
-            .context(format!("Unknown account<{}>", account_id))
+            .context(format!("Unknown account<{account_id}>"))
     }
 
     pub async fn all_accounts(&self) -> Result<Vec<account::Model>> {

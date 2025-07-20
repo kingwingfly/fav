@@ -25,7 +25,7 @@ impl TicketPayload {
             .unwrap()
             .as_secs();
         let key = Key::new(HMAC_SHA256, KEY.as_bytes());
-        let tag = sign(&key, format!("ts{}", context_ts).as_bytes());
+        let tag = sign(&key, format!("ts{context_ts}").as_bytes());
         let hexsign = hex::encode(tag);
         Self {
             key_id: "ec02".to_string(),
