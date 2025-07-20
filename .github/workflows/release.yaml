@@ -28,10 +28,8 @@ jobs:
     strategy:
       matrix:
         include:
-          - os: "macos-latest" # for Arm based macs (M1 and above).
+          - os: "macos-latest"
             target: "aarch64-apple-darwin"
-          - os: "macos-latest" # for Intel based macs.
-            target: "x86_64-apple-darwin"
           - os: "ubuntu-24.04"
             target: x86_64-unknown-linux-gnu
           - os: "windows-latest"
