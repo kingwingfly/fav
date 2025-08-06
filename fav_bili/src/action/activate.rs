@@ -7,10 +7,10 @@ use crate::db::db;
 macro_rules! activate {
     ($($obj: ident),+) => {
         $(paste! {
-            pub async fn [<activate_ $obj>](account_id: i64) -> Result<()> {
+            pub async fn [<activate_ $obj>](id: i64) -> Result<()> {
                 let db = db().await;
-                db.[<activate_ $obj>](account_id).await?;
-                info!(concat!("Activated ", stringify!($obj), "<{}>"), account_id);
+                db.[<activate_ $obj>](id).await?;
+                info!(concat!("Activated ", stringify!($obj), "<{}>"), id);
                 Ok(())
             }
 
