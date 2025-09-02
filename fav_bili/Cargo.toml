@@ -33,10 +33,10 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
 serde_urlencoded = { version = "0.7" }
 qrcode = { version = "0.14", default-features = false }
-tabled = { version = "0.19" }
-indicatif = { version = "0.17" }
+tabled = { version = "0.20" }
+indicatif = { version = "0.18" }
 unicode-width = { version = "0.2" }
-md5 = { version = "0.7" }
+md5 = { version = "0.8" }
 hex = { version = "0.4" }
 ring = { version = "0.17" }
 sea-orm = { version = "1.1", features = [
@@ -48,7 +48,7 @@ sea-orm-migration = { version = "1.1", features = [
     "runtime-tokio",
     "sqlx-sqlite",
 ] }
-tempfile = { version = "3.20" }
+tempfile = { version = "3.21" }
 avmux = { version = "0.1.0" }
 sanitize-filename = { version = "0.6" }
 paste = { version = "1.0" }
