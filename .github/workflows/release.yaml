@@ -48,7 +48,7 @@ jobs:
           sudo apt-get install libssl-dev autoconf automake build-essential cmake git-core libass-dev libfreetype6-dev libgnutls28-dev libmp3lame-dev libtool libvorbis-dev meson ninja-build pkg-config texinfo wget curl yasm zlib1g-dev nasm
           mkdir -p ~/ffmpeg_sources /tmp/bin /tmp/ffmpeg
           cd ~/ffmpeg_sources
-          git clone --depth 1 -b release/7.1 https://git.ffmpeg.org/ffmpeg.git ffmpeg
+          git clone --depth 1 -b release/8.0 https://git.ffmpeg.org/ffmpeg.git ffmpeg
           cd ffmpeg
           PATH="/tmp/bin:$PATH" PKG_CONFIG_PATH="/tmp/ffmpeg/lib/pkgconfig" ./configure \
               --prefix="/tmp/ffmpeg" \
@@ -75,7 +75,7 @@ jobs:
         if: ${{ matrix.os == 'windows-latest' }}
         run: |
           mkdir ffmpeg
-          winget install --id BtbN.FFmpeg.GPL.Shared.7.1 -l ffmpeg --accept-package-agreements --accept-source-agreements
+          winget install --id BtbN.FFmpeg.GPL.Shared.8.0 -l ffmpeg --accept-package-agreements --accept-source-agreements
           $dir = Get-Item ffmpeg/ffmpeg-* | Select-Object -First 1
           Rename-Item -Path $dir.FullName -NewName "ffmpeg"
           ls -l ffmpeg/ffmpeg

@@ -9,6 +9,10 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 -->
 
 ## [Unreleased]
+## [1.2.0] - 2025-10-11
+
+- dynamic link to ffmpeg release/8.0
+
 ## [1.1.1] - 2025-07-20
 
 - bump deps

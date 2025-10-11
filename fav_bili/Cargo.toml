@@ -1,6 +1,6 @@
 [package]
 name = "fav_bili"
-version = "1.1.1"
+version = "1.2.0"
 authors.workspace = true
 license.workspace = true
 edition.workspace = true
@@ -49,7 +49,7 @@ sea-orm-migration = { version = "1.1", features = [
     "sqlx-sqlite",
 ] }
 tempfile = { version = "3.20" }
-avmux = { version = "0.1.0" }
+avmux = { version = "0.1.3", default-features = false, features = ["link_system_ffmpeg", "ffmpeg8"] }
 sanitize-filename = { version = "0.6" }
 paste = { version = "1.0" }
 
