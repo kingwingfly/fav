@@ -1,8 +1,8 @@
-use std::{io::Write as _, sync::Arc};
+use std::{io::Write as _, sync::Arc, thread::available_parallelism};
 
 use anyhow::{Result, anyhow};
 use api_req::ApiCaller as _;
-use avmux::{AVFile, Mux as _};
+use avmux::{AFile, Mux as _, VFile};
 use dashmap::DashSet;
 use futures::StreamExt as _;
 use indicatif::{MultiProgress, ProgressBar, ProgressDrawTarget, ProgressStyle};
@@ -37,6 +37,9 @@ pub async fn pull() -> Result<()> {
         info!("Pulling medias with account<{}>", account.name);
         add_cookie_jar(parse_cookies(&account.cookies));
         let token = CancellationToken::new();
+
+        avmux::silent_log();
+
         let mut tasks = futures::stream::iter(
             medias
                 .iter()
@@ -57,7 +60,7 @@ pub async fn pull() -> Result<()> {
                 }
             }
         })
-        .buffer_unordered(8);
+        .buffer_unordered(available_parallelism().map(|num| num.get()).unwrap_or(8));
         loop {
             tokio::select! {
                 res = tasks.next() => {
@@ -158,12 +161,12 @@ async fn download(media: &media::Model, db: Db, bars: MultiProgress) -> Result<(
                                 filename = sanitize_filename::sanitize(&filename)
                             );
                             let output_path = format!("./{title}");
-                            if [
-                                AVFile::new(file_v.path().to_string_lossy()),
-                                AVFile::new(file_a.path().to_string_lossy()),
-                            ]
-                            .mux(AVFile::new(&output_path))
-                            .is_err()
+                            if (
+                                VFile::new(file_v.path().to_string_lossy()),
+                                AFile::new(file_a.path().to_string_lossy()),
+                            )
+                                .simple_mux(VFile::new(&output_path))
+                                .is_err()
                             {
                                 std::fs::remove_file(output_path).ok();
                                 continue;
