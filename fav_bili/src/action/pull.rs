@@ -26,7 +26,7 @@ use crate::{
 const BAR_TEMPLATE: &str = "{msg} {spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})";
 
 pub async fn pull() -> Result<()> {
-    let db = db().await;
+    let db = db(false).await;
     let accounts = db
         .get_accounts_filtered(account::Column::State.eq(AccountState::Active))
         .await?;

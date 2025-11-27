@@ -19,11 +19,11 @@ use crate::migration::Migrator;
 
 static DB: OnceCell<Db> = OnceCell::const_new();
 
-pub async fn db() -> &'static Db {
-    DB.get_or_init(async || match Db::connect().await {
+pub async fn db(create: bool) -> &'static Db {
+    DB.get_or_init(async move || match Db::connect(create).await {
         Ok(db) => db,
         Err(e) => {
-            error!("{}", e);
+            error!("Login first, no db yet; {}", e);
             exit(-1)
         }
     })
@@ -36,11 +36,17 @@ pub struct Db {
 }
 
 impl Db {
-    pub async fn connect() -> Result<Self> {
-        std::fs::create_dir_all(".fav").context("Failed to create .fav dir")?;
-        let db = Database::connect("sqlite://.fav/fav.db?mode=rwc")
-            .await
-            .context("Failed to connect db")?;
+    pub async fn connect(create: bool) -> Result<Self> {
+        if create {
+            std::fs::create_dir_all(".fav").context("Failed to create .fav dir")?;
+        }
+        let db = Database::connect(if create {
+            "sqlite://.fav/fav.db?mode=rwc"
+        } else {
+            "sqlite://.fav/fav.db?mode=rw"
+        })
+        .await
+        .context("Failed to connect db")?;
         Migrator::up(&db, None)
             .await
             .context("Failed to update db tables")?;

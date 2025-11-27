@@ -9,7 +9,11 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 -->
 
 ## [Unreleased]
-## [1.2.1] - 2025-10-11
+## [1.2.2] - 2025-11-28
+
+- avoid necessary creating `.fav`
+
+## [1.2.1] - 2025-11-28
 
 - silent ffmpeg logs, which may ruin indicatif
 

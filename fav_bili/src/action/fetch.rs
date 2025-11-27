@@ -28,7 +28,7 @@ use crate::{
 };
 
 pub async fn fetch(prune: bool) -> Result<()> {
-    let db = db().await;
+    let db = db(false).await;
     let accounts = db
         .get_accounts_filtered(account::Column::State.eq(AccountState::Active))
         .await?;

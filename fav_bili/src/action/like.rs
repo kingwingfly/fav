@@ -18,7 +18,7 @@ use crate::{
 };
 
 pub async fn like(avids: Vec<i64>) -> Result<()> {
-    let db = db().await;
+    let db = db(false).await;
     let accounts = db
         .get_accounts_filtered(account::Column::State.eq(AccountState::Active))
         .await?;

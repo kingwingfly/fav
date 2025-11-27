@@ -18,7 +18,7 @@ use crate::{
 };
 
 pub async fn login() -> Result<()> {
-    let db = db().await;
+    let db = db(true).await;
     let QrResp {
         data: QrData { url, qrcode_key },
     } = AuthApi::request(QrPayload).await?;
@@ -65,7 +65,7 @@ pub async fn login() -> Result<()> {
 }
 
 pub async fn usecookies(cookies: String) -> Result<()> {
-    let db = db().await;
+    let db = db(true).await;
     add_cookie_jar(parse_cookies(&cookies));
     let cookies = current_cookies()?;
     let WbiResp {
@@ -83,7 +83,7 @@ pub async fn usecookies(cookies: String) -> Result<()> {
 }
 
 pub async fn logout(account_id: i64) -> Result<()> {
-    let db = db().await;
+    let db = db(false).await;
     let account = db.get_account(account_id).await?;
     logout_account(account_id, account.cookies).await?;
     info!("Logout successfully.");
@@ -93,7 +93,7 @@ pub async fn logout(account_id: i64) -> Result<()> {
 }
 
 pub async fn logout_all() -> Result<()> {
-    let db = db().await;
+    let db = db(false).await;
     let accounts = db.all_accounts().await?;
     let mut tasks = futures::stream::iter(accounts)
         .map(|account| async move {
@@ -131,14 +131,14 @@ async fn logout_account(account_id: i64, cookies: String) -> Result<()> {
 }
 
 pub async fn check(account_id: i64) -> Result<()> {
-    let db = db().await;
+    let db = db(false).await;
     let account = db.get_account(account_id).await?;
     check_account(account).await?;
     Ok(())
 }
 
 pub async fn check_all() -> Result<()> {
-    let db = db().await;
+    let db = db(false).await;
     let accounts = db.all_accounts().await?;
     for account in accounts {
         check_account(account).await?;
