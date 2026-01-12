@@ -21,7 +21,7 @@ jobs:
         run: rustup component add clippy
 
       - name: login to crates.io
-        run: cargo login ${{ secrets.CRATESIO }}
+        run: echo "${{ secrets.CRATESIO }}" | cargo login
 
       - name: publish fav_bili
         if: ${{ inputs.fav_bili }}
