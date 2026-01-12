@@ -3,7 +3,7 @@ name: publish
 on:
   workflow_dispatch:
     inputs:
-      fav:
+      fav_bili:
         description: "publish fav_bili"
         type: boolean
         default: false
