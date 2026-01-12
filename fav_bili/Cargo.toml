@@ -1,6 +1,6 @@
 [package]
 name = "fav_bili"
-version = "1.2.2"
+version = "1.2.3"
 authors.workspace = true
 license.workspace = true
 edition.workspace = true
@@ -26,7 +26,7 @@ dashmap = { version = "6.1" }
 clap = { version = "4.5", features = ["cargo"] }
 clap_complete = { version = "4.5" }
 api_req = { version = "0.4", features = ["cookies"] }
-reqwest = { version = "0.12" }
+reqwest = { version = "0.13" }
 url = { version = "2.5", features = ["serde"] }
 cookie = { version = "0.18" }
 serde = { version = "1", features = ["derive"] }
@@ -49,7 +49,7 @@ sea-orm-migration = { version = "1.1", features = [
     "sqlx-sqlite",
 ] }
 tempfile = { version = "3.20" }
-avmux = { version = "0.2.0", default-features = false, features = ["link_system_ffmpeg", "ffmpeg8"] }
+avmux = { version = "0.2", default-features = false, features = ["link_system_ffmpeg", "ffmpeg8"] }
 sanitize-filename = { version = "0.6" }
 paste = { version = "1.0" }
 

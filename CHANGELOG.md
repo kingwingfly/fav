@@ -9,6 +9,11 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 -->
 
 ## [Unreleased]
+## [1.2.3] - 2026-01-13
+
+- bump deps
+- try to bring back GitHub workflow
+
 ## [1.2.2] - 2025-11-28
 
 - avoid unnecessary creating `.fav`
