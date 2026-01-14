@@ -2,7 +2,7 @@
 [workspace]
 members = ["fav_bili", "migration"]
 default-members = ["fav_bili"]
-resolver = "2"
+resolver = "3"
 
 [workspace.package]
 authors = ["Louis <836250617@qq.com>"]

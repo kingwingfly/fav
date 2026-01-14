@@ -1,17 +1,16 @@
-use vergen::RustcBuilder;
-use vergen_gitcl::{Emitter, GitclBuilder};
+use anyhow::Result;
+use vergen::{Emitter, RustcBuilder};
+use vergen_git2::Git2Builder;
 
-fn main() {
+fn main() -> Result<()> {
+    let rustc = RustcBuilder::default()
+        .host_triple(true)
+        .semver(true)
+        .build()?;
+    let git = Git2Builder::default().describe(true, true, None).build()?;
     Emitter::default()
-        .add_instructions(
-            &GitclBuilder::default()
-                .describe(true, true, Some("v*"))
-                .build()
-                .unwrap(),
-        )
-        .unwrap()
-        .add_instructions(&RustcBuilder::default().semver(true).build().unwrap())
-        .unwrap()
-        .emit()
-        .unwrap();
+        .add_instructions(&rustc)?
+        .add_instructions(&git)?
+        .emit()?;
+    Ok(())
 }

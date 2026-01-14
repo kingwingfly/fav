@@ -6,19 +6,19 @@ const REFERER: &str = "https://www.bilibili.com/";
 #[derive(Debug, ApiCaller)]
 #[api_req(
     base_url = "https://passport.bilibili.com",
-    default_headers = (
+    default_headers = [
         (header::USER_AGENT, USER_AGENT),
         (header::REFERER, REFERER),
-    ),
+    ],
 )]
 pub struct AuthApi;
 
 #[derive(Debug, ApiCaller)]
 #[api_req(
     base_url = "https://api.bilibili.com",
-    default_headers = (
+    default_headers = [
         (header::USER_AGENT, USER_AGENT),
         (header::REFERER, REFERER),
-    ),
+    ],
 )]
 pub struct BiliApi;

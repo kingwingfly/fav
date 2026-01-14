@@ -9,6 +9,12 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 -->
 
 ## [Unreleased]
+## [1.2.4] - 2026-01-14
+
+- bump deps
+- better version display
+- use reqwest 0.13
+
 ## [1.2.3] - 2026-01-13
 
 - bump deps

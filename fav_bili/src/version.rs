@@ -1,18 +1,12 @@
 use const_format::formatc;
 
 pub const VERSION: &str = formatc!(
-    "version: {fav_version}\trustc: {rustc_version}",
-    fav_version = env!("VERGEN_GIT_DESCRIBE"),
-    rustc_version = env!("VERGEN_RUSTC_SEMVER")
+    "version: {} tag: {}\nrustc: {} {}",
+    env!("CARGO_PKG_VERSION"),
+    match option_env!("VERGEN_GIT_DESCRIBE") {
+        Some(git_desc) => git_desc,
+        None => "crates.io",
+    },
+    env!("VERGEN_RUSTC_SEMVER"),
+    env!("VERGEN_RUSTC_HOST_TRIPLE"),
 );
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    #[ignore = "human check needed"]
-    fn print_version() {
-        println!("{VERSION}");
-    }
-}
