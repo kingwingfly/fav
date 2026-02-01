@@ -55,8 +55,8 @@ paste = { version = "1.0" }
 
 [build-dependencies]
 anyhow = "1.0"
-vergen = { version = "9.0", features = ["build", "rustc"] }
-vergen-git2 = "1.0"
+vergen = { version = "9.1", features = ["build", "rustc"] }
+vergen-git2 = "9.1"
 
 [features]
 default = ["ffmpeg8"]
