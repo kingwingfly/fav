@@ -24,7 +24,7 @@ anyhow = { version = "1.0" }
 const_format = { version = "0.2", features = ["fmt"] }
 dashmap = { version = "6.1" }
 clap = { version = "4.5", features = ["cargo"] }
-clap_complete = { version = "4.5" }
+clap_complete = { version = "4.6" }
 api_req = { version = "0.5", features = ["cookies"] }
 reqwest = { version = "0.13" }
 url = { version = "2.5", features = ["serde"] }
@@ -48,15 +48,15 @@ sea-orm-migration = { version = "1.1", features = [
     "runtime-tokio",
     "sqlx-sqlite",
 ] }
-tempfile = { version = "3.20" }
+tempfile = { version = "3.27" }
 avmux = { version = "0.2", default-features = false, features = ["link_system_ffmpeg"] }
 sanitize-filename = { version = "0.6" }
 paste = { version = "1.0" }
 
 [build-dependencies]
 anyhow = "1.0"
-vergen = { version = "9.0", features = ["build", "rustc"] }
-vergen-git2 = "1.0"
+vergen = { version = "9.1", features = ["build", "rustc"] }
+vergen-git2 = "9.1"
 
 [features]
 default = ["ffmpeg8"]
