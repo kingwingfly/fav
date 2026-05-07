@@ -62,6 +62,8 @@
 
 [![Product Name Screen Shot][product-screenshot]](https://github.com/kingwingfly/fav)
 
+批量备份收藏夹/up主视频。
+
 Back up your favorite bilibili online resources with CLI.
 
 ⚠️: There's a broken change between v0 and v1, details in [CHANGELOG.md](CHANGELOG.md)
@@ -97,9 +99,9 @@ Or you can compile by yourself:
     # default link ffmpeg8
     cargo build --release
     # if you want to link different versions of ffmpeg
-    cargo build --release -F ffmpeg7_1
-    cargo build --release -F ffmpeg7
-    cargo build --release -F ffmpeg6
+    cargo build --release --no-default-features -F ffmpeg7_1
+    cargo build --release --no-default-features -F ffmpeg7
+    cargo build --release --no-default-features -F ffmpeg6
     ```
 
 Or after installing ffmpeg and pkgconf, run `cargo install fav_bili`.
