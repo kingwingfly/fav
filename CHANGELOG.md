@@ -9,6 +9,10 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 -->
 
 ## [Unreleased]
+## [1.2.5] - 2026-05-11
+
+- this release is for testing rsmpeg
+
 ## [1.2.4] - 2026-01-14
 
 - bump deps
