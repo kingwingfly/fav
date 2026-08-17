@@ -82,7 +82,7 @@ Back up your favorite bilibili online resources with CLI.
 
 You can download the release [here](https://github.com/kingwingfly/fav/releases)
 
-For ubuntu/debian users, the package in release page is built on ffmpeg source code release/8.0, as far as I know, `ffmpeg's libav*` in apt is different, so there may be a link error, please try to compile youself.
+For ubuntu/debian users, the package in release page is built on ffmpeg source code release/9.0, as far as I know, `ffmpeg's libav*` in apt is different, so there may be a link error, please try to compile youself.
 
 For Arch Linux users, you can `yay -S fav-git` maybe (outdated for now), someone has maken it a package.
 
@@ -96,12 +96,10 @@ Or you can compile by yourself:
     ```
 3. Compile
     ```sh
-    # default link ffmpeg8
+    # the installed ffmpeg is probed automatically (pkg-config, or vcpkg on MSVC)
     cargo build --release
-    # if you want to link different versions of ffmpeg
-    cargo build --release --no-default-features -F ffmpeg7_1
-    cargo build --release --no-default-features -F ffmpeg7
-    cargo build --release --no-default-features -F ffmpeg6
+    # or point at a specific ffmpeg installation ($FFMPEG_DIR/lib and $FFMPEG_DIR/include)
+    FFMPEG_DIR=/path/to/ffmpeg cargo build --release
     ```
 
 Or after installing ffmpeg and pkgconf, run `cargo install fav_bili`.

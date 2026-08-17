@@ -9,6 +9,14 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 -->
 
 ## [Unreleased]
+## [1.3.0] - 2026-08-17
+
+- bump `avmux` to 0.3, which is built on `ffmpeg-next` instead of `rsmpeg`, so FFmpeg 9 can be used
+- ⚠️: the released binaries now link FFmpeg 9 (`libav*.so.63` on linux); if your system FFmpeg is older, please compile yourself
+- drop the `ffmpeg6`/`ffmpeg7`/`ffmpeg7_1`/`ffmpeg8` features; the installed FFmpeg is probed automatically, and `FFMPEG_DIR` overrides it
+- the release workflow builds against FFmpeg 9 on all platforms, and builds with `--locked`
+- bump `vergen` to 10
+
 ## [1.2.5] - 2026-05-11
 
 - this release is for testing rsmpeg

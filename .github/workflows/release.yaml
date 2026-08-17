@@ -48,7 +48,7 @@ jobs:
           sudo apt-get install libssl-dev autoconf automake build-essential cmake git-core libass-dev libfreetype6-dev libgnutls28-dev libmp3lame-dev libtool libvorbis-dev meson ninja-build pkg-config texinfo wget curl yasm zlib1g-dev nasm
           mkdir -p ~/ffmpeg_sources /tmp/bin /tmp/ffmpeg
           cd ~/ffmpeg_sources
-          git clone --depth 1 -b release/8.0 https://git.ffmpeg.org/ffmpeg.git ffmpeg
+          git clone --depth 1 -b release/9.0 https://git.ffmpeg.org/ffmpeg.git ffmpeg
           cd ffmpeg
           PATH="/tmp/bin:$PATH" PKG_CONFIG_PATH="/tmp/ffmpeg/lib/pkgconfig" ./configure \
               --prefix="/tmp/ffmpeg" \
@@ -67,19 +67,20 @@ jobs:
               --enable-protocol=file --enable-muxer=mp4 | tee ffmpeg.txt
           PATH="/tmp/bin:$PATH" make
           make install
-          echo "FFMPEG_PKG_CONFIG_PATH=/tmp/ffmpeg/lib/pkgconfig" >> $GITHUB_ENV
+          echo "FFMPEG_DIR=/tmp/ffmpeg" >> $GITHUB_ENV
       - name: install ffmpeg windows
         if: ${{ matrix.os == 'windows-latest' }}
-        # winget is preinstalled since windows-2025
+        # winget only packages BtbN FFmpeg up to 8.1, so take the 9.0 shared build
+        # straight from the BtbN release. Its layout is already `lib/` + `include/`,
+        # which is what FFMPEG_DIR expects.
         run: |
-          mkdir ffmpeg
-          winget install --id BtbN.FFmpeg.GPL.Shared.8.0 -l ffmpeg --accept-package-agreements --accept-source-agreements
+          # the progress bar makes Invoke-WebRequest crawl on a ~70MB download
+          $ProgressPreference = 'SilentlyContinue'
+          Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n9.0-latest-win64-gpl-shared-9.0.zip" -OutFile ffmpeg.zip
+          Expand-Archive -Path ffmpeg.zip -DestinationPath ffmpeg
           $dir = Get-Item ffmpeg/ffmpeg-* | Select-Object -First 1
-          Rename-Item -Path $dir.FullName -NewName "ffmpeg"
-          ls -l ffmpeg/ffmpeg
-          $ffmpeg = Resolve-Path -Path "ffmpeg/ffmpeg" | Select-Object -ExpandProperty Path
-          echo "FFMPEG_LIBS_DIR=$ffmpeg/lib" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          echo "FFMPEG_INCLUDE_DIR=$ffmpeg/include" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          ls $dir.FullName
+          echo "FFMPEG_DIR=$($dir.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
           # (required) Comma-separated list of binary names (non-extension portion of filename) to build and upload.
@@ -108,5 +109,8 @@ jobs:
           # [default value: windows]
           # [possible values: all, unix, windows, none]
           zip: windows
+          # (optional) Build with the `--locked` flag, so a release ships exactly the
+          # dependency versions in the committed Cargo.lock. Defaults to false.
+          locked: true
           # (required) GitHub token for uploading assets to GitHub Releases.
           token: ${{ secrets.GITHUB_TOKEN }}
