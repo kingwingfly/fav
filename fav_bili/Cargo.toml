@@ -48,7 +48,7 @@ serde_json = { version = "1" }
 toml = { version = "0.8" }
 console = { version = "0.16" }
 qrcode = { version = "0.14", default-features = false }
-tabled = { version = "0.20" }
+tabled = { version = "0.20", default-features = false, features = ["std"] }
 indicatif = { version = "0.18" }
 unicode-width = { version = "0.2" }
 md5 = { version = "0.8" }
