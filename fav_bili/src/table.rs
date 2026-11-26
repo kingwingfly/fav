@@ -1,11 +1,11 @@
 use std::fmt;
+use std::io::{self, Write as _};
 use std::str::FromStr;
 
 use anyhow::Result;
 use clap::{ValueEnum, builder::PossibleValue};
-use console::{Term, style};
+use console::{Term, strip_ansi_codes, style};
 use serde::{Deserialize, Serialize};
-use tabled::{Table, builder::Builder, settings::Style};
 use unicode_width::{UnicodeWidthChar as _, UnicodeWidthStr as _};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -134,18 +134,47 @@ pub fn should_color_with_env(
     }
 }
 
-/// Truncate `s` to fit within `max_cols` CJK display columns, appending `…` when truncated.
+/// Measure the visible terminal display width of `s`, ignoring ANSI escape codes.
+pub fn display_width(s: &str) -> usize {
+    strip_ansi_codes(s).width()
+}
+
+/// Write `text` followed by a newline to `stdout`.
+///
+/// Returns `Ok(true)` when written normally, `Ok(false)` when downstream closes the pipe
+/// (`BrokenPipe`, e.g. `fav ls v | head`), and `Err` on any other I/O failure.
+pub fn write_stdout_line(text: &str) -> io::Result<bool> {
+    let mut out = io::stdout().lock();
+    match writeln!(out, "{text}") {
+        Ok(()) => Ok(true),
+        Err(err) if err.kind() == io::ErrorKind::BrokenPipe => Ok(false),
+        Err(err) => Err(err),
+    }
+}
+
+/// Write raw `text` (without appending an extra newline) to `stdout`, treating `BrokenPipe`
+/// as a clean early exit (`Ok(false)`).
+pub fn write_stdout_all(text: &str) -> io::Result<bool> {
+    let mut out = io::stdout().lock();
+    match out.write_all(text.as_bytes()) {
+        Ok(()) => Ok(true),
+        Err(err) if err.kind() == io::ErrorKind::BrokenPipe => Ok(false),
+        Err(err) => Err(err),
+    }
+}
+
+/// Truncate `s` to fit within `max_cols` display columns, appending `…` when truncated.
 /// Never exceeds `max_cols` display columns and does not right-pad.
 pub fn truncate_display(s: &str, max_cols: usize) -> String {
     if max_cols == 0 {
         return String::new();
     }
-    if s.width_cjk() <= max_cols {
+    if s.width() <= max_cols {
         return s.to_owned();
     }
 
     const ELLIPSIS: char = '…';
-    let ellipsis_w = ELLIPSIS.width_cjk().unwrap_or(1);
+    let ellipsis_w = ELLIPSIS.width().unwrap_or(1);
     if max_cols < ellipsis_w {
         return ".".repeat(max_cols);
     }
@@ -154,7 +183,7 @@ pub fn truncate_display(s: &str, max_cols: usize) -> String {
     let mut out = String::new();
     let mut cur = 0;
     for c in s.chars() {
-        let cw = c.width_cjk().unwrap_or(0);
+        let cw = c.width().unwrap_or(0);
         if cur + cw > budget {
             break;
         }
@@ -170,7 +199,7 @@ pub fn truncate_display(s: &str, max_cols: usize) -> String {
 /// display columns.
 pub fn head(s: impl AsRef<str>, max_cols: usize) -> String {
     let mut out = truncate_display(s.as_ref(), max_cols);
-    let width = out.width_cjk();
+    let width = out.width();
     if width < max_cols {
         out.extend(std::iter::repeat_n(' ', max_cols - width));
     }
@@ -243,8 +272,79 @@ impl TableOptions {
     }
 }
 
-/// Build a markdown-styled [`Table`] from header and row iterables.
-pub fn table<H, RS, R>(header: H, records: RS) -> Table
+fn sanitize_table_cell(cell: &str) -> String {
+    if !cell.contains(['\r', '\n']) {
+        return cell.to_owned();
+    }
+    cell.chars()
+        .map(|c| match c {
+            '\r' | '\n' => ' ',
+            other => other,
+        })
+        .collect()
+}
+
+/// ANSI-aware, Unicode-width-accurate GitHub-Flavored Markdown table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MarkdownTable {
+    header: Vec<String>,
+    rows: Vec<Vec<String>>,
+}
+
+impl MarkdownTable {
+    /// Total rows including the header row.
+    pub fn count_rows(&self) -> usize {
+        self.rows.len() + 1
+    }
+}
+
+impl fmt::Display for MarkdownTable {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let col_count = self
+            .rows
+            .iter()
+            .map(Vec::len)
+            .fold(self.header.len(), usize::max);
+        if col_count == 0 {
+            return Ok(());
+        }
+
+        let mut col_widths = vec![0usize; col_count];
+        for (idx, cell) in self.header.iter().enumerate() {
+            col_widths[idx] = col_widths[idx].max(display_width(cell));
+        }
+        for row in &self.rows {
+            for (idx, cell) in row.iter().enumerate() {
+                col_widths[idx] = col_widths[idx].max(display_width(cell));
+            }
+        }
+
+        let write_row = |f: &mut fmt::Formatter<'_>, cells: &[String]| -> fmt::Result {
+            f.write_str("|")?;
+            for (idx, &col_w) in col_widths.iter().enumerate() {
+                let cell = cells.get(idx).map(String::as_str).unwrap_or("");
+                let vis_w = display_width(cell);
+                let pad = col_w.saturating_sub(vis_w);
+                write!(f, " {cell}{} |", " ".repeat(pad))?;
+            }
+            Ok(())
+        };
+
+        write_row(f, &self.header)?;
+        f.write_str("\n|")?;
+        for &col_w in &col_widths {
+            write!(f, "{}|", "-".repeat(col_w + 2))?;
+        }
+        for row in &self.rows {
+            f.write_str("\n")?;
+            write_row(f, row)?;
+        }
+        Ok(())
+    }
+}
+
+/// Build an ANSI-aware markdown [`MarkdownTable`] from header and row iterables.
+pub fn table<H, RS, R>(header: H, records: RS) -> MarkdownTable
 where
     H: IntoIterator,
     H::Item: Into<String>,
@@ -252,14 +352,20 @@ where
     R: IntoIterator,
     R::Item: Into<String>,
 {
-    let mut builder = Builder::new();
-    builder.push_record(header);
-    for record in records {
-        builder.push_record(record);
-    }
-    let mut table = builder.build();
-    table.with(Style::markdown());
-    table
+    let header = header
+        .into_iter()
+        .map(|cell| sanitize_table_cell(&cell.into()))
+        .collect();
+    let rows = records
+        .into_iter()
+        .map(|record| {
+            record
+                .into_iter()
+                .map(|cell| sanitize_table_cell(&cell.into()))
+                .collect()
+        })
+        .collect();
+    MarkdownTable { header, rows }
 }
 
 /// Render a formatted table string. Appends the `rows: N` footer only when outputting to a TTY.
@@ -355,12 +461,12 @@ mod tests {
     fn head_pads_by_cjk_display_width_not_char_count() {
         // 4 CJK chars = 8 display columns -> should pad with 12 spaces (total 20 display cols)
         let padded = head("我的收藏", 20);
-        assert_eq!(padded.width_cjk(), 20);
+        assert_eq!(padded.width(), 20);
         assert_eq!(padded, format!("我的收藏{}", " ".repeat(12)));
 
         // Exactly 10 CJK chars = 20 display columns -> 0 trailing spaces!
         let exact = head("十个汉字的收藏夹标题", 20);
-        assert_eq!(exact.width_cjk(), 20);
+        assert_eq!(exact.width(), 20);
         assert_eq!(exact, "十个汉字的收藏夹标题");
     }
 
@@ -368,21 +474,25 @@ mod tests {
     fn head_and_truncate_display_mixed_ascii_and_cjk() {
         // "B站Rust教程视频" -> B(1) + 站(2) + Rust(4) + 教程视频(8) = 15 cols
         let s = "B站Rust教程视频";
-        assert_eq!(s.width_cjk(), 15);
+        assert_eq!(s.width(), 15);
         assert_eq!(truncate_display(s, 15), s);
         assert_eq!(head(s, 15), s);
 
-        // Truncate to 10 cols: '…' is width 2 under width_cjk(), budget = 8
-        // B(1) + 站(2) + Rust(4) = 7, next char '教' (+2 = 9 > 8) doesn't fit
+        // Truncate to 10 cols: '…' is width 1, budget = 9
+        // B(1) + 站(2) + Rust(4) + 教(2) = 9, + '…'(1) = 10
         let trunc = truncate_display(s, 10);
         assert!(trunc.ends_with('…'));
-        assert!(trunc.width_cjk() <= 10);
-        assert_eq!(trunc, "B站Rust…");
-        assert_eq!(trunc.width_cjk(), 9);
+        assert_eq!(trunc.width(), 10);
+        assert_eq!(trunc, "B站Rust教…");
 
-        // head pads the leftover 1 display column so total width is exactly 10
-        let padded = head(s, 10);
-        assert_eq!(padded.width_cjk(), 10);
+        // Truncate to 9 cols: budget = 8 -> B(1)+站(2)+Rust(4)=7, next '教' (+2=9 > 8) doesn't fit
+        let trunc9 = truncate_display(s, 9);
+        assert_eq!(trunc9, "B站Rust…");
+        assert_eq!(trunc9.width(), 8);
+
+        // head pads the leftover 1 display column so total width is exactly 9
+        let padded = head(s, 9);
+        assert_eq!(padded.width(), 9);
         assert_eq!(padded, "B站Rust… ");
     }
 
@@ -392,13 +502,100 @@ mod tests {
         assert_eq!(head("hello", 0), "");
 
         let tiny = truncate_display("中文测试", 1);
-        assert_eq!(tiny.width_cjk(), 1);
-        assert_eq!(head("中文测试", 1).width_cjk(), 1);
+        assert_eq!(tiny.width(), 1);
+        assert_eq!(head("中文测试", 1).width(), 1);
 
         let ascii = truncate_display("abcdefghij", 6);
         assert!(ascii.ends_with('…'));
-        assert!(ascii.width_cjk() <= 6);
-        assert_eq!(head("abcdefghij", 6).width_cjk(), 6);
+        assert!(ascii.width() <= 6);
+        assert_eq!(head("abcdefghij", 6).width(), 6);
+    }
+
+    #[test]
+    fn ansi_colored_table_aligns_every_column_exact() {
+        // Reproduce both `fav ls s` / `fav ls v` and `fav ls` multi-badge breakdown rows
+        let sets_tbl = table(
+            ["set_id", "name", "count", "state"],
+            [
+                [
+                    "57010888".to_owned(),
+                    "默认收藏夹".to_owned(),
+                    "612".to_owned(),
+                    format_state_badge("Active", true),
+                ],
+                [
+                    "158322788".to_owned(),
+                    "favorite".to_owned(),
+                    "57".to_owned(),
+                    format_state_badge("Inactive", true),
+                ],
+            ],
+        )
+        .to_string();
+
+        let status_tbl = table(
+            ["resource", "total", "breakdown"],
+            [
+                [
+                    "Accounts".to_owned(),
+                    "1".to_owned(),
+                    format!(
+                        "{}: 1, {}: 0, {}: 0",
+                        format_state_badge("Active", true),
+                        format_state_badge("Inactive", true),
+                        format_state_badge("Expired", true),
+                    ),
+                ],
+                [
+                    "Medias".to_owned(),
+                    "621".to_owned(),
+                    format!(
+                        "{}: 0, {}: 616, {}: 0, {}: 1, {}: 4, {}: 0",
+                        format_state_badge("Pending", true),
+                        format_state_badge("Completed", true),
+                        format_state_badge("Failed", true),
+                        format_state_badge("Expired", true),
+                        format_state_badge("PermissionDenied", true),
+                        format_state_badge("Skipped", true),
+                    ),
+                ],
+            ],
+        )
+        .to_string();
+
+        for rendered in [&sets_tbl, &status_tbl] {
+            let plain_lines: Vec<String> = rendered
+                .lines()
+                .map(|l| strip_ansi_codes(l).into_owned())
+                .collect();
+            let expected_width = plain_lines[0].width();
+            let pipe_positions = |line: &str| -> Vec<usize> {
+                let mut pos = 0;
+                let mut cols = Vec::new();
+                for ch in line.chars() {
+                    if ch == '|' {
+                        cols.push(pos);
+                    }
+                    pos += ch.width().unwrap_or(0);
+                }
+                cols
+            };
+            let expected_pipes = pipe_positions(&plain_lines[0]);
+            for line in &plain_lines {
+                assert_eq!(
+                    line.width(),
+                    expected_width,
+                    "misaligned line width in:\n{}",
+                    plain_lines.join("\n")
+                );
+                assert_eq!(
+                    pipe_positions(line),
+                    expected_pipes,
+                    "misaligned column separators in:\n{}",
+                    plain_lines.join("\n")
+                );
+            }
+        }
     }
 
     #[test]

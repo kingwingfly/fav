@@ -9,7 +9,7 @@ use crate::{
     state::{AccountState, MediaState, SetState, UpState},
     table::{
         OutputFormat, TableOptions, format_state_badge, render_ids, render_json, render_jsonl,
-        render_table, render_tsv,
+        render_table, render_tsv, write_stdout_line,
     },
 };
 
@@ -374,7 +374,7 @@ pub async fn render_list(
 pub async fn list(ctx: &AppContext, kind: ListKind, opts: ListOptions) -> AppResult<()> {
     let (rendered, count) = render_list(ctx, kind, &opts).await?;
     if !rendered.is_empty() || matches!(opts.format, OutputFormat::Json | OutputFormat::Table) {
-        println!("{rendered}");
+        write_stdout_line(&rendered).map_err(AppError::runtime)?;
     }
     if count == 0 && opts.format == OutputFormat::Table {
         let hint = match kind {

@@ -4,7 +4,10 @@ use crate::{
     context::AppContext,
     db::StatusSummary,
     error::{AppError, AppResult},
-    table::{OutputFormat, TableOptions, format_state_badge, render_ids, render_tsv, table},
+    table::{
+        OutputFormat, TableOptions, format_state_badge, render_ids, render_tsv, table,
+        write_stdout_line,
+    },
 };
 
 #[derive(Debug, Clone, Serialize)]
@@ -27,21 +30,17 @@ pub async fn status(ctx: &AppContext, format: OutputFormat, top: usize) -> AppRe
 
     match format {
         OutputFormat::Json => {
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&report).map_err(AppError::runtime)?
-            );
+            let json = serde_json::to_string_pretty(&report).map_err(AppError::runtime)?;
+            write_stdout_line(&json).map_err(AppError::runtime)?;
         }
         OutputFormat::Jsonl => {
-            println!(
-                "{}",
-                serde_json::to_string(&report).map_err(AppError::runtime)?
-            );
+            let jsonl = serde_json::to_string(&report).map_err(AppError::runtime)?;
+            write_stdout_line(&jsonl).map_err(AppError::runtime)?;
         }
         OutputFormat::Ids => {
             let ids = render_ids(report.summary.top_ups.iter().map(|u| u.up_id.to_string()));
             if !ids.is_empty() {
-                println!("{ids}");
+                write_stdout_line(&ids).map_err(AppError::runtime)?;
             }
         }
         OutputFormat::Tsv => {
@@ -75,17 +74,13 @@ pub async fn status(ctx: &AppContext, format: OutputFormat, top: usize) -> AppRe
                 ],
                 ["medias", "skipped", &s.medias.skipped.to_string()],
             ];
-            println!("{}", render_tsv(["section", "metric", "value"], rows));
+            let rendered = render_tsv(["section", "metric", "value"], rows);
+            write_stdout_line(&rendered).map_err(AppError::runtime)?;
         }
         OutputFormat::Table => {
             let table_opts = TableOptions::detect(false, ctx.runtime.color);
             let c = table_opts.colored;
             let s = &report.summary;
-
-            println!("Workspace : {}", report.workspace);
-            println!("Database  : {}", report.db_path);
-            println!("Output Dir: {}", report.output_dir);
-            println!();
 
             let overview = table(
                 ["resource", "total", "breakdown"],
@@ -150,10 +145,13 @@ pub async fn status(ctx: &AppContext, format: OutputFormat, top: usize) -> AppRe
                     ],
                 ],
             );
-            println!("{overview}");
+
+            let mut out = format!(
+                "Workspace : {}\nDatabase  : {}\nOutput Dir: {}\n\n{overview}",
+                report.workspace, report.db_path, report.output_dir
+            );
 
             if !s.top_ups.is_empty() {
-                println!("\nTop UPs:");
                 let top_tbl = table(
                     ["up_id", "name", "medias"],
                     s.top_ups.iter().map(|u| {
@@ -164,7 +162,12 @@ pub async fn status(ctx: &AppContext, format: OutputFormat, top: usize) -> AppRe
                         ]
                     }),
                 );
-                println!("{top_tbl}");
+                out.push_str("\n\nTop UPs:\n");
+                out.push_str(&top_tbl.to_string());
+            }
+
+            if !write_stdout_line(&out).map_err(AppError::runtime)? {
+                return Ok(());
             }
 
             if s.accounts.total == 0 {

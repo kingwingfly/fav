@@ -832,3 +832,75 @@ async fn cli_binary_end_to_end_help_exit_codes_json_schedule_completion_doctor_a
         "expected lock contention message on stderr, got: {locked_err}"
     );
 }
+
+#[tokio::test]
+async fn cli_broken_pipe_exits_cleanly_without_panicking() {
+    use std::io::{BufRead as _, BufReader, Read as _};
+    use std::process::{Command, Stdio};
+
+    let bin = env!("CARGO_BIN_EXE_fav");
+    let ws_dir = tempfile::TempDir::new().unwrap();
+    let ws = Workspace::discover_or_init(Some(ws_dir.path())).unwrap();
+    ws.ensure_dirs().unwrap();
+    let db = Db::open_or_create(&ws.db_path()).await.unwrap();
+
+    // Insert enough rows (~200 KB output) to guarantee overflowing the OS pipe buffer
+    // once the reader closes stdout after 1 line (just like `fav ls v | head -n 1`).
+    let rows: Vec<media::Model> = (1..=1500)
+        .map(|i| media::Model {
+            id: 10_000 + i,
+            bv_id: format!("BV1pipe{i:06}"),
+            title: format!("洛天依，言和原创《普通DISCO》测试标题用于管道截断验证_{i:04}"),
+            r#type: "Video".to_owned(),
+            state: MediaState::Completed.to_string(),
+            retry_count: 0,
+            last_error: None,
+            updated_at: None,
+        })
+        .collect();
+    db.upsert_medias(rows).await.unwrap();
+    drop(db);
+
+    let mut child = Command::new(bin)
+        .args([
+            "-C",
+            ws_dir.path().to_str().unwrap(),
+            "--color",
+            "always",
+            "ls",
+            "v",
+        ])
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+
+    let stdout = child.stdout.take().unwrap();
+    let mut reader = BufReader::new(stdout);
+    let mut first_line = String::new();
+    reader.read_line(&mut first_line).unwrap();
+    assert!(
+        first_line.starts_with('|'),
+        "unexpected line: {first_line:?}"
+    );
+    // Close stdout read end immediately so `fav` receives EPIPE while writing the rest.
+    drop(reader);
+
+    let mut stderr = String::new();
+    child
+        .stderr
+        .take()
+        .unwrap()
+        .read_to_string(&mut stderr)
+        .unwrap();
+    let status = child.wait().unwrap();
+
+    assert!(
+        status.success(),
+        "expected clean exit 0 on BrokenPipe, got {status:?}, stderr={stderr:?}"
+    );
+    assert!(
+        !stderr.contains("panicked") && !stderr.contains("Broken pipe"),
+        "unexpected panic/error on stderr: {stderr:?}"
+    );
+}

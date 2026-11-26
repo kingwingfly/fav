@@ -22,7 +22,7 @@ use crate::{
     muxer::MuxRequest,
     response::{Page, select_best_audio, select_best_video},
     state::{AccountState, MediaPageState, MediaState, MediaType, UpState},
-    table::head,
+    table::{head, write_stdout_line},
 };
 
 const BAR_TEMPLATE: &str = "{msg} {spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})";
@@ -799,17 +799,27 @@ async fn run_pull_dry_run(
     for m in &candidates {
         known_ids.insert(m.id);
         let preview = build_safe_filename(m.id, &m.title, 1, "", true, "mp4");
-        println!(
+        if !write_stdout_line(&format!(
             "{}\t{}\t{}\t{}",
             m.id,
             m.bv_id,
             m.state,
             output_dir.join(preview).display()
-        );
+        ))
+        .map_err(AppError::runtime)?
+        {
+            return Ok(());
+        }
     }
     for &aid in target_aids {
-        if !known_ids.contains(&aid) {
-            println!("{aid}\t(unfetched)\tPending\t{}", output_dir.display());
+        if !known_ids.contains(&aid)
+            && !write_stdout_line(&format!(
+                "{aid}\t(unfetched)\tPending\t{}",
+                output_dir.display()
+            ))
+            .map_err(AppError::runtime)?
+        {
+            return Ok(());
         }
     }
     Ok(())

@@ -33,7 +33,7 @@ use crate::{
     config::{Workspace, parse_rate_limit},
     context::{AppContext, RuntimeOptions},
     error::{AppError, AppResult},
-    table::{ColorChoice, OutputFormat, should_color},
+    table::{ColorChoice, OutputFormat, should_color, write_stdout_all, write_stdout_line},
     version::VERSION,
 };
 
@@ -1182,8 +1182,15 @@ async fn run_dynamic_complete(runtime: RuntimeOptions, kind: &str, prefix: &str)
             if let Ok(rows) = ctx.db.all_sets().await {
                 for s in rows {
                     let id = s.set_id.to_string();
-                    if matches_prefix(&id, &s.name) {
-                        println!("{id}\t{} ({})", s.name.replace('\t', " "), s.state);
+                    if matches_prefix(&id, &s.name)
+                        && !write_stdout_line(&format!(
+                            "{id}\t{} ({})",
+                            s.name.replace('\t', " "),
+                            s.state
+                        ))
+                        .unwrap_or(false)
+                    {
+                        break;
                     }
                 }
             }
@@ -1192,8 +1199,15 @@ async fn run_dynamic_complete(runtime: RuntimeOptions, kind: &str, prefix: &str)
             if let Ok(rows) = ctx.db.all_ups().await {
                 for u in rows {
                     let id = u.up_id.to_string();
-                    if matches_prefix(&id, &u.name) {
-                        println!("{id}\t{} ({})", u.name.replace('\t', " "), u.state);
+                    if matches_prefix(&id, &u.name)
+                        && !write_stdout_line(&format!(
+                            "{id}\t{} ({})",
+                            u.name.replace('\t', " "),
+                            u.state
+                        ))
+                        .unwrap_or(false)
+                    {
+                        break;
                     }
                 }
             }
@@ -1202,8 +1216,15 @@ async fn run_dynamic_complete(runtime: RuntimeOptions, kind: &str, prefix: &str)
             if let Ok(rows) = ctx.db.all_accounts().await {
                 for a in rows {
                     let id = a.account_id.to_string();
-                    if matches_prefix(&id, &a.name) {
-                        println!("{id}\t{} ({})", a.name.replace('\t', " "), a.state);
+                    if matches_prefix(&id, &a.name)
+                        && !write_stdout_line(&format!(
+                            "{id}\t{} ({})",
+                            a.name.replace('\t', " "),
+                            a.state
+                        ))
+                        .unwrap_or(false)
+                    {
+                        break;
                     }
                 }
             }
@@ -1211,10 +1232,16 @@ async fn run_dynamic_complete(runtime: RuntimeOptions, kind: &str, prefix: &str)
         "medias" => {
             if let Ok(rows) = ctx.db.all_medias().await {
                 for m in rows.into_iter().take(200) {
-                    if matches_prefix(&m.bv_id, &m.title)
-                        || matches_prefix(&m.id.to_string(), &m.title)
+                    if (matches_prefix(&m.bv_id, &m.title)
+                        || matches_prefix(&m.id.to_string(), &m.title))
+                        && !write_stdout_line(&format!(
+                            "{}\t{}",
+                            m.bv_id,
+                            m.title.replace('\t', " ")
+                        ))
+                        .unwrap_or(false)
                     {
-                        println!("{}\t{}", m.bv_id, m.title.replace('\t', " "));
+                        break;
                     }
                 }
             }
@@ -1247,8 +1274,7 @@ async fn dispatch(cmd: &mut Command, matches: ArgMatches) -> AppResult<()> {
             let static_only = sub.get_flag("static");
 
             let script = generate_completion_script(cmd, shell, &bin_name, static_only);
-            let mut stdout = io::stdout().lock();
-            let _ = stdout.write_all(script.as_bytes());
+            write_stdout_all(&script).map_err(AppError::runtime)?;
             return Ok(());
         }
         Some(("__complete", sub)) => {
@@ -1297,7 +1323,7 @@ async fn dispatch(cmd: &mut Command, matches: ArgMatches) -> AppResult<()> {
                 .unwrap_or_else(|| PathBuf::from("fav"));
             let output =
                 schedule(target, interval, &ws_root, &fav_bin, install).map_err(AppError::usage)?;
-            println!("{output}");
+            write_stdout_line(&output).map_err(AppError::runtime)?;
             Ok(())
         }
         Some(("auth", sub)) => match sub.subcommand() {

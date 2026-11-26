@@ -9,7 +9,8 @@ use crate::{
     cookies::{extract_csrf, parse_cookie_header, validate_sessdata},
     error::{AppError, AppResult},
     table::{
-        OutputFormat, TableOptions, render_ids, render_json, render_jsonl, render_table, render_tsv,
+        OutputFormat, TableOptions, render_ids, render_json, render_jsonl, render_table,
+        render_tsv, write_stdout_line,
     },
 };
 
@@ -400,7 +401,7 @@ pub async fn doctor(ctx: &AppContext, format: OutputFormat, offline: bool) -> Ap
         ),
     };
     if !rendered.is_empty() || matches!(format, OutputFormat::Json | OutputFormat::Table) {
-        println!("{rendered}");
+        write_stdout_line(&rendered).map_err(AppError::runtime)?;
     }
 
     if non_auth_failed {

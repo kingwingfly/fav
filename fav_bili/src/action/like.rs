@@ -11,6 +11,7 @@ use crate::{
     error::{AppError, AppResult},
     id_parse::parse_media_ident,
     state::AccountState,
+    table::write_stdout_line,
 };
 
 #[derive(Debug, Clone, Default)]
@@ -58,7 +59,9 @@ pub async fn like(ctx: &AppContext, opts: LikeOptions) -> AppResult<()> {
             accounts.len()
         );
         for aid in &target_aids {
-            println!("{aid}");
+            if !write_stdout_line(&aid.to_string()).map_err(AppError::runtime)? {
+                break;
+            }
         }
         return Ok(());
     }

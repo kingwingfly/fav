@@ -19,7 +19,7 @@ use crate::{
     state::AccountState,
     table::{
         OutputFormat, TableOptions, format_state_badge, render_ids, render_json, render_jsonl,
-        render_table, render_tsv,
+        render_table, render_tsv, write_stdout_line,
     },
 };
 
@@ -595,7 +595,7 @@ fn render_check_rows(rows: &[CheckRow], opts: &CheckOptions, ctx: &AppContext) -
         OutputFormat::Ids => render_ids(rows.iter().map(|r| r.account_id.to_string())),
     };
     if !rendered.is_empty() {
-        println!("{rendered}");
+        write_stdout_line(&rendered).map_err(AppError::runtime)?;
     }
     Ok(())
 }
