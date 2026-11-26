@@ -18,4 +18,3 @@ lto = "fat"
 opt-level = 3
 codegen-units = 1
 strip = "debuginfo"
-panic = "abort"

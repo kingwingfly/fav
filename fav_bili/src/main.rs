@@ -1,24 +1,12 @@
-mod action;
-mod api;
-mod command;
-mod cookies;
-mod db;
-mod entity;
-mod migration;
-mod payload;
-mod response;
-mod state;
-mod table;
-mod version;
-mod wbi;
+use std::process::ExitCode;
 
-use command::FavCommand;
-
-use tracing::error;
-
-#[tokio::main(flavor = "current_thread")]
-async fn main() {
-    if let Err(e) = FavCommand::new().run().await {
-        error!("{}", e);
+#[tokio::main]
+async fn main() -> ExitCode {
+    match fav_bili::command::run().await {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(err) => {
+            eprintln!("error: {err:#}");
+            err.exit_code()
+        }
     }
 }

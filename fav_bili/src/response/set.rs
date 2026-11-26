@@ -1,45 +1,50 @@
 use serde::Deserialize;
 
-use super::Media;
+use super::{Media, null_as_default};
 
-#[derive(Debug, Deserialize)]
-pub struct ListSetResp {
-    pub data: ListSetData,
-}
-
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct ListSetData {
+    #[serde(default, deserialize_with = "null_as_default")]
     pub list: Vec<Set>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct Set {
     pub id: i64,
     pub media_count: i64,
     pub title: String,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct InSetResp {
-    pub data: InSetData,
-}
-
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct InSetData {
+    #[serde(default, deserialize_with = "null_as_default")]
     pub medias: Vec<Media>,
+    #[serde(default)]
+    pub has_more: bool,
+    #[serde(default)]
+    pub info: Option<Set>,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct InUpResp {
-    pub data: InUpData,
-}
-
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct InUpData {
+    #[serde(default)]
     pub list: InUpList,
+    #[serde(default)]
+    pub page: Option<InUpPage>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
+pub struct InUpPage {
+    #[serde(default)]
+    pub pn: i64,
+    #[serde(default)]
+    pub ps: i64,
+    #[serde(default)]
+    pub count: i64,
+}
+
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct InUpList {
+    #[serde(default, deserialize_with = "null_as_default")]
     pub vlist: Vec<Media>,
 }

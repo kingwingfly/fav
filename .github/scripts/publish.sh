@@ -1,16 +1,17 @@
-#! /bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-export TERM=xterm-256color
+if [[ $# -ne 1 ]]; then
+    echo "Usage: $0 <package>" >&2
+    exit 2
+fi
 
-# Statements waiting to be executed
-statements=(
-    "cargo publish -p $1"
-)
+pkg="$1"
 
-# loop echo and executing statements
-for statement in "${statements[@]}"; do
-    echo "$(tput setaf 3)$statement$(tput sgr0)"
-    eval $statement
+run_step() {
+    printf '\033[33m==> %s\033[0m\n' "$*"
+    "$@"
     echo
-done
+}
+
+run_step cargo publish --locked -p "$pkg"

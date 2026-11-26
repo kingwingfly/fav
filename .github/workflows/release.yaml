@@ -1,7 +1,7 @@
 name: Release
 
 permissions:
-  contents: write
+  contents: read
 
 on:
   push:
@@ -14,103 +14,94 @@ env:
 jobs:
   create-release:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v6
+
+      - name: Verify tag matches fav_bili/Cargo.toml version
+        run: |
+          python3 - <<'PY'
+          import os
+          import sys
+          import tomllib
+
+          with open("fav_bili/Cargo.toml", "rb") as f:
+              pkg_version = tomllib.load(f)["package"]["version"]
+          if isinstance(pkg_version, dict) and pkg_version.get("workspace"):
+              with open("Cargo.toml", "rb") as f:
+                  pkg_version = tomllib.load(f)["workspace"]["package"]["version"]
+
+          expected = f"v{pkg_version}"
+          actual = os.environ["GITHUB_REF_NAME"]
+          if actual != expected:
+              sys.exit(
+                  f"Tag mismatch: GITHUB_REF_NAME={actual!r} != expected {expected!r} "
+                  f"(from fav_bili/Cargo.toml)"
+              )
+          print(f"Verified tag {actual} matches fav_bili/Cargo.toml version {pkg_version}")
+          PY
+
       - uses: taiki-e/create-gh-release-action@v1
         with:
-          # (optional) Path to changelog.
           changelog: CHANGELOG.md
-          # (required) GitHub token for creating GitHub Releases.
           token: ${{ secrets.GITHUB_TOKEN }}
 
   upload-assets:
     needs: create-release
+    permissions:
+      contents: write
     strategy:
+      fail-fast: false
       matrix:
         include:
-          - os: "macos-latest"
-            target: "aarch64-apple-darwin"
-          - os: "ubuntu-24.04"
+          - os: macos-latest
+            target: aarch64-apple-darwin
+          - os: ubuntu-24.04
             target: x86_64-unknown-linux-gnu
-          - os: "windows-latest"
+          - os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - os: windows-latest
             target: x86_64-pc-windows-msvc
 
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v6
-      - name: install dependencies macos
-        if: ${{ matrix.os == 'macos-latest' }}
-        run: brew install ffmpeg pkgconf
-      - name: install dependencies linux
-        if: ${{ matrix.os == 'ubuntu-24.04' }}
-        run: |
-          sudo apt-get update
-          sudo apt-get install libssl-dev autoconf automake build-essential cmake git-core libass-dev libfreetype6-dev libgnutls28-dev libmp3lame-dev libtool libvorbis-dev meson ninja-build pkg-config texinfo wget curl yasm zlib1g-dev nasm
-          mkdir -p ~/ffmpeg_sources /tmp/bin /tmp/ffmpeg
-          cd ~/ffmpeg_sources
-          git clone --depth 1 -b release/9.0 https://git.ffmpeg.org/ffmpeg.git ffmpeg
-          cd ffmpeg
-          PATH="/tmp/bin:$PATH" PKG_CONFIG_PATH="/tmp/ffmpeg/lib/pkgconfig" ./configure \
-              --prefix="/tmp/ffmpeg" \
-              --pkg-config-flags="--static" \
-              --extra-cflags="-I/tmp/ffmpeg/include" \
-              --extra-ldflags="-L/tmp/ffmpeg/lib" \
-              --extra-libs="-lpthread -lm" \
-              --ld="g++" \
-              --bindir="/tmp/bin" \
-              --disable-autodetect \
-              --enable-shared --disable-debug --enable-lto \
-              --enable-version3 \
-              --disable-programs \
-              --disable-doc \
-              --disable-everything \
-              --enable-protocol=file --enable-muxer=mp4 | tee ffmpeg.txt
-          PATH="/tmp/bin:$PATH" make
-          make install
-          echo "FFMPEG_DIR=/tmp/ffmpeg" >> $GITHUB_ENV
-      - name: install ffmpeg windows
-        if: ${{ matrix.os == 'windows-latest' }}
-        # winget only packages BtbN FFmpeg up to 8.1, so take the 9.0 shared build
-        # straight from the BtbN release. Its layout is already `lib/` + `include/`,
-        # which is what FFMPEG_DIR expects.
-        run: |
-          # the progress bar makes Invoke-WebRequest crawl on a ~70MB download
-          $ProgressPreference = 'SilentlyContinue'
-          Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-n9.0-latest-win64-gpl-shared-9.0.zip" -OutFile ffmpeg.zip
-          Expand-Archive -Path ffmpeg.zip -DestinationPath ffmpeg
-          $dir = Get-Item ffmpeg/ffmpeg-* | Select-Object -First 1
-          ls $dir.FullName
-          echo "FFMPEG_DIR=$($dir.FullName)" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
       - uses: taiki-e/upload-rust-binary-action@v1
         with:
-          # (required) Comma-separated list of binary names (non-extension portion of filename) to build and upload.
-          # Note that glob pattern is not supported yet.
-          bin: fav_bili
-          # (optional) Target triple, default is host triple.
-          # This is optional but it is recommended that this always be set to
-          # clarify which target you are building for if macOS is included in
-          # the matrix because GitHub Actions changed the default architecture
-          # of macos-latest since macos-14.
+          bin: fav
           target: ${{ matrix.target }}
-          # (optional) Archive name (non-extension portion of filename) to be uploaded.
-          # [default value: $bin-$target]
-          # [possible values: the following variables and any string]
-          #   variables:
-          #     - $bin    - Binary name (non-extension portion of filename).
-          #     - $target - Target triple.
-          #     - $tag    - Tag of this release.
-          # When multiple binary names are specified, default archive name or $bin variable cannot be used.
           archive: $bin-$tag-$target
-          # (optional) On which platform to distribute the `.tar.gz` file.
-          # [default value: unix]
-          # [possible values: all, unix, windows, none]
           tar: unix
-          # (optional) On which platform to distribute the `.zip` file.
-          # [default value: windows]
-          # [possible values: all, unix, windows, none]
           zip: windows
-          # (optional) Build with the `--locked` flag, so a release ships exactly the
-          # dependency versions in the committed Cargo.lock. Defaults to false.
           locked: true
-          # (required) GitHub token for uploading assets to GitHub Releases.
           token: ${{ secrets.GITHUB_TOKEN }}
+
+  checksums:
+    needs: [create-release, upload-assets]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Generate and upload SHA256SUMS
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ github.ref_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh release download "$TAG" --repo "$REPO" --dir dist --pattern '*.tar.gz' --pattern '*.zip'
+          (
+            cd dist
+            shopt -s nullglob
+            files=(*.tar.gz *.zip)
+            if [[ ${#files[@]} -eq 0 ]]; then
+              echo "No release archives downloaded for $TAG" >&2
+              exit 1
+            fi
+            LC_ALL=C sha256sum -- "${files[@]}" > SHA256SUMS
+          )
+          cat dist/SHA256SUMS
+          gh release upload "$TAG" dist/SHA256SUMS --repo "$REPO" --clobber

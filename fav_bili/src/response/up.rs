@@ -1,5 +1,7 @@
 use serde::Deserialize;
 
+use super::null_as_default;
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct Up {
     pub mid: i64,
@@ -7,32 +9,20 @@ pub struct Up {
     pub name: String,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct FollowingUpResp {
-    pub data: FollowingUpData,
-}
-
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize)]
 pub struct FollowingUpData {
+    #[serde(default, deserialize_with = "null_as_default")]
     pub list: Vec<Up>,
+    #[serde(default)]
+    pub total: i64,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct FollowingNumResp {
-    pub data: FollowingNumData,
-}
-
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct FollowingNumData {
     pub following: i64,
 }
 
-#[derive(Debug, Deserialize)]
-pub struct PublishNumResp {
-    pub data: PublishNumData,
-}
-
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 pub struct PublishNumData {
     pub video: i64,
 }

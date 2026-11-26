@@ -1,46 +1,44 @@
-use anyhow::Result;
-use api_req::{ApiCaller as _, Payload};
-use serde::Serialize;
+use std::collections::BTreeMap;
 
-use crate::{
-    api::BiliApi,
-    response::{WbiData, WbiResp},
-    wbi::{WbiEncoded, WbiEncoder},
-};
+/// Default DASH `fnval`: DASH (16) | HDR (64) | 4K (128) | Dolby Audio (256) | Dolby Vision (512)
+/// | 8K (1024) | AV1 (2048).
+pub const DEFAULT_DASH_FNVAL: u32 = 16 | 64 | 128 | 256 | 512 | 1024 | 2048;
 
-use super::WbiPayload;
-
-#[derive(Debug, Payload, Serialize)]
-#[api_req(path = "/x/player/wbi/playurl")]
+#[derive(Debug, Clone)]
 pub struct DashPayload {
-    pub avid: i64, // Do not change the field order
+    pub avid: i64,
     pub cid: i64,
-    pub fnval: u16,
+    pub qn: u32,
+    pub fnval: u32,
+    pub fnver: u8,
     pub fourk: u8,
-    pub qn: u16,
-    pub wts: u64,
-    #[serde(flatten)]
-    pub wbi: Option<WbiEncoded>,
 }
 
 impl DashPayload {
-    pub async fn new(avid: i64, cid: i64) -> Result<Self> {
-        let mut this = Self {
+    pub fn new(avid: i64, cid: i64) -> Self {
+        Self {
             avid,
             cid,
-            fnval: 16 | 64 | 128 | 1024,
-            fourk: 1,
             qn: 127,
-            wts: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_secs(),
-            wbi: None,
-        };
-        let WbiResp {
-            data: WbiData { wbi_img, .. },
-        } = BiliApi::request(WbiPayload).await?;
-        this.wbi = Some(WbiEncoder::encode(wbi_img, &this));
-        Ok(this)
+            fnval: DEFAULT_DASH_FNVAL,
+            fnver: 0,
+            fourk: 1,
+        }
+    }
+
+    pub fn with_qn(mut self, qn: u32) -> Self {
+        self.qn = qn;
+        self
+    }
+
+    pub fn to_wbi_params(&self) -> BTreeMap<String, String> {
+        let mut params = BTreeMap::new();
+        params.insert("avid".to_string(), self.avid.to_string());
+        params.insert("cid".to_string(), self.cid.to_string());
+        params.insert("fnval".to_string(), self.fnval.to_string());
+        params.insert("fnver".to_string(), self.fnver.to_string());
+        params.insert("fourk".to_string(), self.fourk.to_string());
+        params.insert("qn".to_string(), self.qn.to_string());
+        params
     }
 }

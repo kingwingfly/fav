@@ -1,5 +1,8 @@
 name: publish
 
+permissions:
+  contents: read
+
 on:
   workflow_dispatch:
     inputs:
@@ -17,12 +20,22 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: install cargo components
-        run: rustup component add clippy
+      - name: Install runtime ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
 
-      - name: login to crates.io
-        run: echo "${{ secrets.CRATESIO }}" | cargo login
+      - name: Install Rust components
+        run: rustup component add rustfmt clippy
 
-      - name: publish fav_bili
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Test fav_bili before publish
         if: ${{ inputs.fav_bili }}
-        run: .github/scripts/publish_test.sh fav_bili && .github/scripts/publish.sh fav_bili
+        run: .github/scripts/publish_test.sh fav_bili
+
+      - name: Publish fav_bili
+        if: ${{ inputs.fav_bili }}
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CRATESIO }}
+        run: .github/scripts/publish.sh fav_bili

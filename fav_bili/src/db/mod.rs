@@ -1,55 +1,654 @@
-mod account;
-mod media;
-mod media_set;
-mod media_up;
-mod set;
-mod set_account;
-mod up;
-mod up_account;
+pub mod account;
+pub mod media;
+pub mod media_page;
+pub mod media_set;
+pub mod media_up;
+pub mod set;
+pub mod set_account;
+pub mod up;
+pub mod up_account;
 
-use std::process::exit;
+use std::{
+    path::Path,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 
-use anyhow::{Context, Result};
-use sea_orm::{Database, DatabaseConnection};
+use anyhow::{Context as _, Result, anyhow};
+use sea_orm::{
+    ConnectionTrait as _, DatabaseBackend, DatabaseConnection, SqlxSqliteConnector, Statement,
+    sqlx::{
+        ConnectOptions as _,
+        sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteSynchronous},
+    },
+};
 use sea_orm_migration::MigratorTrait as _;
-use tokio::sync::OnceCell;
-use tracing::error;
 
-use crate::migration::Migrator;
+use crate::{
+    config::{enforce_db_permissions, open_private_file, set_dir_permissions_private},
+    error::AppError,
+    migration::Migrator,
+};
 
-static DB: OnceCell<Db> = OnceCell::const_new();
+pub use account::AccountFilter;
+pub use media::{
+    MediaFilter, MediaResetFilter, MediaSort, PruneReport, PullFilter, StatusSummary, TopUpStat,
+};
+pub use set::SetFilter;
+pub use up::UpFilter;
 
-pub async fn db(create: bool) -> &'static Db {
-    DB.get_or_init(async move || match Db::connect(create).await {
-        Ok(db) => db,
-        Err(e) => {
-            error!("Login first, no db yet; {}", e);
-            exit(-1)
-        }
-    })
-    .await
-}
+/// Maximum rows per bulk `INSERT` / `IN (...)` batch to stay well below SQLite's variable limit.
+pub const CHUNK_SIZE: usize = 500;
+
+const BUSY_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Clone)]
 pub struct Db {
-    db: DatabaseConnection,
+    pub(crate) conn: DatabaseConnection,
 }
 
 impl Db {
-    pub async fn connect(create: bool) -> Result<Self> {
-        if create {
-            std::fs::create_dir_all(".fav").context("Failed to create .fav dir")?;
+    /// Open or create the SQLite database at `db_path`, apply private `0700`/`0600` permissions,
+    /// configure WAL/busy_timeout/foreign_keys, and run pending migrations.
+    pub async fn open_or_create(db_path: &Path) -> Result<Self> {
+        if let Some(parent) = db_path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("Failed to create directory '{}'", parent.display()))?;
+            set_dir_permissions_private(parent)?;
         }
-        let db = Database::connect(if create {
-            "sqlite://.fav/fav.db?mode=rwc"
-        } else {
-            "sqlite://.fav/fav.db?mode=rw"
-        })
-        .await
-        .context("Failed to connect db")?;
-        Migrator::up(&db, None)
+
+        if !db_path.exists() {
+            // Pre-create with 0600 on Unix so credentials are never briefly world-readable.
+            let _ = open_private_file(db_path)?;
+        }
+
+        let mut opts = SqliteConnectOptions::new()
+            .filename(db_path)
+            .create_if_missing(true)
+            .journal_mode(SqliteJournalMode::Wal)
+            .synchronous(SqliteSynchronous::Normal)
+            .foreign_keys(true)
+            .busy_timeout(BUSY_TIMEOUT);
+        opts = opts.disable_statement_logging();
+
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(opts)
             .await
-            .context("Failed to update db tables")?;
-        Ok(Self { db })
+            .with_context(|| format!("Failed to open database '{}'", db_path.display()))?;
+
+        let conn = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool);
+        Migrator::up(&conn, None)
+            .await
+            .with_context(|| format!("Failed to run migrations on '{}'", db_path.display()))?;
+        enforce_db_permissions(db_path)?;
+        Ok(Self { conn })
+    }
+
+    /// Open an existing SQLite database at `db_path`.
+    /// When `read_only` is `true`, opens read-only without mutating journal mode or running migrations.
+    pub async fn open_existing(db_path: &Path, read_only: bool) -> Result<Self> {
+        if !db_path.exists() {
+            return Err(AppError::usage(anyhow!(
+                "Database not found at '{}'. Run `fav init` or `fav auth login` first.",
+                db_path.display(),
+            ))
+            .into());
+        }
+
+        let mut opts = SqliteConnectOptions::new()
+            .filename(db_path)
+            .create_if_missing(false)
+            .foreign_keys(true)
+            .busy_timeout(BUSY_TIMEOUT);
+        opts = if read_only {
+            opts.read_only(true)
+        } else {
+            opts.journal_mode(SqliteJournalMode::Wal)
+                .synchronous(SqliteSynchronous::Normal)
+        };
+        opts = opts.disable_statement_logging();
+
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(opts)
+            .await
+            .with_context(|| format!("Failed to open database '{}'", db_path.display()))?;
+
+        let conn = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool);
+        if !read_only {
+            Migrator::up(&conn, None)
+                .await
+                .with_context(|| format!("Failed to run migrations on '{}'", db_path.display()))?;
+            enforce_db_permissions(db_path)?;
+        }
+        Ok(Self { conn })
+    }
+
+    /// Open a fresh in-memory SQLite database with all migrations applied (for tests).
+    pub async fn open_in_memory() -> Result<Self> {
+        let mut opts = SqliteConnectOptions::new()
+            .in_memory(true)
+            .foreign_keys(true)
+            .busy_timeout(BUSY_TIMEOUT);
+        opts = opts.disable_statement_logging();
+
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(opts)
+            .await
+            .context("Failed to open in-memory SQLite database")?;
+
+        let conn = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool);
+        Migrator::up(&conn, None)
+            .await
+            .context("Failed to run migrations on in-memory SQLite database")?;
+        Ok(Self { conn })
+    }
+
+    pub fn conn(&self) -> &DatabaseConnection {
+        &self.conn
+    }
+
+    /// Verify SQLite structural integrity (`PRAGMA quick_check`).
+    pub async fn check_integrity(&self) -> Result<()> {
+        let row = self
+            .conn
+            .query_one(Statement::from_string(
+                DatabaseBackend::Sqlite,
+                "PRAGMA quick_check;",
+            ))
+            .await
+            .context("Failed to run PRAGMA quick_check")?;
+        let status: String = row
+            .and_then(|r| r.try_get_by_index(0).ok())
+            .unwrap_or_else(|| "unknown".to_owned());
+        if status.eq_ignore_ascii_case("ok") {
+            Ok(())
+        } else {
+            Err(anyhow!("SQLite integrity check failed: {status}"))
+        }
+    }
+}
+
+pub(crate) fn now_unix() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs() as i64
+}
+
+#[cfg(test)]
+mod tests {
+    use sea_orm::{DatabaseBackend, Statement};
+
+    use super::*;
+    use crate::{
+        entity::{account, media, media_set, media_up, set, up},
+        error::{ExitKind, classify_anyhow},
+        state::{AccountState, MediaPageState, MediaState, MediaType, SetState, UpState},
+    };
+
+    fn sample_account(id: i64, state: AccountState) -> account::Model {
+        account::Model {
+            account_id: id,
+            name: format!("user_{id}"),
+            cookies: format!("SESSDATA=tok_{id}; bili_jct=csrf_{id}"),
+            state: state.to_string(),
+            refresh_token: Some(format!("ref_{id}")),
+        }
+    }
+
+    fn sample_media(id: i64, state: MediaState) -> media::Model {
+        media::Model {
+            id,
+            bv_id: format!("BV1test{id:06}"),
+            title: format!("Title {id}"),
+            r#type: MediaType::Video.to_string(),
+            state: state.to_string(),
+            retry_count: 0,
+            last_error: None,
+            updated_at: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn migration_up_down_roundtrip() {
+        let db = Db::open_in_memory().await.unwrap();
+        db.check_integrity().await.unwrap();
+        Migrator::down(db.conn(), None).await.unwrap();
+        Migrator::up(db.conn(), None).await.unwrap();
+        db.check_integrity().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn open_or_create_and_read_only_file_db() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db_path = tmp.path().join(".fav/fav.db");
+
+        // Missing DB yields ExitKind::Usage
+        let missing = Db::open_existing(&db_path, true).await.unwrap_err();
+        assert_eq!(classify_anyhow(&missing), ExitKind::Usage);
+
+        let db = Db::open_or_create(&db_path).await.unwrap();
+        db.upsert_account(sample_account(1, AccountState::Active))
+            .await
+            .unwrap();
+
+        // Check WAL mode and foreign_keys pragma
+        let wal: String = db
+            .conn()
+            .query_one(Statement::from_string(
+                DatabaseBackend::Sqlite,
+                "PRAGMA journal_mode;",
+            ))
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get_by_index(0)
+            .unwrap();
+        assert_eq!(wal.to_ascii_lowercase(), "wal");
+
+        let fk: i64 = db
+            .conn()
+            .query_one(Statement::from_string(
+                DatabaseBackend::Sqlite,
+                "PRAGMA foreign_keys;",
+            ))
+            .await
+            .unwrap()
+            .unwrap()
+            .try_get_by_index(0)
+            .unwrap();
+        assert_eq!(fk, 1);
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt as _;
+            let mode = std::fs::metadata(&db_path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode, 0o600);
+        }
+
+        // Open read-only and read account
+        let ro = Db::open_existing(&db_path, true).await.unwrap();
+        let acc = ro.get_account(1).await.unwrap();
+        assert_eq!(acc.name, "user_1");
+        // Write on read-only connection must fail
+        assert!(ro.activate_account(1).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn upsert_account_reactivates_and_updates_refresh_token() {
+        let db = Db::open_in_memory().await.unwrap();
+        db.upsert_account(sample_account(10, AccountState::Inactive))
+            .await
+            .unwrap();
+        db.set_account_state(10, AccountState::Expired)
+            .await
+            .unwrap();
+        assert_eq!(
+            db.get_account(10).await.unwrap().state,
+            AccountState::Expired.as_str()
+        );
+
+        let mut refreshed = sample_account(10, AccountState::Active);
+        refreshed.name = "renamed".to_owned();
+        refreshed.refresh_token = Some("new_refresh".to_owned());
+        db.upsert_account(refreshed).await.unwrap();
+
+        let loaded = db.get_account(10).await.unwrap();
+        assert_eq!(loaded.name, "renamed");
+        assert_eq!(loaded.state, AccountState::Active.as_str());
+        assert_eq!(loaded.refresh_token.as_deref(), Some("new_refresh"));
+    }
+
+    #[tokio::test]
+    async fn upsert_medias_conflicts_on_id_and_preserves_completed() {
+        let db = Db::open_in_memory().await.unwrap();
+        db.upsert_medias([sample_media(100, MediaState::Pending)])
+            .await
+            .unwrap();
+        db.set_media_state(100, MediaState::Completed)
+            .await
+            .unwrap();
+
+        // Update same PK id with a new title and new bvid, passing Pending state:
+        // must update title/bvid while preserving Completed state!
+        let mut updated = sample_media(100, MediaState::Pending);
+        updated.title = "Updated Title".to_owned();
+        updated.bv_id = "BV1updated0001".to_owned();
+        db.upsert_medias([updated]).await.unwrap();
+
+        let loaded = db.get_media(100).await.unwrap();
+        assert_eq!(loaded.title, "Updated Title");
+        assert_eq!(loaded.bv_id, "BV1updated0001");
+        assert_eq!(loaded.state, MediaState::Completed.as_str());
+
+        // Empty bv_id on multiple invalidated videos must not collide on UNIQUE(bv_id)
+        let mut inv1 = sample_media(101, MediaState::Pending);
+        inv1.bv_id = String::new();
+        let mut inv2 = sample_media(102, MediaState::Pending);
+        inv2.bv_id = String::new();
+        db.upsert_medias([inv1, inv2]).await.unwrap();
+        assert_eq!(db.get_media(101).await.unwrap().bv_id, "av101");
+        assert_eq!(db.get_media(102).await.unwrap().bv_id, "av102");
+    }
+
+    #[tokio::test]
+    async fn chunked_bulk_upserts_exceeding_chunk_size_and_empty_guards() {
+        let db = Db::open_in_memory().await.unwrap();
+
+        // Empty iterators are safe no-ops
+        db.upsert_medias(Vec::new()).await.unwrap();
+        db.upsert_sets(Vec::new()).await.unwrap();
+        db.upsert_ups(Vec::new()).await.unwrap();
+        db.upsert_media_sets(Vec::new()).await.unwrap();
+        db.upsert_media_ups(Vec::new()).await.unwrap();
+        db.upsert_set_accounts(Vec::new()).await.unwrap();
+        db.upsert_up_accounts(Vec::new()).await.unwrap();
+
+        // > 500 rows (e.g. 650) across chunks
+        let count = 650;
+        let medias: Vec<_> = (1..=count)
+            .map(|i| sample_media(i, MediaState::Pending))
+            .collect();
+        db.upsert_medias(medias).await.unwrap();
+        assert_eq!(db.all_medias().await.unwrap().len(), count as usize);
+
+        db.upsert_sets([set::Model {
+            set_id: 1,
+            name: "Huge Set".to_owned(),
+            count,
+            state: SetState::Active.to_string(),
+        }])
+        .await
+        .unwrap();
+
+        let links: Vec<_> = (1..=count)
+            .map(|id| media_set::Model { id, set_id: 1 })
+            .collect();
+        db.upsert_media_sets(links).await.unwrap();
+        assert_eq!(
+            db.get_media_ids_of_set(1).await.unwrap().len(),
+            count as usize
+        );
+    }
+
+    #[tokio::test]
+    async fn prune_all_order_dry_run_and_completed_preservation() {
+        let db = Db::open_in_memory().await.unwrap();
+        db.upsert_account(sample_account(1, AccountState::Active))
+            .await
+            .unwrap();
+
+        // Set 10: active & linked to account 1
+        // Set 20: orphan (no account link) -> should be pruned
+        // Set 30: inactive & linked to account 1 -> medias only in set 30 are inactive
+        db.upsert_sets([
+            set::Model {
+                set_id: 10,
+                name: "ActiveSet".to_owned(),
+                count: 1,
+                state: SetState::Active.to_string(),
+            },
+            set::Model {
+                set_id: 20,
+                name: "OrphanSet".to_owned(),
+                count: 1,
+                state: SetState::Active.to_string(),
+            },
+            set::Model {
+                set_id: 30,
+                name: "InactiveSet".to_owned(),
+                count: 2,
+                state: SetState::Inactive.to_string(),
+            },
+        ])
+        .await
+        .unwrap();
+        db.sync_account_sets(
+            1,
+            vec![
+                set::Model {
+                    set_id: 10,
+                    name: "ActiveSet".to_owned(),
+                    count: 1,
+                    state: SetState::Active.to_string(),
+                },
+                set::Model {
+                    set_id: 30,
+                    name: "InactiveSet".to_owned(),
+                    count: 2,
+                    state: SetState::Inactive.to_string(),
+                },
+            ],
+        )
+        .await
+        .unwrap();
+
+        // Up 50: unfollowed, linked ONLY to media 200 (which will be pruned!)
+        // Because prune runs sets -> medias -> ups, up 50 MUST be pruned in ONE pass!
+        db.upsert_ups([up::Model {
+            up_id: 50,
+            name: "OrphanUp".to_owned(),
+            state: UpState::Inactive.to_string(),
+        }])
+        .await
+        .unwrap();
+
+        // Media 100: in ActiveSet -> keep
+        // Media 200: Pending, only in InactiveSet + OrphanUp -> prune!
+        // Media 300: Completed, only in InactiveSet -> preserve unless purge_completed=true!
+        db.upsert_medias([
+            sample_media(100, MediaState::Pending),
+            sample_media(200, MediaState::Pending),
+            sample_media(300, MediaState::Completed),
+        ])
+        .await
+        .unwrap();
+        db.upsert_media_sets([
+            media_set::Model {
+                id: 100,
+                set_id: 10,
+            },
+            media_set::Model {
+                id: 200,
+                set_id: 30,
+            },
+            media_set::Model {
+                id: 300,
+                set_id: 30,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_media_ups([media_up::Model { id: 200, up_id: 50 }])
+            .await
+            .unwrap();
+
+        // Dry run must predict exact counts without mutating DB
+        let dry = db.prune_all(false, true).await.unwrap();
+        assert!(dry.dry_run);
+        assert_eq!(dry.sets_pruned, 1); // Set 20
+        assert_eq!(dry.medias_pruned, 1); // Media 200 (Media 300 preserved!)
+        assert_eq!(dry.ups_pruned, 1); // Up 50 pruned in the SAME pass!
+        assert_eq!(db.all_sets().await.unwrap().len(), 3);
+        assert_eq!(db.all_medias().await.unwrap().len(), 3);
+        assert_eq!(db.all_ups().await.unwrap().len(), 1);
+
+        // Real prune preserving Completed
+        let real = db.prune_all(false, false).await.unwrap();
+        assert_eq!(real.sets_pruned, 1);
+        assert_eq!(real.medias_pruned, 1);
+        assert_eq!(real.ups_pruned, 1);
+        assert!(db.get_media(100).await.is_ok());
+        assert!(db.get_media(200).await.is_err());
+        assert!(db.get_media(300).await.is_ok());
+        assert!(db.get_up(50).await.is_err());
+
+        // Real prune with purge_completed = true deletes Media 300
+        let purged = db.prune_all(true, false).await.unwrap();
+        assert_eq!(purged.medias_pruned, 1);
+        assert!(db.get_media(300).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn sync_account_ups_and_unlink_stale_media_sets() {
+        let db = Db::open_in_memory().await.unwrap();
+        db.upsert_account(sample_account(1, AccountState::Active))
+            .await
+            .unwrap();
+
+        let u1 = up::Model {
+            up_id: 1,
+            name: "u1".to_owned(),
+            state: UpState::Inactive.to_string(),
+        };
+        let u2 = up::Model {
+            up_id: 2,
+            name: "u2".to_owned(),
+            state: UpState::Inactive.to_string(),
+        };
+        db.sync_account_ups(1, vec![u1.clone(), u2], true)
+            .await
+            .unwrap();
+        assert_eq!(db.get_up_ids_of_account(1).await.unwrap().len(), 2);
+
+        // Partial failure (unlink_stale = false): must NOT drop u2
+        let unlinked = db.sync_account_ups(1, vec![u1], false).await.unwrap();
+        assert!(unlinked.is_empty());
+        assert_eq!(db.get_up_ids_of_account(1).await.unwrap().len(), 2);
+
+        // Following == 0 with unlink_stale = true: must unlink ALL
+        let unlinked = db.sync_account_ups(1, vec![], true).await.unwrap();
+        assert_eq!(unlinked.len(), 2);
+        assert!(db.get_up_ids_of_account(1).await.unwrap().is_empty());
+
+        // Unlink stale media_set entries
+        db.upsert_sets([set::Model {
+            set_id: 7,
+            name: "S".to_owned(),
+            count: 2,
+            state: SetState::Active.to_string(),
+        }])
+        .await
+        .unwrap();
+        db.upsert_medias([
+            sample_media(1, MediaState::Pending),
+            sample_media(2, MediaState::Pending),
+        ])
+        .await
+        .unwrap();
+        db.upsert_media_sets([
+            media_set::Model { id: 1, set_id: 7 },
+            media_set::Model { id: 2, set_id: 7 },
+        ])
+        .await
+        .unwrap();
+        let removed = db.unlink_stale_media_sets(7, &[1]).await.unwrap();
+        assert_eq!(removed, 1);
+        assert_eq!(db.get_media_ids_of_set(7).await.unwrap(), vec![1]);
+    }
+
+    #[tokio::test]
+    async fn media_page_failure_reset_skip_filters_and_status() {
+        let db = Db::open_in_memory().await.unwrap();
+        db.upsert_account(sample_account(1, AccountState::Active))
+            .await
+            .unwrap();
+        db.upsert_ups([up::Model {
+            up_id: 9,
+            name: "CoolUp".to_owned(),
+            state: UpState::Active.to_string(),
+        }])
+        .await
+        .unwrap();
+        db.upsert_medias([
+            sample_media(1, MediaState::Pending),
+            sample_media(2, MediaState::Pending),
+            sample_media(3, MediaState::Completed),
+        ])
+        .await
+        .unwrap();
+        db.upsert_media_ups([
+            media_up::Model { id: 1, up_id: 9 },
+            media_up::Model { id: 2, up_id: 9 },
+        ])
+        .await
+        .unwrap();
+
+        // MediaPage lifecycle
+        db.mark_page_completed(
+            1,
+            1001,
+            1,
+            "P1".to_owned(),
+            "1-Title 1(1)-P1.mp4".to_owned(),
+        )
+        .await
+        .unwrap();
+        db.mark_page_failed(1, 1002, 2, "P2".to_owned())
+            .await
+            .unwrap();
+        let pages = db.pages_for_media(1).await.unwrap();
+        assert_eq!(pages.len(), 2);
+        assert_eq!(pages[0].state, MediaPageState::Completed.as_str());
+        assert_eq!(pages[1].state, MediaPageState::Failed.as_str());
+        assert_eq!(db.all_completed_pages().await.unwrap().len(), 1);
+
+        // Failure tracking + reset + skip
+        db.record_media_failure(1, "HTTP 503").await.unwrap();
+        db.record_media_failure(1, "HTTP 502").await.unwrap();
+        let m1 = db.get_media(1).await.unwrap();
+        assert_eq!(m1.state, MediaState::Failed.as_str());
+        assert_eq!(m1.retry_count, 2);
+        assert_eq!(m1.last_error.as_deref(), Some("HTTP 502"));
+
+        let skipped = db.skip_medias(&[2]).await.unwrap();
+        assert_eq!(skipped, 1);
+        assert_eq!(
+            db.get_media(2).await.unwrap().state,
+            MediaState::Skipped.as_str()
+        );
+
+        let reset = db
+            .reset_media_states(&MediaResetFilter {
+                failed: true,
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(reset, 1);
+        let m1 = db.get_media(1).await.unwrap();
+        assert_eq!(m1.state, MediaState::Pending.as_str());
+        assert_eq!(m1.retry_count, 0);
+        assert!(m1.last_error.is_none());
+
+        // Clear NotFound errors instead of RecordNotUpdated
+        let err = db.activate_set(99999).await.unwrap_err();
+        assert!(err.to_string().contains("Unknown set<99999>"));
+
+        // Query filter & status summary
+        let filtered = db
+            .query_medias(&MediaFilter {
+                up_id: Some(9),
+                search: Some("Title 1".to_owned()),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].id, 1);
+
+        let summary = db.status_summary(5).await.unwrap();
+        assert_eq!(summary.accounts.active, 1);
+        assert_eq!(summary.medias.total, 3);
+        assert_eq!(summary.medias.pending, 1);
+        assert_eq!(summary.medias.skipped, 1);
+        assert_eq!(summary.medias.completed, 1);
+        assert_eq!(summary.top_ups.len(), 1);
+        assert_eq!(summary.top_ups[0].up_id, 9);
+        assert_eq!(summary.top_ups[0].media_count, 2);
     }
 }

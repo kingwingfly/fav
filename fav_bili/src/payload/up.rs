@@ -1,22 +1,18 @@
-use api_req::Payload;
 use serde::Serialize;
 
-#[derive(Debug, Serialize, Payload)]
-#[api_req(path = "/x/relation/followings")]
+#[derive(Debug, Clone, Serialize)]
 pub struct FollowingUpPayload {
     pub vmid: i64,
     pub pn: i64,
     pub ps: u8,
 }
 
-#[derive(Debug, Serialize, Payload)]
-#[api_req(path = "/x/relation/stat")]
+#[derive(Debug, Clone, Serialize)]
 pub struct FollowingNumPayload {
     pub vmid: i64,
 }
 
-#[derive(Debug, Serialize, Payload)]
-#[api_req(path = "/x/space/navnum")]
+#[derive(Debug, Clone, Serialize)]
 pub struct PublishNumPayload {
     pub mid: i64,
 }

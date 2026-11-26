@@ -1,17 +1,13 @@
-#! /bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-export TERM=xterm-256color
-
-# Statements waiting to be executed
-statements=(
-    "cargo fetch --locked"
-    "cargo clippy --all-features --all-targets -- -D warnings"
-)
-
-# loop echo and executing statements
-for statement in "${statements[@]}"; do
-    echo "$(tput setaf 3)$statement$(tput sgr0)"
-    eval $statement
+run_step() {
+    printf '\033[33m==> %s\033[0m\n' "$*"
+    "$@"
     echo
-done
+}
+
+run_step cargo fetch --locked
+run_step cargo fmt --all -- --check
+run_step cargo clippy --workspace --all-targets --all-features -- -D warnings
+run_step cargo test --workspace --locked

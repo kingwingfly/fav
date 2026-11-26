@@ -1,7 +1,10 @@
 use anyhow::Result;
-use sea_orm::{ColumnTrait as _, EntityTrait as _, IntoActiveModel as _, QueryFilter as _};
+use sea_orm::{
+    ColumnTrait as _, EntityTrait as _, IntoActiveModel as _, QueryFilter as _,
+    TransactionTrait as _,
+};
 
-use super::Db;
+use super::{CHUNK_SIZE, Db};
 use crate::entity::set_account;
 
 impl Db {
@@ -9,17 +12,25 @@ impl Db {
         &self,
         set_accounts: impl IntoIterator<Item = set_account::Model>,
     ) -> Result<()> {
-        set_account::Entity::insert_many(set_accounts.into_iter().map(|m| m.into_active_model()))
-            .on_conflict_do_nothing()
-            .exec_without_returning(&self.db)
-            .await?;
+        let items: Vec<set_account::Model> = set_accounts.into_iter().collect();
+        if items.is_empty() {
+            return Ok(());
+        }
+        let txn = self.conn.begin().await?;
+        for chunk in items.chunks(CHUNK_SIZE) {
+            set_account::Entity::insert_many(chunk.iter().cloned().map(|m| m.into_active_model()))
+                .on_conflict_do_nothing()
+                .exec_without_returning(&txn)
+                .await?;
+        }
+        txn.commit().await?;
         Ok(())
     }
 
     pub async fn get_set_ids_of_account(&self, account_id: i64) -> Result<Vec<i64>> {
         set_account::Entity::find()
             .filter(set_account::Column::AccountId.eq(account_id))
-            .all(&self.db)
+            .all(&self.conn)
             .await
             .map_err(Into::into)
             .map(|res| res.into_iter().map(|m| m.set_id).collect())
@@ -27,7 +38,7 @@ impl Db {
 
     pub async fn delete_set_account(&self, set_account: set_account::Model) -> Result<()> {
         set_account::Entity::delete_by_id((set_account.set_id, set_account.account_id))
-            .exec(&self.db)
+            .exec(&self.conn)
             .await?;
         Ok(())
     }

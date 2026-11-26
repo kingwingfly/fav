@@ -1,15 +1,12 @@
-mod activate;
-mod auth;
-mod deactivate;
-mod fetch;
-mod like;
-mod list;
-mod pull;
-
-pub use activate::*;
-pub use auth::*;
-pub use deactivate::*;
-pub use fetch::*;
-pub use like::*;
-pub use list::*;
-pub use pull::*;
+pub mod activate;
+pub mod auth;
+pub mod deactivate;
+pub mod doctor;
+pub mod fetch;
+pub mod like;
+pub mod list;
+pub mod media;
+pub mod pull;
+pub mod schedule;
+pub mod status;
+pub mod sync;

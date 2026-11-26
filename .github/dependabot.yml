@@ -5,7 +5,7 @@ updates:
     schedule:
       interval: "monthly"
     groups:
-      dev-dependencies:
+      cargo-dependencies:
         applies-to: version-updates
         patterns:
           - "*"

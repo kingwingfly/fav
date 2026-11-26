@@ -9,12 +9,21 @@ documentation.workspace = true
 description = "Back up your favorite bilibili online resources with CLI."
 keywords = ["bilibili", "bili"]
 
+[[bin]]
+name = "fav"
+path = "src/main.rs"
+
 [dependencies]
 tokio = { version = "1", default-features = false, features = [
     "macros",
     "rt-multi-thread",
     "signal",
     "process",
+    "time",
+    "fs",
+    "sync",
+    "io-util",
+    "net",
 ] }
 tokio-util = { version = "0.7" }
 futures = { version = "0.3" }
@@ -22,42 +31,45 @@ tracing = { version = "0.1" }
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 anyhow = { version = "1.0" }
 const_format = { version = "0.2", features = ["fmt"] }
-dashmap = { version = "6.1" }
-clap = { version = "4.5", features = ["cargo"] }
+clap = { version = "4.5", features = ["cargo", "derive"] }
 clap_complete = { version = "4.5" }
-api_req = { version = "0.5", features = ["cookies"] }
-reqwest = { version = "0.13" }
+reqwest = { version = "0.13", default-features = false, features = [
+    "cookies",
+    "json",
+    "form",
+    "query",
+    "rustls",
+] }
 url = { version = "2.5", features = ["serde"] }
 cookie = { version = "0.18" }
+percent-encoding = { version = "2.3" }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1" }
-serde_urlencoded = { version = "0.7" }
+toml = { version = "0.8" }
+console = { version = "0.16" }
 qrcode = { version = "0.14", default-features = false }
 tabled = { version = "0.20" }
 indicatif = { version = "0.18" }
 unicode-width = { version = "0.2" }
 md5 = { version = "0.8" }
+hmac = { version = "0.12" }
+sha2 = { version = "0.10" }
 hex = { version = "0.4" }
-ring = { version = "0.17" }
-sea-orm = { version = "1.1", features = [
+sea-orm = { version = "1.1", default-features = false, features = [
     "sqlx-sqlite",
     "runtime-tokio",
     "macros",
 ] }
-sea-orm-migration = { version = "1.1", features = [
+sea-orm-migration = { version = "1.1", default-features = false, features = [
     "runtime-tokio",
     "sqlx-sqlite",
 ] }
-tempfile = { version = "3.27" }
-avmux = { version = "0.3" }
 sanitize-filename = { version = "0.6" }
-paste = { version = "1.0" }
+
+[dev-dependencies]
+tempfile = { version = "3.27" }
 
 [build-dependencies]
 anyhow = "1.0"
 vergen = { version = "10.0", features = ["build", "rustc"] }
 vergen-git2 = "10.0"
-
-# No FFmpeg feature is needed anymore: `avmux` 0.3 probes the installed FFmpeg itself.
-# `avmux`'s `build`/`static` features are deliberately not re-exported, since CI lints
-# with `--all-features` and `build` compiles FFmpeg from source.
