@@ -207,37 +207,34 @@ impl MigrationTrait for Migration {
 
     async fn down(&self, manager: &SchemaManager) -> Result<(), DbErr> {
         manager
-            .drop_table(Table::drop().table(MediaUp::Table).to_owned())
-            .await
-            .unwrap();
+            .drop_table(Table::drop().table(MediaUp::Table).if_exists().to_owned())
+            .await?;
         manager
-            .drop_table(Table::drop().table(MediaSet::Table).to_owned())
-            .await
-            .unwrap();
+            .drop_table(Table::drop().table(MediaSet::Table).if_exists().to_owned())
+            .await?;
         manager
-            .drop_table(Table::drop().table(SetAccount::Table).to_owned())
-            .await
-            .unwrap();
+            .drop_table(
+                Table::drop()
+                    .table(SetAccount::Table)
+                    .if_exists()
+                    .to_owned(),
+            )
+            .await?;
         manager
-            .drop_table(Table::drop().table(UpAccount::Table).to_owned())
-            .await
-            .unwrap();
+            .drop_table(Table::drop().table(UpAccount::Table).if_exists().to_owned())
+            .await?;
         manager
-            .drop_table(Table::drop().table(Account::Table).to_owned())
-            .await
-            .unwrap();
+            .drop_table(Table::drop().table(Account::Table).if_exists().to_owned())
+            .await?;
         manager
-            .drop_table(Table::drop().table(Up::Table).to_owned())
-            .await
-            .unwrap();
+            .drop_table(Table::drop().table(Up::Table).if_exists().to_owned())
+            .await?;
         manager
-            .drop_table(Table::drop().table(Set::Table).to_owned())
-            .await
-            .unwrap();
+            .drop_table(Table::drop().table(Set::Table).if_exists().to_owned())
+            .await?;
         manager
-            .drop_table(Table::drop().table(Media::Table).to_owned())
-            .await
-            .unwrap();
+            .drop_table(Table::drop().table(Media::Table).if_exists().to_owned())
+            .await?;
         Ok(())
     }
 }

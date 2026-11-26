@@ -1,19 +1,21 @@
-#! /bin/bash
-set -e
+#!/usr/bin/env bash
+set -euo pipefail
 
-export TERM=xterm-256color
+if [[ $# -ne 1 ]]; then
+    echo "Usage: $0 <package>" >&2
+    exit 2
+fi
 
-# Statements waiting to be executed
-statements=(
-    "cargo clippy --all-features --all-targets -p $1 -- -D warnings"
-    "cargo test -p $1"
-    "cargo doc --no-deps -p $1"
-    "cargo publish -p $1 --dry-run"
-)
+pkg="$1"
 
-# loop echo and executing statements
-for statement in "${statements[@]}"; do
-    echo "$(tput setaf 3)$statement$(tput sgr0)"
-    eval $statement
+run_step() {
+    printf '\033[33m==> %s\033[0m\n' "$*"
+    "$@"
     echo
-done
+}
+
+run_step cargo fmt --all -- --check
+run_step cargo clippy --all-features --all-targets -p "$pkg" -- -D warnings
+run_step cargo test --locked -p "$pkg"
+run_step cargo doc --no-deps --locked -p "$pkg"
+run_step cargo publish --locked -p "$pkg" --dry-run

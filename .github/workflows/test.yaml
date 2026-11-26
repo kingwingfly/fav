@@ -1,9 +1,13 @@
 name: test
 
+permissions:
+  contents: read
+
 on:
+  push:
+    branches: [main, dev]
   pull_request:
-    branches: [dev]
-    types: [opened, synchronize]
+    branches: [main, dev]
 
 env:
   CARGO_TERM_COLOR: always
@@ -14,42 +18,15 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - name: Extract version
-        id: extract-version
-        run: echo "VERSION=$(grep -oP '^version = "\K[^"]+' Cargo.toml | awk '{$1=$1;print}')" >> $GITHUB_OUTPUT
+      - name: Install runtime ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
 
-      - name: Cache restore
-        uses: actions/cache/restore@v5
-        id: cache-cargo-restore
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ runner.os }}-cargo-${{ steps.extract-version.outputs.VERSION }}
+      - name: Install Rust components
+        run: rustup component add rustfmt clippy
 
-      - name: install cargo components
-        if: steps.cache-cargo-restore.outputs.cache-hit != 'true'
-        run: rustup component add clippy
+      - uses: Swatinem/rust-cache@v2
 
-      - name: Run build
-        if: steps.cache-cargo-restore.outputs.cache-hit != 'true'
-        run: cargo build --all-features --all-targets
-
-      - name: Cache save
-        if: steps.cache-cargo-restore.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v5
-        id: cache-cargo-save
-        with:
-          path: |
-            ~/.cargo/bin/
-            ~/.cargo/registry/index/
-            ~/.cargo/registry/cache/
-            ~/.cargo/git/db/
-            target/
-          key: ${{ steps.cache-cargo-restore.outputs.cache-primary-key }}
-
-      - name: run tests
+      - name: Run workspace fmt, clippy, and tests
         run: .github/scripts/test.sh

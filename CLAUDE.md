@@ -4,109 +4,147 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-`fav` is a CLI that backs up bilibili favorites: it authenticates as one or more accounts, fetches
-metadata for followed ups / favorite sets / medias into a local SQLite db, then downloads and muxes
-the videos. Workspace: `fav_bili` (the whole app) + `migration` (a thin sea-orm-cli shim).
+`fav` is a CLI that backs up Bilibili favorites and followed UPs: it authenticates as one or more
+accounts, fetches metadata for followed UPs / favorite sets / medias into a local SQLite database,
+and downloads and muxes videos. Workspace: `fav_bili` (library + `fav` binary) + `migration` (a thin
+`sea-orm-cli` shim).
 
-## Build, lint, run
+## Build, lint, test, run
 
-ffmpeg is a hard build dependency — `avmux` dynamically links system `libav*` via pkg-config.
+There is **no build-time FFmpeg / `libav*` / `pkgconf` dependency**. `avmux` has been removed;
+media muxing runs the `ffmpeg` CLI subprocess at runtime via `FfmpegMuxer`. Runtime tests that
+exercise real `ffmpeg` subprocess cleanup expect `ffmpeg` on `PATH`.
 
 ```sh
 cargo build
-cargo run -- ls set                                  # binary is fav_bili, help text says `fav`
-cargo clippy --all-features --all-targets -- -D warnings   # the CI gate (.github/scripts/test.sh)
+cargo run --bin fav -- ls set
+cargo fmt --all -- --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --locked
 ```
 
-There is **no test suite** — no `#[test]`/`#[cfg(test)]` anywhere, no `tests/` dir. CI's `test` job
-only runs `cargo fetch --locked` plus the clippy command above. `-D warnings` means clippy lints are
-build failures; there is no `cargo fmt --check` in CI.
+CI (`.github/workflows/test.yaml`, invoking `.github/scripts/test.sh`) runs on `push` and
+`pull_request` for `main` and `dev`, installs runtime `ffmpeg`, caches with `Swatinem/rust-cache@v2`,
+and gates on `cargo fetch --locked`, `cargo fmt --all -- --check`,
+`cargo clippy --workspace --all-targets --all-features -- -D warnings`, and
+`cargo test --workspace --locked`.
 
-`avmux` 0.3 is built on `ffmpeg-next`/`ffmpeg-sys-next`, which support ffmpeg 4 through 9 and probe
-the installed libraries themselves, so there are **no ffmpeg version features** — the `ffmpeg6`…
-`ffmpeg8` flags from the `avmux` 0.2 (`rsmpeg`) era are gone. To build against a specific install,
-set `FFMPEG_DIR` (expects `$FFMPEG_DIR/lib` and `$FFMPEG_DIR/include`) on every platform; the older
-`FFMPEG_PKG_CONFIG_PATH`/`FFMPEG_LIBS_DIR`/`FFMPEG_INCLUDE_DIR` names were `rusty_ffmpeg`-only and
-are now inert. `avmux`'s own `build`/`static` features are deliberately not re-exported by
-`fav_bili`, since CI lints with `--all-features` and `build` would compile ffmpeg from source.
+`[profile.release]` intentionally omits `panic = "abort"` so RAII `Drop` guards cleanly kill child
+`ffmpeg` processes, remove staging `.part` files, and release `.fav/fav.lock` on unwind.
 
-If `build.rs` warns `repository path ... is not owned by current user`, vergen can't read git and
-`VERGEN_GIT_DESCRIBE` goes unset, so `--version` reports the tag as `crates.io`.
+If `build.rs` warns `repository path ... is not owned by current user`, `vergen` cannot read git and
+`VERGEN_GIT_DESCRIBE` goes unset, so `--version` reports `crates.io`.
 
 ## Architecture
 
-`main.rs` → `command.rs` → `action/*` → (`payload/*` + `response/*` for HTTP, `db/*` for storage) →
-`entity/entity_inner` (generated).
+`main.rs` → `lib.rs` (`AppContext`, `command.rs`) → `action/*` → (`api.rs` + `payload/*` + `response/*`
+for HTTP, `muxer.rs` for `ffmpeg` muxing, `db/*` for storage) → `entity/entity_inner` (generated).
 
-- **`command.rs`** builds the whole clap `Command` tree by hand (no derive) and dispatches with a
-  nested `match` on `subcommand()`. New CLI surface means editing both the builder and the match.
-- **`action/*`** are free `async fn`s re-exported flat by `action/mod.rs`; each is one CLI verb.
-  `activate.rs`/`deactivate.rs` generate their fns with a `paste!` macro over `account, set, up`,
-  which must pair with identically-named methods on `Db`.
-- **`db/*`** is one `impl Db` block per table over a single `DatabaseConnection`. `db(create)` is a
-  process-global `OnceCell`; `db(false)` opens `mode=rw` and `exit(-1)`s with "Login first" when the
-  db is missing. `Migrator::up` runs on every connect.
-- **`entity/entity_inner/` is generated — never hand-edit.** `entity/mod.rs` adds the hand-written
-  `ToTableRecord` impls that feed `table.rs`.
+- **`lib.rs` & `AppContext`**: Core modules (`action`, `api`, `command`, `config`, `context`,
+  `cookies`, `db`, `entity`, `error`, `id_parse`, `migration`, `muxer`, `payload`, `picker`,
+  `response`, `state`, `table`, `version`, `wbi`) are exported from `fav_bili/src/lib.rs`.
+  `AppContext` (`context.rs`) injects `Db`, `Config`/`Workspace`, HTTP client config, and
+  `Arc<dyn Muxer>` instead of relying on global singletons or CWD state. `main.rs` returns
+  `std::process::ExitCode` from `AppError`/`ExitKind` (`0` ok, `1` runtime, `2` usage, `3` auth,
+  `4` partial failure) and prints `{:#}` chains to `stderr`.
+- **`command.rs`**: Builds the clap tree with `Command::new("fav")` (matching `[[bin]] name = "fav"`
+  in `fav_bili/Cargo.toml`), global flags (`-C/--dir`, `-v`/`-q`, `--no-progress`,
+  `--non-interactive`, `--color`), and shell completions via `fav completion <shell>` (`--bin-name`,
+  `--static`) backed by the hidden `fav __complete <sets|ups|accounts|medias> [prefix]` subcommand
+  for dynamic workspace DB candidate lookups. Tracing logs write to `stderr` with a crate-scoped
+  default (`fav_bili=...`) that respects `RUST_LOG`.
+- **`muxer.rs`**: Defines the `Muxer` trait (`FfmpegMuxer` for runtime, `MockMuxer` for tests).
+  `FfmpegMuxer` spawns `tokio::process::Command` with `.kill_on_drop(true)`, `Stdio::null()` stdin,
+  and piped `stdout`/`stderr` (bounded stderr capture so `ffmpeg` never corrupts progress bars or JSON
+  stdout). Output is staged to a same-directory `.part` file and atomically renamed on exit `0`; RAII
+  drop guards (`PartFileGuard`, `ChildKillGuard`) kill child processes and remove `.part` files on
+  error, Ctrl-C/cancellation, or panic.
+- **`config.rs`**: `Workspace::discover` resolves `-C/--dir` → `FAV_DIR` → upward walk from CWD for
+  `.fav/fav.db` → fallback workspace. Merges `~/.config/fav/config.toml` with
+  `<workspace>/.fav/config.toml`, acquires `.fav/fav.lock` via `File::try_lock()` (`WorkspaceLock`),
+  and enforces Unix `0700`/`0600` permissions on `.fav/` and database files.
+- **`db/*`**: `pub struct Db` wraps a `DatabaseConnection` (no global `OnceCell`, no `exit(-1)`).
+  `Db::open_or_create` enables `WAL`, `synchronous=NORMAL`, `foreign_keys=true`, `busy_timeout=15s`,
+  `sqlx_logging=false`, and runs `Migrator::up`. `Db::open_existing(..., read_only)` skips migrations
+  for read-only commands; `Db::open_in_memory()` is used by unit tests. Batch upserts chunk at
+  `<= 500` rows inside transactions; `upsert_medias` conflicts on `Column::Id`; `prune_all` runs in
+  order `sets → medias → ups` inside a transaction while preserving `Completed` medias by default.
+- **`table.rs`, `id_parse.rs`, `picker.rs`**: `table.rs` handles display-width-aware CJK truncation/padding
+  and `OutputFormat` (`table|json|jsonl|tsv|ids`) + `ColorChoice` (`NO_COLOR`). `id_parse.rs` parses
+  BVIDs, `av` IDs, raw numeric AIDs, and Bilibili URLs with offline BVID↔AID conversion. `picker.rs`
+  implements a TTY-only fuzzy multi-select picker on `stderr` (immediately returning `ExitKind::Usage`
+  on non-TTY or `--non-interactive`).
+- **`action/*`**: Includes `auth`, `sync`, `status`, `doctor`, `list`, `activate`, `deactivate`,
+  `fetch`, `pull`, `media` (`reset`/`skip`), `like`, and `schedule` (`systemd`/`launchd`/`task-scheduler`).
 
-### HTTP layer (api_req)
+### HTTP layer (`api.rs`, `cookies.rs`, `wbi.rs`)
 
-`api.rs` declares two `ApiCaller`s (`AuthApi` for passport, `BiliApi` for api.bilibili.com) carrying
-the shared UA/Referer. To add an endpoint: a `#[derive(Payload, Serialize)]` struct in `payload/`
-with `#[api_req(path = …, method = …, req = query|form|json)]`, plus a `Deserialize` struct in
-`response/`. The response type is chosen by **inference at the call site** — `ApiCaller::request<P, O>`
-is generic, so `let FooResp { .. } = BiliApi::request(FooPayload)` is what binds `O`.
-
-**wbi signing landmine:** `WbiEncoder::encode` md5s the urlencoded serialization of the payload, so
-fields in wbi-signed payloads must stay in alphabetical order (see the `// Do not change the field
-order` in `payload/set.rs`). Reordering breaks signing silently.
-
-Cookies live in `api_req::COOKIE_JAR`, which is **process-global**. `fetch`/`pull` therefore iterate
-accounts *sequentially*, re-seeding the jar per account via `cookies::add_cookie_jar`, and only
-parallelize *within* one account (`buffer_unordered`). Don't parallelize the outer loop.
-
-`like` hard-requires `bili_jct` in the stored cookies (it is the csrf token and seeds the ticket
-HMAC), which is why the help text tells users to paste browser cookies via `auth usecookies`. It also
-bootstraps anti-bot cookies when missing or expired — HMAC-SHA256-derived `bili_ticket`
-(`payload/ticket.rs`) and `buvid3` — and writes the refreshed cookie string back to the account row.
+- **Per-account cookie isolation**: Each account uses its own `BiliClient` (`reqwest::Client` +
+  dedicated `Arc<reqwest::cookie::Jar>`) — never a process-global cookie jar. `base_url` and
+  `passport_base_url` are configurable so integration tests can target local mock HTTP servers.
+- **WBI signing**: `WbiEncoder` sorts parameters with `BTreeMap`, strips `!'()*`, RFC-3986
+  percent-encodes (`%20`), bounds-checks mixin key length (`>= 64`, no panics), and caches keys in
+  `WbiCache` (~6h TTL, invalidated on `-352`/`-403`).
+- **Anti-bot & crypto**: `payload/ticket.rs` uses pure-Rust `hmac` + `sha2` (no `ring`).
+  `ensure_anti_bot_cookies()` loads account cookies first, keys cookies by name, and bootstraps
+  `buvid3`/`bili_ticket`. Credentials use `SecretString` (redacted `Debug`/`Display`).
+- **Resilience**: Requests use explicit connect/read timeouts, exponential backoff with jitter on
+  429/5xx/`-799`/`-412`/`-352`, nullable array deserialization (`null_as_default`), and streaming
+  `.part` downloads with `Range` resume, `backup_url` failover, `Content-Length` verification, and
+  optional `--limit-rate`.
 
 ### State enums
 
-Enum columns are TEXT, so generated Models type them as `String`. `state.rs`'s `impl_display_fromstr!`
-macro supplies `Display`/`FromStr`/`Into<sea_orm::Value>` for `AccountState`, `SetState`, `MediaState`,
-`UpState`: query with `Column::State.eq(AccountState::Active)`, store with `.to_string()`. Variant
-lists must stay in sync with the `enumeration(...)` arrays in the migration, and with the raw SQL in
-`db/media.rs` that hardcodes `state = 'Active'` / `'Pending'`.
+Enum columns are TEXT; `state.rs` supplies `Display`/`FromStr`/`Serialize`/`Deserialize` and
+`Into<sea_orm::Value>` for `AccountState`, `SetState`, `UpState`, `MediaState` (including `Skipped`),
+`MediaPageState`, and `MediaType` (with `Unknown(u8)`). Keep variant lists synchronized with DB
+queries and migrations.
 
-### Schema changes
+### Schema changes & migrations
 
-Edit `fav_bili/src/migration/m*_create_table.rs`, then regenerate entities with `./sea-orm.sh`
-(needs `sea-orm-cli`). It runs `migrate refresh` against `DATABASE_URL` from `.env` — a dev-only
-`data.db`, not the real `.fav/fav.db` — then rewrites `entity/entity_inner/`. The `migration` crate
-exists only to give sea-orm-cli a `MigratorTrait` target (`pub use fav_bili::migration::*`), which is
-also the reason `fav_bili` has a `lib.rs`. `default-members = ["fav_bili"]`, so plain `cargo build`
-skips it.
+**Migrations are strictly additive-only. NEVER edit `fav_bili/src/migration/m20250527_000001_create_table.rs`
+schema in place** — existing user databases have already recorded that migration as applied and will
+not re-run it.
+
+To change the schema:
+1. Add a new timestamped migration under `fav_bili/src/migration/` (e.g.
+   `m20261126_000002_enhance_schema.rs`) and register it in `fav_bili/src/migration/mod.rs`.
+2. Regenerate `fav_bili/src/entity/entity_inner/` with `./sea-orm.sh` (requires `sea-orm-cli`).
+   `sea-orm.sh` runs with `set -euo pipefail` against a temporary SQLite DB, generates into a
+   same-filesystem staging directory, swaps atomically, and cleans up via `trap` — it does not rely
+   on `.env` or leave `data.db` behind. (`.env.example` is provided for manual `sea-orm-cli` use;
+   `.env` is gitignored.)
+3. Never hand-edit generated files in `entity/entity_inner/` unless maintaining intentional redaction
+   hooks (verify `account::Model` continues to redact `cookies` and `refresh_token` in `Debug` after
+   regeneration). Hand-written presentation impls live in `entity/mod.rs`.
+
+The `migration` crate exists only to give `sea-orm-cli` a `MigratorTrait` target
+(`pub use fav_bili::migration::*`). `default-members = ["fav_bili"]`, so plain `cargo build` skips
+it; always pass `--workspace` when linting and testing.
 
 ## Runtime behavior worth knowing
 
-- Everything is **CWD-relative**: the db is `./.fav/fav.db` and downloads land in `./`. A "fav
-  directory" is a working directory; commands run elsewhere won't see those accounts.
-- `fetch` is run **twice** in the normal flow (`auth` → `fetch` → `activate` → `fetch` → `pull`): the
-  first pass only records sets/ups, the second pass enumerates medias of the now-active ones, and
-  `pull` downloads only `all_active_pending_medias()`.
-- `-v` switches the tracing filter from info to debug, layered on `EnvFilter::from_default_env()`, so
-  `RUST_LOG` also applies.
-- The released binary is `fav_bili`; users rename it to `fav`, and `completion` reads the name from
-  `current_exe()`.
+- Workspace discovery checks `-C/--dir`, then `FAV_DIR`, then walks upward for `.fav/fav.db`. A
+  `.fav/fav.lock` file prevents overlapping runs (e.g., timer + manual sync) from racing.
+- `fav sync` combines `fetch` and `pull` in a single command (prefer it over chaining
+  `fav fetch && fav pull`).
+- Logs and progress bars go to `stderr`; structured output (`--format json|jsonl|tsv|ids`) goes to
+  `stdout`.
+- Interactive fuzzy pickers activate only on TTYs when no targets are passed; non-TTY invocations
+  fail fast with exit code `2`.
 
 ## Releasing
 
-Add entries under `## [Unreleased]` in CHANGELOG.md (no hard wraps mid-sentence — the file is
-rendered as GitHub comment markdown). Pushing a `v*` tag drives `release.yaml`, which feeds
-CHANGELOG.md to the GitHub release; crates.io publishing is a manual `workflow_dispatch`.
+Add entries under `## [Unreleased]` in `CHANGELOG.md` (no hard wraps mid-sentence — the file is
+rendered as GitHub release notes). Pushing a `v*` tag triggers `.github/workflows/release.yaml`;
+crates.io publishing is a manual `workflow_dispatch` via `.github/workflows/publish.yaml`.
 
-Before tagging `vX.Y.Z`, both **CHANGELOG.md needs a matching `## [X.Y.Z]` section** and
-`fav_bili/Cargo.toml` needs `version = "X.Y.Z"`. Nothing enforces the pair:
-`create-gh-release-action` hard-fails the whole release when the changelog section is missing, but
-never looks at Cargo.toml, so a tag with a stale manifest version releases a binary that misreports
-its own `--version`. That already happened at `v1.2.5`, which shipped `version = "1.2.4"`.
+Before tagging `vX.Y.Z`, update both `CHANGELOG.md` (`## [X.Y.Z]`) and `fav_bili/Cargo.toml`
+(`version = "X.Y.Z"`):
+- `release.yaml` verifies `GITHUB_REF_NAME == v<fav_bili/Cargo.toml version>` before creating the
+  GitHub Release, builds `fav` with `--locked` for `aarch64-apple-darwin`,
+  `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, and `x86_64-pc-windows-msvc` (zero FFmpeg
+  build steps), and generates + uploads `SHA256SUMS`.
+- `publish.yaml` runs with minimal `permissions: { contents: read }`, passes
+  `CARGO_REGISTRY_TOKEN: ${{ secrets.CRATESIO }}` directly to `cargo publish --locked` (no
+  `cargo login` disk write), and uses no `eval` in `.github/scripts/`.

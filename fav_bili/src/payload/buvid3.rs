@@ -1,6 +1,4 @@
-use api_req::Payload;
 use serde::Serialize;
 
-#[derive(Debug, Serialize, Payload)]
-#[api_req(path = "/x/web-frontend/getbuvid")]
+#[derive(Debug, Default, Clone, Serialize)]
 pub struct Buvid3Payload;

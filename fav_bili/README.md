@@ -1,6 +1,19 @@
-A CLI tool to download your favorite Bilibili medias from up and favorite collections.
+# fav (`fav_bili`)
 
-Need `ffmpeg` usable, and added to the PATH.
+A CLI tool to back up your favorite Bilibili collections, followed UPs, and videos.
+
+## Prerequisites & Installation
+
+- **Runtime prerequisite:** [`ffmpeg`](https://ffmpeg.org/) installed and available on `PATH` (or configured via `ffmpeg_path` in `.fav/config.toml`).
+- **Zero build-time FFmpeg / `pkgconf` dependency:** `fav` calls the `ffmpeg` CLI subprocess rather than linking `libav*`.
+
+```sh
+cargo install fav_bili
+```
+
+This installs the `fav` binary. Run `fav doctor` to verify `ffmpeg`, workspace permissions, and account cookies.
+
+## Usage
 
 ```sh
 Back up your favorite bilibili online resources with CLI.
@@ -8,91 +21,95 @@ Back up your favorite bilibili online resources with CLI.
 Usage: fav [OPTIONS] [COMMAND]
 
 Commands:
-  auth        Auth account
-  list        List accounts/sets/ups/medias [alias: ls, l]
-  activate    Activate obj [alias: active, a]
-  deactivate  Deactivate obj [alias: d]
-  fetch       Fetch metadata of following ups, fav sets, medias, ups [alias: f]
-  pull        Pull fetched medias [alias: p]
-  like        Like medias
-  completion  Generate completion script
+  init        Initialize a fav workspace in the target directory
+  auth        Authenticate and manage Bilibili accounts
+  list        List accounts/sets/ups/medias, or show workspace status when run bare [alias: ls, l]
+  activate    Activate accounts, favorite sets, or UPs for syncing [alias: active, a]
+  deactivate  Deactivate accounts, favorite sets, or UPs [alias: d]
+  fetch       Fetch metadata of followed UPs, favorite sets, and medias [alias: f]
+  pull        Download and mux pending medias [alias: p]
+  sync        Fetch metadata and pull pending medias in one command [alias: s]
+  like        Like (or unlike) Bilibili medias by BVID/AID/URL, set, or stdin
+  status      Show workspace summary, media counts, and top UPs
+  doctor      Diagnose workspace DB, permissions, ffmpeg, disk sync, and account cookies
+  media       Manage tracked media states (reset or skip)
+  schedule    Generate (or install) user-level recurring sync schedules
+  completion  Generate shell completion scripts (with optional dynamic DB completion)
   help        Print this message or the help of the given subcommand(s)
 
 Options:
-  -v, --verbose  Show debug messages
-  -h, --help     Print help
-  -V, --version  Print version
+  -v, --verbose...       Increase log verbosity (-v debug, -vv trace)
+  -q, --quiet            Suppress informational logs and next-step hints
+  -C, --dir <dir>        Workspace directory containing .fav/ (overrides FAV_DIR)
+      --color <color>    Colorize output [default: auto] [possible values: auto, always, never]
+      --no-progress      Disable interactive progress bars
+      --non-interactive  Disable interactive prompts and TTY pickers
+  -h, --help             Print help
+  -V, --version          Print version
 ```
 
-### Steps
+### Quickstart
 
-1. Login first
-2. Fetch the favorite sets(lists)
-3. Activate the list or up you want. You can see them through `fav ls`
-4. Fetch active resources
-5. Pull the resources
+1. Authenticate via QR code or browser cookies (`--stdin` or `--file`):
+   ```sh
+   fav auth login --fetch
+   # or paste cookies safely via stdin (recommended for `fav like` and remote logout)
+   fav auth usecookies --stdin
+   ```
+2. Activate the favorite sets or UPs you want to back up (interactive TTY fuzzy picker when no IDs are passed):
+   ```sh
+   fav ls set
+   fav activate set
+   # or pass IDs directly
+   fav activate set 123456789
+   ```
+3. Sync metadata and download pending videos in one step:
+   ```sh
+   fav sync
+   ```
+4. Inspect progress and health:
+   ```sh
+   fav status
+   fav doctor
+   ```
 
-### Example
+### Common Examples
 
 ```sh
-# auto completion is supported; e.g. fish
-fav completion fish > ~/.config/fish/completions/fav.fish
-# For Windows users
-echo "fav completion powershell | Out-String | Invoke-Expression" >> $PROFILE
-# scan code to login
-fav auth login
-# you can also login with `fav usecookies`
-# fetch following ups and fav sets
-fav fetch
-# show sets
-fav ls set
-# activate set or up
-fav activate
-# pull videos
-fav fetch
-fav pull
-# deactivate set or up
-fav deactivate
-# after fetching, you can find your favorite upper
-# limbo/sqlite3 .fav/fav.db
-SELECT u.up_id, u.name, COUNT(u.up_id) count FROM up u LEFT JOIN media_up mu ON u.up_id=mu.up_id JOIN media m ON mu.id=m.id GROUP BY u.up_id, u.name ORDER BY count;
-# you can also like medias, should usecookies when login
-fav like
-# or like all medias faved
-fav ls v | sed '1d;$d' | awk '{print $2;}' | xargs fav like
-# check cookies usability
+# Target a workspace directory explicitly (or set FAV_DIR)
+fav -C /data/bilibili sync
+
+# Machine-readable output (`table`, `json`, `jsonl`, `tsv`, `ids`)
+fav ls media --state pending --format json
+fav ls media --set 123456789 --format ids
+
+# Targeted pull & state recovery
+fav pull BV17x411w7KC
+fav pull --set 123456789 --jobs 4 --limit-rate 5M
+fav media reset --failed
+fav media skip 170001
+
+# Like medias by set, BVID/URL, or piped IDs
+fav like --set 123456789
+fav ls media --set 123456789 --format ids | fav like -
+
+# Check cookies
 fav auth check -a
+
+# Shell completions (includes built-in dynamic workspace DB completion via `fav __complete`; pass `--static` for static only)
+fav completion fish > ~/.config/fish/completions/fav.fish
+fav completion bash > ~/.local/share/bash-completion/completions/fav
+fav completion zsh > ~/.zfunc/_fav
+fav completion powershell | Out-String | Invoke-Expression
+
+# Generate/install periodic sync timers (systemd, launchd, task-scheduler)
+fav schedule --target systemd --interval 3h --install
 ```
 
-Service example:
-```ini
-# /etc/systemd/system/fav.service
-[Unit]
-Description=Fav Service
-After=network-online.target
+### Configuration
 
-[Service]
-Type=oneshot
-User=your_user
-WorkingDirectory=/path/to/fav_set
-ExecStart=/bin/sh -c "/usr/local/bin/fav fetch && /usr/local/bin/fav pull"
+`fav` merges `~/.config/fav/config.toml` with `<workspace>/.fav/config.toml` (supporting `output_dir`, `jobs`, `limit_rate`, `prune`, `no_progress`, `color`, `ffmpeg_path`, and `api_concurrency`).
 
-# /etc/systemd/system/fav.timer
-[Unit]
-Description=Run fav service every 3 hours
+## License
 
-[Timer]
-OnCalendar=*-*-* 0/3:00:00
-# or OnUnitActiveSec=3h
-AccuracySec=1m
-Persistent=true
-
-[Install]
-WantedBy=timers.target
-```
-
-```sh
-sudo systemctl daemon-reload
-sudo systemctl enable fav.timer
-sudo systemctl start fav.timer
-```
+MIT — see [`LICENSE`](https://github.com/kingwingfly/fav/blob/master/LICENSE).
