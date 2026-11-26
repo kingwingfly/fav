@@ -82,7 +82,7 @@ pub async fn status(ctx: &AppContext, format: OutputFormat, top: usize) -> AppRe
             let c = table_opts.colored;
             let s = &report.summary;
 
-            let overview = table(
+            let mut overview = table(
                 ["resource", "total", "breakdown"],
                 [
                     [
@@ -145,6 +145,11 @@ pub async fn status(ctx: &AppContext, format: OutputFormat, top: usize) -> AppRe
                     ],
                 ],
             );
+            if !table_opts.wide
+                && let Some(max_width) = table_opts.term_width
+            {
+                overview.fit_to_width(max_width);
+            }
 
             let mut out = format!(
                 "Workspace : {}\nDatabase  : {}\nOutput Dir: {}\n\n{overview}",
@@ -152,7 +157,7 @@ pub async fn status(ctx: &AppContext, format: OutputFormat, top: usize) -> AppRe
             );
 
             if !s.top_ups.is_empty() {
-                let top_tbl = table(
+                let mut top_tbl = table(
                     ["up_id", "name", "medias"],
                     s.top_ups.iter().map(|u| {
                         [
@@ -162,6 +167,11 @@ pub async fn status(ctx: &AppContext, format: OutputFormat, top: usize) -> AppRe
                         ]
                     }),
                 );
+                if !table_opts.wide
+                    && let Some(max_width) = table_opts.term_width
+                {
+                    top_tbl.fit_to_width(max_width);
+                }
                 out.push_str("\n\nTop UPs:\n");
                 out.push_str(&top_tbl.to_string());
             }

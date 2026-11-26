@@ -342,7 +342,7 @@ pub async fn render_list(
                         [
                             m.id.to_string(),
                             m.bv_id.clone(),
-                            table_opts.format_cell(&m.title, 50),
+                            table_opts.format_cell(&m.title, 64),
                             m.r#type.clone(),
                             format_state_badge(&m.state, table_opts.colored),
                         ]

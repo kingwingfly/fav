@@ -239,7 +239,8 @@ impl TableOptions {
         let term = Term::stdout();
         let is_tty = term.is_term();
         let term_width = if is_tty {
-            Some(usize::from(term.size().1))
+            let cols = usize::from(term.size().1);
+            (cols > 0).then_some(cols)
         } else {
             None
         };
@@ -264,7 +265,14 @@ impl TableOptions {
     }
 
     /// Format a flexible text column according to `wide` and terminal width.
+    ///
+    /// When rendering to a TTY with a known terminal width, full cell text is preserved here
+    /// so [`MarkdownTable::fit_to_width`] can budget column widths from the exact measured
+    /// widths of all columns instead of relying on an estimated `fixed_overhead`.
     pub fn format_cell(&self, text: &str, fixed_overhead: usize) -> String {
+        if self.wide || (self.is_tty && self.term_width.is_some()) {
+            return text.to_owned();
+        }
         match self.flexible_col_width(fixed_overhead) {
             Some(max_cols) => truncate_display(text, max_cols),
             None => text.to_owned(),
@@ -284,6 +292,61 @@ fn sanitize_table_cell(cell: &str) -> String {
         .collect()
 }
 
+/// Truncate `s` (which may contain ANSI CSI escape sequences) to fit within `max_cols`
+/// visible display columns, appending `\x1b[0m` (if styled) and `…` when truncated.
+fn truncate_ansi_display(s: &str, max_cols: usize) -> String {
+    if max_cols == 0 {
+        return String::new();
+    }
+    if display_width(s) <= max_cols {
+        return s.to_owned();
+    }
+    if !s.contains('\x1b') {
+        return truncate_display(s, max_cols);
+    }
+
+    const ELLIPSIS: char = '…';
+    let ellipsis_w = ELLIPSIS.width().unwrap_or(1);
+    if max_cols < ellipsis_w {
+        return ".".repeat(max_cols);
+    }
+
+    let budget = max_cols - ellipsis_w;
+    let mut out = String::new();
+    let mut cur = 0usize;
+    let mut saw_ansi = false;
+    let mut chars = s.chars().peekable();
+
+    while let Some(c) = chars.next() {
+        if c == '\x1b' {
+            saw_ansi = true;
+            out.push(c);
+            if chars.peek() == Some(&'[') {
+                out.push(chars.next().unwrap());
+                for seq_c in chars.by_ref() {
+                    out.push(seq_c);
+                    if ('\x40'..='\x7e').contains(&seq_c) {
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+        let cw = c.width().unwrap_or(0);
+        if cur + cw > budget {
+            break;
+        }
+        out.push(c);
+        cur += cw;
+    }
+
+    if saw_ansi {
+        out.push_str("\x1b[0m");
+    }
+    out.push(ELLIPSIS);
+    out
+}
+
 /// ANSI-aware, Unicode-width-accurate GitHub-Flavored Markdown table.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MarkdownTable {
@@ -296,19 +359,13 @@ impl MarkdownTable {
     pub fn count_rows(&self) -> usize {
         self.rows.len() + 1
     }
-}
 
-impl fmt::Display for MarkdownTable {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn column_widths(&self) -> Vec<usize> {
         let col_count = self
             .rows
             .iter()
             .map(Vec::len)
             .fold(self.header.len(), usize::max);
-        if col_count == 0 {
-            return Ok(());
-        }
-
         let mut col_widths = vec![0usize; col_count];
         for (idx, cell) in self.header.iter().enumerate() {
             col_widths[idx] = col_widths[idx].max(display_width(cell));
@@ -317,6 +374,80 @@ impl fmt::Display for MarkdownTable {
             for (idx, cell) in row.iter().enumerate() {
                 col_widths[idx] = col_widths[idx].max(display_width(cell));
             }
+        }
+        col_widths
+    }
+
+    /// Shrink the widest column(s) so the rendered table fits within `max_width` terminal columns.
+    pub fn fit_to_width(&mut self, max_width: usize) {
+        let mut col_widths = self.column_widths();
+        let col_count = col_widths.len();
+        if col_count == 0 {
+            return;
+        }
+        let borders = 3 * col_count + 1;
+        let mut total = col_widths.iter().sum::<usize>() + borders;
+        if total <= max_width {
+            return;
+        }
+
+        // First shrink columns down to a readable floor of 4 cols, then down to 1 if still over.
+        for floor in [4usize, 1usize] {
+            while total > max_width {
+                let Some((widest_idx, &widest_w)) = col_widths
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, w)| **w > floor)
+                    .max_by_key(|(_, w)| **w)
+                else {
+                    break;
+                };
+                let excess = total - max_width;
+                let shrink = (widest_w - floor).min(excess);
+                // Shrink down to at most the next-widest column (or floor) per step so
+                // multiple wide columns share reductions evenly.
+                let next_widest = col_widths
+                    .iter()
+                    .enumerate()
+                    .filter(|(i, _)| *i != widest_idx)
+                    .map(|(_, &w)| w)
+                    .max()
+                    .unwrap_or(floor)
+                    .max(floor);
+                let step = if widest_w > next_widest {
+                    (widest_w - next_widest).min(shrink)
+                } else {
+                    1.min(shrink)
+                };
+                col_widths[widest_idx] -= step;
+                total -= step;
+            }
+        }
+
+        for (idx, cell) in self.header.iter_mut().enumerate() {
+            if let Some(&limit) = col_widths.get(idx)
+                && display_width(cell) > limit
+            {
+                *cell = truncate_ansi_display(cell, limit);
+            }
+        }
+        for row in &mut self.rows {
+            for (idx, cell) in row.iter_mut().enumerate() {
+                if let Some(&limit) = col_widths.get(idx)
+                    && display_width(cell) > limit
+                {
+                    *cell = truncate_ansi_display(cell, limit);
+                }
+            }
+        }
+    }
+}
+
+impl fmt::Display for MarkdownTable {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let col_widths = self.column_widths();
+        if col_widths.is_empty() {
+            return Ok(());
         }
 
         let write_row = |f: &mut fmt::Formatter<'_>, cells: &[String]| -> fmt::Result {
@@ -368,7 +499,8 @@ where
     MarkdownTable { header, rows }
 }
 
-/// Render a formatted table string. Appends the `rows: N` footer only when outputting to a TTY.
+/// Render a formatted table string. Fits the table to `opts.term_width` unless `opts.wide`
+/// is set, and appends the `rows: N` footer only when outputting to a TTY.
 pub fn render_table<H, RS, R>(header: H, records: RS, opts: TableOptions) -> String
 where
     H: IntoIterator,
@@ -377,7 +509,12 @@ where
     R: IntoIterator,
     R::Item: Into<String>,
 {
-    let tbl = table(header, records);
+    let mut tbl = table(header, records);
+    if !opts.wide
+        && let Some(max_width) = opts.term_width
+    {
+        tbl.fit_to_width(max_width);
+    }
     let row_count = tbl.count_rows().saturating_sub(1);
     if opts.is_tty {
         format!("{tbl}\nrows: {row_count}")
@@ -707,5 +844,80 @@ mod tests {
         assert_eq!(opts.flexible_col_width(40), None);
         let long_title = "这是一个非常长的Bilibili视频标题用于测试宽屏不截断功能";
         assert_eq!(opts.format_cell(long_title, 40), long_title);
+    }
+
+    #[test]
+    fn render_table_never_exceeds_terminal_width_even_with_long_ids_and_ansi() {
+        for term_cols in [80usize, 100, 120, 160] {
+            let opts = TableOptions {
+                wide: false,
+                is_tty: true,
+                colored: true,
+                term_width: Some(term_cols),
+            };
+            let long_cjk = "这是一个非常非常长的Bilibili收藏视频标题用于验证在任何终端宽度下表格行都不会超出终端列宽限制并且对齐准确无误";
+            let rendered = render_table(
+                ["id", "bvid", "title", "type", "state"],
+                [
+                    [
+                        "2129461".to_owned(),
+                        "BV1zs411S7sz".to_owned(),
+                        opts.format_cell("洛天依，言和原创《普通DISCO》", 64),
+                        "Video".to_owned(),
+                        format_state_badge("Completed", true),
+                    ],
+                    [
+                        "114896364768316".to_owned(),
+                        "BV1GPgHz4ENB".to_owned(),
+                        opts.format_cell(long_cjk, 64),
+                        "Video".to_owned(),
+                        format_state_badge("PermissionDenied", true),
+                    ],
+                ],
+                opts,
+            );
+
+            let table_lines: Vec<&str> = rendered.lines().filter(|l| l.starts_with('|')).collect();
+            assert_eq!(table_lines.len(), 4);
+            let first_w = display_width(table_lines[0]);
+            assert!(
+                first_w <= term_cols,
+                "table width {first_w} exceeded terminal width {term_cols}:\n{rendered}"
+            );
+            for line in &table_lines {
+                assert_eq!(display_width(line), first_w);
+            }
+        }
+    }
+
+    #[test]
+    fn fit_to_width_truncates_ansi_colored_cells_with_reset_and_alignment() {
+        let mut tbl = table(
+            ["resource", "total", "breakdown"],
+            [[
+                "Medias".to_owned(),
+                "621".to_owned(),
+                format!(
+                    "{}: 0, {}: 616, {}: 0, {}: 1, {}: 4, {}: 0",
+                    format_state_badge("Pending", true),
+                    format_state_badge("Completed", true),
+                    format_state_badge("Failed", true),
+                    format_state_badge("Expired", true),
+                    format_state_badge("PermissionDenied", true),
+                    format_state_badge("Skipped", true),
+                ),
+            ]],
+        );
+        tbl.fit_to_width(72);
+        let rendered = tbl.to_string();
+        for line in rendered.lines() {
+            assert!(
+                display_width(line) <= 72,
+                "line width {} > 72: {line:?}",
+                display_width(line)
+            );
+        }
+        // Truncated styled cell must reset ANSI before `…` so colors don't bleed.
+        assert!(rendered.contains("\x1b[0m…"));
     }
 }
