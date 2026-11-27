@@ -43,8 +43,9 @@ pub struct MediaFilter {
 #[derive(Debug, Clone, Default)]
 pub struct PullFilter {
     pub ids: Vec<i64>,
-    pub set_id: Option<i64>,
-    pub up_id: Option<i64>,
+    pub set_ids: Vec<i64>,
+    pub up_ids: Vec<i64>,
+    pub account_id: Option<i64>,
     pub retry_failed: bool,
     pub force: bool,
     pub limit: Option<u64>,
@@ -121,8 +122,9 @@ pub struct StatusSummary {
     pub top_ups: Vec<TopUpStat>,
 }
 
-fn active_media_condition() -> Condition {
-    let active_up_account = Query::select()
+fn active_media_condition_for_accounts(account_ids: Option<&[i64]>) -> Condition {
+    let mut active_up_account = Query::select();
+    active_up_account
         .expr(Expr::val(1))
         .from(up_account::Entity)
         .inner_join(
@@ -136,8 +138,12 @@ fn active_media_condition() -> Condition {
         )
         .and_where(
             Expr::col((account::Entity, account::Column::State)).eq(AccountState::Active.as_str()),
-        )
-        .to_owned();
+        );
+    if let Some(ids) = account_ids {
+        active_up_account.and_where(
+            Expr::col((account::Entity, account::Column::AccountId)).is_in(ids.iter().copied()),
+        );
+    }
 
     let active_up_sub = Query::select()
         .expr(Expr::val(1))
@@ -152,10 +158,11 @@ fn active_media_condition() -> Condition {
                 .equals((media::Entity, media::Column::Id)),
         )
         .and_where(Expr::col((up::Entity, up::Column::State)).eq(UpState::Active.as_str()))
-        .and_where(Expr::exists(active_up_account))
+        .and_where(Expr::exists(active_up_account.to_owned()))
         .to_owned();
 
-    let active_set_account = Query::select()
+    let mut active_set_account = Query::select();
+    active_set_account
         .expr(Expr::val(1))
         .from(set_account::Entity)
         .inner_join(
@@ -169,8 +176,12 @@ fn active_media_condition() -> Condition {
         )
         .and_where(
             Expr::col((account::Entity, account::Column::State)).eq(AccountState::Active.as_str()),
-        )
-        .to_owned();
+        );
+    if let Some(ids) = account_ids {
+        active_set_account.and_where(
+            Expr::col((account::Entity, account::Column::AccountId)).is_in(ids.iter().copied()),
+        );
+    }
 
     let active_set_sub = Query::select()
         .expr(Expr::val(1))
@@ -185,12 +196,20 @@ fn active_media_condition() -> Condition {
                 .equals((media::Entity, media::Column::Id)),
         )
         .and_where(Expr::col((set::Entity, set::Column::State)).eq(SetState::Active.as_str()))
-        .and_where(Expr::exists(active_set_account))
+        .and_where(Expr::exists(active_set_account.to_owned()))
         .to_owned();
 
     Condition::any()
         .add(Expr::exists(active_up_sub))
         .add(Expr::exists(active_set_sub))
+}
+
+fn active_media_condition() -> Condition {
+    active_media_condition_for_accounts(None)
+}
+
+fn active_media_condition_for_account(account_id: i64) -> Condition {
+    active_media_condition_for_accounts(Some(&[account_id]))
 }
 
 fn account_media_condition(account_id: i64) -> Condition {
@@ -547,6 +566,60 @@ impl Db {
         Ok(total)
     }
 
+    /// Reset any media rows in `ids` that are currently in `Downloading` state back to `Pending`.
+    /// Rows in any other state (e.g. `Completed`, `Failed`, `Expired`) are left untouched.
+    pub async fn reset_downloading_medias(&self, ids: &[i64]) -> Result<u64> {
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        let now = now_unix();
+        let txn = self.conn.begin().await?;
+        let mut total = 0u64;
+        for chunk in ids.chunks(CHUNK_SIZE) {
+            let res = media::Entity::update_many()
+                .col_expr(
+                    media::Column::State,
+                    Expr::value(MediaState::Pending.as_str()),
+                )
+                .col_expr(
+                    media::Column::LastError,
+                    Expr::value(Option::<String>::None),
+                )
+                .col_expr(media::Column::UpdatedAt, Expr::value(Some(now)))
+                .filter(
+                    Condition::all()
+                        .add(media::Column::Id.is_in(chunk.iter().copied()))
+                        .add(media::Column::State.eq(MediaState::Downloading.as_str())),
+                )
+                .exec(&txn)
+                .await?;
+            total += res.rows_affected;
+        }
+        txn.commit().await?;
+        Ok(total)
+    }
+
+    /// Return `true` if `id` belongs to an `Active` set owned by or an `Active` UP followed by
+    /// at least one currently-`Active` account in `account_ids`.
+    pub async fn is_media_active_for_any_account(
+        &self,
+        id: i64,
+        account_ids: &[i64],
+    ) -> Result<bool> {
+        if account_ids.is_empty() {
+            return Ok(false);
+        }
+        let found = media::Entity::find()
+            .filter(
+                Condition::all()
+                    .add(media::Column::Id.eq(id))
+                    .add(active_media_condition_for_accounts(Some(account_ids))),
+            )
+            .one(&self.conn)
+            .await?;
+        Ok(found.is_some())
+    }
+
     pub async fn is_media_active(&self, id: i64) -> Result<bool> {
         let found = media::Entity::find()
             .filter(
@@ -634,38 +707,57 @@ impl Db {
     }
 
     /// Query media rows eligible for `fav pull` with optional target filters.
-    /// Always enforces [`active_media_condition`] (active account + active set/UP) regardless of
-    /// whether `ids`, `set_id`, or `up_id` filters are supplied.
+    /// Always enforces active-media scoping (active account + active set/UP), scoped to a single
+    /// active account when `filter.account_id` is set, regardless of whether `ids`, `set_ids`, or
+    /// `up_ids` filters are supplied.
+    ///
+    /// Dimension filters (`ids`, `set_ids`, `up_ids`) combine with AND across dimensions and OR
+    /// within each dimension.
     pub async fn pull_candidates(&self, filter: &PullFilter) -> Result<Vec<media::Model>> {
+        let active_cond = match filter.account_id {
+            Some(account_id) => active_media_condition_for_account(account_id),
+            None => active_media_condition(),
+        };
         let mut query = media::Entity::find()
-            .filter(active_media_condition())
+            .filter(active_cond)
             .order_by_asc(media::Column::Id);
 
         if !filter.ids.is_empty() {
             query = query.filter(media::Column::Id.is_in(filter.ids.iter().copied()));
-        } else {
-            if let Some(set_id) = filter.set_id {
-                let sub = Query::select()
-                    .column(media_set::Column::Id)
-                    .from(media_set::Entity)
-                    .and_where(Expr::col(media_set::Column::SetId).eq(set_id))
-                    .to_owned();
-                query = query.filter(media::Column::Id.in_subquery(sub));
-            }
-            if let Some(up_id) = filter.up_id {
-                let sub = Query::select()
-                    .column(media_up::Column::Id)
-                    .from(media_up::Entity)
-                    .and_where(Expr::col(media_up::Column::UpId).eq(up_id))
-                    .to_owned();
-                query = query.filter(media::Column::Id.in_subquery(sub));
-            }
+        }
+        if !filter.set_ids.is_empty() {
+            let sub = Query::select()
+                .column(media_set::Column::Id)
+                .from(media_set::Entity)
+                .and_where(
+                    Expr::col(media_set::Column::SetId).is_in(filter.set_ids.iter().copied()),
+                )
+                .to_owned();
+            query = query.filter(media::Column::Id.in_subquery(sub));
+        }
+        if !filter.up_ids.is_empty() {
+            let sub = Query::select()
+                .column(media_up::Column::Id)
+                .from(media_up::Entity)
+                .and_where(Expr::col(media_up::Column::UpId).is_in(filter.up_ids.iter().copied()))
+                .to_owned();
+            query = query.filter(media::Column::Id.in_subquery(sub));
         }
 
         if !filter.force {
             let mut allowed = vec![
                 MediaState::Pending.as_str(),
                 MediaState::Downloading.as_str(),
+            ];
+            if filter.retry_failed {
+                allowed.push(MediaState::Failed.as_str());
+            }
+            query = query.filter(media::Column::State.is_in(allowed));
+        } else if filter.ids.is_empty() {
+            let mut allowed = vec![
+                MediaState::Pending.as_str(),
+                MediaState::Downloading.as_str(),
+                MediaState::Completed.as_str(),
             ];
             if filter.retry_failed {
                 allowed.push(MediaState::Failed.as_str());

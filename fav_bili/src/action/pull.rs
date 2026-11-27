@@ -2,7 +2,7 @@ use std::{
     collections::{BTreeSet, HashMap, HashSet},
     path::{Path, PathBuf},
     str::FromStr as _,
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 use anyhow::{Context as _, Result, anyhow};
@@ -14,7 +14,7 @@ pub use crate::downloader::build_safe_filename;
 use crate::{
     api::{BiliApiError, BiliClient},
     context::AppContext,
-    db::PullFilter,
+    db::{Db, PullFilter},
     downloader::{
         PageTarget, StreamDownloadParams, download_and_mux_page, fetch_page_playurl,
         preview_extension, resolve_recorded_path,
@@ -54,6 +54,7 @@ pub struct PullOptions {
 enum MediaOutcome {
     Downloaded,
     Skipped,
+    DeferredToNextAccount,
     Failed(String),
     AccountExpired(String),
     Cancelled,
@@ -178,26 +179,48 @@ pub async fn pull(ctx: &AppContext, opts: PullOptions) -> AppResult<()> {
     let mut downloaded_total = 0usize;
     let mut failed_total = 0usize;
     let mut skipped_total = 0usize;
+    let mut attempted_accounts = 0usize;
     let mut expired_accounts = 0usize;
-    let mut attempted_failed_ids: HashSet<i64> = HashSet::new();
+    let mut expired_unfinished_ids: HashSet<i64> = HashSet::new();
+    let mut handled_ids: HashSet<i64> = HashSet::new();
     let mut interrupted = false;
 
-    'accounts: for account in &accounts {
+    'accounts: for (idx, account) in accounts.iter().enumerate() {
         if global_cancel.is_cancelled() {
             interrupted = true;
             break 'accounts;
         }
 
-        // Re-query candidates on every account iteration so already-completed/expired items
-        // from earlier accounts are not retried.
-        let candidates = query_pull_candidates(ctx, &opts, &target_aids).await?;
-        let candidates: Vec<media::Model> = candidates
-            .into_iter()
-            .filter(|m| !attempted_failed_ids.contains(&m.id))
-            .collect();
-        if candidates.is_empty() {
+        let remaining_limit = opts
+            .limit
+            .map(|limit| limit.saturating_sub(downloaded_total + failed_total + skipped_total));
+        if remaining_limit == Some(0) {
             break 'accounts;
         }
+
+        // Re-query candidates scoped to this active account so Account A never attempts
+        // Account B's exclusive videos, and already-handled items from earlier accounts are
+        // not re-attempted (including during `--force` or `--retry-failed` runs).
+        let query_limit = remaining_limit.map(|rem| rem.saturating_add(handled_ids.len()));
+        let mut candidates: Vec<media::Model> = query_pull_candidates(
+            ctx,
+            &opts,
+            &target_aids,
+            Some(account.account_id),
+            query_limit,
+        )
+        .await?
+        .into_iter()
+        .filter(|m| !handled_ids.contains(&m.id))
+        .collect();
+        if let Some(rem) = remaining_limit {
+            candidates.truncate(rem);
+        }
+        if candidates.is_empty() {
+            continue 'accounts;
+        }
+        attempted_accounts += 1;
+        let account_candidate_ids: Vec<i64> = candidates.iter().map(|m| m.id).collect();
 
         info!(
             "Pulling {} media(s) with account<{}> (jobs={jobs})",
@@ -226,6 +249,9 @@ pub async fn pull(ctx: &AppContext, opts: PullOptions) -> AppResult<()> {
         let account_cancel = global_cancel.child_token();
         let output_dir_arc = Arc::new(output_dir.clone());
         let tmp_dir_arc = Arc::new(tmp_dir.clone());
+        let in_flight = Arc::new(Mutex::new(HashSet::new()));
+        let remaining_account_ids: Arc<Vec<i64>> =
+            Arc::new(accounts[idx + 1..].iter().map(|a| a.account_id).collect());
 
         let mut tasks = futures::stream::iter(candidates)
             .map(|media_row| {
@@ -234,6 +260,8 @@ pub async fn pull(ctx: &AppContext, opts: PullOptions) -> AppResult<()> {
                 let output_dir = output_dir_arc.clone();
                 let tmp_dir = tmp_dir_arc.clone();
                 let params = stream_params.clone();
+                let in_flight = in_flight.clone();
+                let remaining_accounts = remaining_account_ids.clone();
                 let force = opts.force;
                 async move {
                     if token.is_cancelled() {
@@ -248,6 +276,8 @@ pub async fn pull(ctx: &AppContext, opts: PullOptions) -> AppResult<()> {
                         &params,
                         force,
                         token,
+                        &in_flight,
+                        &remaining_accounts,
                     )
                     .await;
                     (media_row.id, outcome)
@@ -264,11 +294,18 @@ pub async fn pull(ctx: &AppContext, opts: PullOptions) -> AppResult<()> {
                         break;
                     };
                     match outcome {
-                        MediaOutcome::Downloaded => downloaded_total += 1,
-                        MediaOutcome::Skipped => skipped_total += 1,
+                        MediaOutcome::Downloaded => {
+                            downloaded_total += 1;
+                            handled_ids.insert(media_id);
+                        }
+                        MediaOutcome::Skipped => {
+                            skipped_total += 1;
+                            handled_ids.insert(media_id);
+                        }
+                        MediaOutcome::DeferredToNextAccount => {}
                         MediaOutcome::Failed(msg) => {
                             failed_total += 1;
-                            attempted_failed_ids.insert(media_id);
+                            handled_ids.insert(media_id);
                             error!("{msg}");
                         }
                         MediaOutcome::AccountExpired(msg) => {
@@ -296,11 +333,32 @@ pub async fn pull(ctx: &AppContext, opts: PullOptions) -> AppResult<()> {
                     // Drop the unordered stream immediately so in-flight muxer futures unwind and
                     // their RAII guards kill child `ffmpeg` processes and remove `.part` outputs.
                     drop(tasks);
+                    match rollback_inflight_downloading(&ctx.db, &in_flight).await {
+                        Ok(reset) if reset > 0 => {
+                            info!("Reset {reset} interrupted in-flight media(s) back to Pending.");
+                        }
+                        Ok(_) => {}
+                        Err(e) => {
+                            warn!("Failed rolling back interrupted in-flight media(s): {e:#}");
+                        }
+                    }
                     break 'accounts;
                 }
             }
         }
+
+        if account_expired {
+            for id in account_candidate_ids {
+                if !handled_ids.contains(&id) {
+                    expired_unfinished_ids.insert(id);
+                }
+            }
+        }
     }
+
+    let expired_with_unfinished = expired_unfinished_ids
+        .iter()
+        .any(|id| !handled_ids.contains(id));
 
     if downloaded_total == 0
         && failed_total == 0
@@ -332,9 +390,13 @@ pub async fn pull(ctx: &AppContext, opts: PullOptions) -> AppResult<()> {
     }
 
     if failed_total > 0 && !opts.ignore_errors {
-        if expired_accounts == accounts.len() && downloaded_total == 0 {
+        if attempted_accounts > 0
+            && expired_accounts == attempted_accounts
+            && downloaded_total == 0
+            && skipped_total == 0
+        {
             return Err(AppError::auth(anyhow!(
-                "All active accounts expired during pull."
+                "All active accounts with pull candidates expired during pull."
             )));
         }
         return Err(AppError::partial(anyhow!(
@@ -342,9 +404,19 @@ pub async fn pull(ctx: &AppContext, opts: PullOptions) -> AppResult<()> {
         )));
     }
 
-    if expired_accounts == accounts.len() && downloaded_total == 0 && skipped_total == 0 {
+    if attempted_accounts > 0
+        && expired_accounts == attempted_accounts
+        && downloaded_total == 0
+        && skipped_total == 0
+    {
         return Err(AppError::auth(anyhow!(
-            "All active accounts expired during pull."
+            "All active accounts with pull candidates expired during pull."
+        )));
+    }
+
+    if expired_accounts > 0 && expired_with_unfinished && !opts.ignore_errors {
+        return Err(AppError::partial(anyhow!(
+            "Pull finished with {expired_accounts} expired account(s) leaving unfinished item(s) (Downloaded {downloaded_total}, Skipped {skipped_total})."
         )));
     }
 
@@ -436,10 +508,7 @@ async fn compute_recheck_scope(
     opts: &PullOptions,
     target_aids: &[i64],
 ) -> Result<Option<HashSet<i64>>> {
-    if !target_aids.is_empty() {
-        return Ok(Some(target_aids.iter().copied().collect()));
-    }
-    if opts.set_ids.is_empty() && opts.up_ids.is_empty() {
+    if target_aids.is_empty() && opts.set_ids.is_empty() && opts.up_ids.is_empty() {
         return Ok(None);
     }
     let scope_opts = PullOptions {
@@ -449,13 +518,21 @@ async fn compute_recheck_scope(
         limit: None,
         ..Default::default()
     };
-    let rows = query_pull_candidates(ctx, &scope_opts, &[]).await?;
+    let rows = query_pull_candidates(ctx, &scope_opts, target_aids, None, None).await?;
     let ids: HashSet<i64> = rows
         .into_iter()
         .filter(|m| m.state == MediaState::Completed.as_str())
         .map(|m| m.id)
         .collect();
     Ok(Some(ids))
+}
+
+async fn rollback_inflight_downloading(db: &Db, in_flight: &Mutex<HashSet<i64>>) -> Result<u64> {
+    let ids: Vec<i64> = {
+        let mut guard = in_flight.lock().unwrap_or_else(|e| e.into_inner());
+        guard.drain().collect()
+    };
+    db.reset_downloading_medias(&ids).await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -468,6 +545,8 @@ async fn download_media(
     stream_params: &StreamDownloadParams,
     force: bool,
     cancel: CancellationToken,
+    in_flight: &Mutex<HashSet<i64>>,
+    remaining_account_ids: &[i64],
 ) -> MediaOutcome {
     match MediaType::from_str(&media_row.r#type) {
         Ok(MediaType::Video) => {}
@@ -487,6 +566,41 @@ async fn download_media(
         }
     }
 
+    {
+        let mut guard = in_flight.lock().unwrap_or_else(|e| e.into_inner());
+        guard.insert(media_row.id);
+    }
+    let outcome = download_video_media(
+        ctx,
+        client,
+        media_row,
+        output_dir,
+        tmp_dir,
+        stream_params,
+        force,
+        cancel,
+        remaining_account_ids,
+    )
+    .await;
+    {
+        let mut guard = in_flight.lock().unwrap_or_else(|e| e.into_inner());
+        guard.remove(&media_row.id);
+    }
+    outcome
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn download_video_media(
+    ctx: &AppContext,
+    client: &BiliClient,
+    media_row: &media::Model,
+    output_dir: &Path,
+    tmp_dir: &Path,
+    stream_params: &StreamDownloadParams,
+    force: bool,
+    cancel: CancellationToken,
+    remaining_account_ids: &[i64],
+) -> MediaOutcome {
     if let Err(e) = ctx
         .db
         .set_media_state(media_row.id, MediaState::Downloading)
@@ -501,7 +615,7 @@ async fn download_media(
     let info = match client.media_info(media_row.id).await {
         Ok(info) => info,
         Err(e) => {
-            return handle_media_api_error(ctx, media_row, e).await;
+            return handle_media_api_error(ctx, media_row, e, &cancel, remaining_account_ids).await;
         }
     };
 
@@ -572,11 +686,15 @@ async fn download_media(
         let dash_data = match fetch_page_playurl(client, media_row.id, cid, stream_params).await {
             Ok(d) => d,
             Err(e) => {
-                let _ = ctx
-                    .db
-                    .mark_page_failed(media_row.id, cid, page as i32, part.clone())
-                    .await;
-                return handle_media_api_error(ctx, media_row, e).await;
+                let outcome =
+                    handle_media_api_error(ctx, media_row, e, &cancel, remaining_account_ids).await;
+                if matches!(outcome, MediaOutcome::Failed(_)) {
+                    let _ = ctx
+                        .db
+                        .mark_page_failed(media_row.id, cid, page as i32, part.clone())
+                        .await;
+                }
+                return outcome;
             }
         };
 
@@ -667,16 +785,27 @@ async fn handle_media_api_error(
     ctx: &AppContext,
     media_row: &media::Model,
     err: anyhow::Error,
+    cancel: &CancellationToken,
+    remaining_account_ids: &[i64],
 ) -> MediaOutcome {
+    if let Some(api_err) = err.downcast_ref::<BiliApiError>()
+        && api_err.is_auth_expired()
+    {
+        // Restore media to Pending — account auth expiry is not a media failure.
+        let _ = ctx
+            .db
+            .set_media_state(media_row.id, MediaState::Pending)
+            .await;
+        return MediaOutcome::AccountExpired(api_err.to_string());
+    }
+    if cancel.is_cancelled() {
+        let _ = ctx
+            .db
+            .set_media_state(media_row.id, MediaState::Pending)
+            .await;
+        return MediaOutcome::Cancelled;
+    }
     if let Some(api_err) = err.downcast_ref::<BiliApiError>() {
-        if api_err.is_auth_expired() {
-            // Restore media to Pending — account auth expiry is not a media failure.
-            let _ = ctx
-                .db
-                .set_media_state(media_row.id, MediaState::Pending)
-                .await;
-            return MediaOutcome::AccountExpired(api_err.to_string());
-        }
         if api_err.is_media_expired() {
             let _ = ctx
                 .db
@@ -688,6 +817,22 @@ async fn handle_media_api_error(
             ));
         }
         if api_err.is_permission_denied() {
+            if ctx
+                .db
+                .is_media_active_for_any_account(media_row.id, remaining_account_ids)
+                .await
+                .unwrap_or(false)
+            {
+                let _ = ctx
+                    .db
+                    .set_media_state(media_row.id, MediaState::Pending)
+                    .await;
+                warn!(
+                    "Media<{} {}> returned permission denied ({api_err}); deferring to another active account.",
+                    media_row.id, media_row.title
+                );
+                return MediaOutcome::DeferredToNextAccount;
+            }
             let _ = ctx
                 .db
                 .set_media_state(media_row.id, MediaState::PermissionDenied)
@@ -712,63 +857,20 @@ async fn query_pull_candidates(
     ctx: &AppContext,
     opts: &PullOptions,
     target_aids: &[i64],
+    account_id: Option<i64>,
+    limit: Option<usize>,
 ) -> Result<Vec<media::Model>> {
-    let limit_u64 = opts.limit.map(|l| l as u64);
-
-    if !target_aids.is_empty() || (opts.set_ids.len() <= 1 && opts.up_ids.len() <= 1) {
-        return ctx
-            .db
-            .pull_candidates(&PullFilter {
-                ids: target_aids.to_vec(),
-                set_id: opts.set_ids.first().copied(),
-                up_id: opts.up_ids.first().copied(),
-                retry_failed: opts.retry_failed,
-                force: opts.force,
-                limit: limit_u64,
-            })
-            .await;
-    }
-
-    // Multiple `--set` and/or `--up` filters: union candidates and deduplicate by media ID.
-    let mut seen = HashSet::new();
-    let mut combined = Vec::new();
-    for &set_id in &opts.set_ids {
-        let rows = ctx
-            .db
-            .pull_candidates(&PullFilter {
-                set_id: Some(set_id),
-                retry_failed: opts.retry_failed,
-                force: opts.force,
-                ..Default::default()
-            })
-            .await?;
-        for row in rows {
-            if seen.insert(row.id) {
-                combined.push(row);
-            }
-        }
-    }
-    for &up_id in &opts.up_ids {
-        let rows = ctx
-            .db
-            .pull_candidates(&PullFilter {
-                up_id: Some(up_id),
-                retry_failed: opts.retry_failed,
-                force: opts.force,
-                ..Default::default()
-            })
-            .await?;
-        for row in rows {
-            if seen.insert(row.id) {
-                combined.push(row);
-            }
-        }
-    }
-    combined.sort_by_key(|m| m.id);
-    if let Some(limit) = opts.limit {
-        combined.truncate(limit);
-    }
-    Ok(combined)
+    ctx.db
+        .pull_candidates(&PullFilter {
+            ids: target_aids.to_vec(),
+            set_ids: opts.set_ids.clone(),
+            up_ids: opts.up_ids.clone(),
+            account_id,
+            retry_failed: opts.retry_failed,
+            force: opts.force,
+            limit: limit.map(|l| l as u64),
+        })
+        .await
 }
 
 async fn run_pull_dry_run(
@@ -780,7 +882,7 @@ async fn run_pull_dry_run(
     audio_format: AudioFormat,
     recheck_report: Option<&ReconcileReport>,
 ) -> AppResult<()> {
-    let mut candidates = query_pull_candidates(ctx, opts, target_aids).await?;
+    let mut candidates = query_pull_candidates(ctx, opts, target_aids, None, opts.limit).await?;
     let mut existing_ids: BTreeSet<i64> = candidates.iter().map(|m| m.id).collect();
 
     if let Some(rep) = recheck_report {
@@ -1128,6 +1230,666 @@ mod tests {
         assert_eq!(
             ctx.db.pages_for_media(170_001).await.unwrap()[0].state,
             MediaPageState::Completed.as_str()
+        );
+    }
+
+    #[tokio::test]
+    async fn rollback_inflight_downloading_resets_only_downloading_rows() {
+        let (_tmp, ctx) = make_ctx().await;
+
+        ctx.db
+            .upsert_medias([
+                media::Model {
+                    id: 1,
+                    bv_id: "BV1dl000000001".to_owned(),
+                    title: "InFlightDownloading".to_owned(),
+                    r#type: MediaType::Video.to_string(),
+                    state: MediaState::Downloading.to_string(),
+                    retry_count: 0,
+                    last_error: Some("stale".to_owned()),
+                    updated_at: None,
+                },
+                media::Model {
+                    id: 2,
+                    bv_id: "BV1dl000000002".to_owned(),
+                    title: "AlreadyCompleted".to_owned(),
+                    r#type: MediaType::Video.to_string(),
+                    state: MediaState::Completed.to_string(),
+                    retry_count: 0,
+                    last_error: None,
+                    updated_at: None,
+                },
+                media::Model {
+                    id: 3,
+                    bv_id: "BV1dl000000003".to_owned(),
+                    title: "AlreadyFailed".to_owned(),
+                    r#type: MediaType::Video.to_string(),
+                    state: MediaState::Failed.to_string(),
+                    retry_count: 2,
+                    last_error: Some("network timeout".to_owned()),
+                    updated_at: None,
+                },
+                media::Model {
+                    id: 4,
+                    bv_id: "BV1dl000000004".to_owned(),
+                    title: "AlreadyExpired".to_owned(),
+                    r#type: MediaType::Video.to_string(),
+                    state: MediaState::Expired.to_string(),
+                    retry_count: 0,
+                    last_error: None,
+                    updated_at: None,
+                },
+                media::Model {
+                    id: 5,
+                    bv_id: "BV1dl000000005".to_owned(),
+                    title: "NotInFlightDownloading".to_owned(),
+                    r#type: MediaType::Video.to_string(),
+                    state: MediaState::Downloading.to_string(),
+                    retry_count: 0,
+                    last_error: None,
+                    updated_at: None,
+                },
+            ])
+            .await
+            .unwrap();
+
+        let in_flight = Mutex::new(HashSet::from([1, 2, 3, 4]));
+        let reset = rollback_inflight_downloading(&ctx.db, &in_flight)
+            .await
+            .unwrap();
+        assert_eq!(reset, 1);
+        assert!(in_flight.lock().unwrap().is_empty());
+
+        let m1 = ctx.db.get_media(1).await.unwrap();
+        assert_eq!(m1.state, MediaState::Pending.as_str());
+        assert_eq!(m1.last_error, None);
+
+        let m2 = ctx.db.get_media(2).await.unwrap();
+        assert_eq!(m2.state, MediaState::Completed.as_str());
+
+        let m3 = ctx.db.get_media(3).await.unwrap();
+        assert_eq!(m3.state, MediaState::Failed.as_str());
+        assert_eq!(m3.retry_count, 2);
+        assert_eq!(m3.last_error.as_deref(), Some("network timeout"));
+
+        let m4 = ctx.db.get_media(4).await.unwrap();
+        assert_eq!(m4.state, MediaState::Expired.as_str());
+
+        let m5 = ctx.db.get_media(5).await.unwrap();
+        assert_eq!(m5.state, MediaState::Downloading.as_str());
+    }
+
+    #[tokio::test]
+    async fn compute_recheck_scope_intersects_targets_sets_and_ups() {
+        let (_tmp, ctx) = make_ctx().await;
+
+        ctx.db
+            .upsert_account(account::Model {
+                account_id: 1,
+                name: "Alice".to_owned(),
+                cookies: "SESSDATA=s".to_owned(),
+                state: AccountState::Active.to_string(),
+                refresh_token: None,
+            })
+            .await
+            .unwrap();
+        ctx.db
+            .upsert_sets([
+                set::Model {
+                    set_id: 10,
+                    name: "Set10".to_owned(),
+                    count: 2,
+                    state: SetState::Active.to_string(),
+                    kind: SetKind::Created.to_string(),
+                    owner_mid: Some(1),
+                    sync_complete: true,
+                    resume_page: None,
+                },
+                set::Model {
+                    set_id: 20,
+                    name: "Set20".to_owned(),
+                    count: 1,
+                    state: SetState::Active.to_string(),
+                    kind: SetKind::Created.to_string(),
+                    owner_mid: Some(1),
+                    sync_complete: true,
+                    resume_page: None,
+                },
+            ])
+            .await
+            .unwrap();
+        ctx.db
+            .upsert_set_accounts([
+                set_account::Model {
+                    set_id: 10,
+                    account_id: 1,
+                },
+                set_account::Model {
+                    set_id: 20,
+                    account_id: 1,
+                },
+            ])
+            .await
+            .unwrap();
+        ctx.db
+            .upsert_ups([
+                up::Model {
+                    up_id: 100,
+                    name: "Up100".to_owned(),
+                    state: UpState::Active.to_string(),
+                    sync_complete: true,
+                    resume_page: None,
+                },
+                up::Model {
+                    up_id: 200,
+                    name: "Up200".to_owned(),
+                    state: UpState::Active.to_string(),
+                    sync_complete: true,
+                    resume_page: None,
+                },
+            ])
+            .await
+            .unwrap();
+        ctx.db
+            .upsert_up_accounts([
+                up_account::Model {
+                    up_id: 100,
+                    account_id: 1,
+                },
+                up_account::Model {
+                    up_id: 200,
+                    account_id: 1,
+                },
+            ])
+            .await
+            .unwrap();
+        ctx.db
+            .upsert_medias([
+                media::Model {
+                    id: 1,
+                    bv_id: "BV1rc000000001".to_owned(),
+                    title: "S10_U100".to_owned(),
+                    r#type: MediaType::Video.to_string(),
+                    state: MediaState::Completed.to_string(),
+                    retry_count: 0,
+                    last_error: None,
+                    updated_at: None,
+                },
+                media::Model {
+                    id: 2,
+                    bv_id: "BV1rc000000002".to_owned(),
+                    title: "S10_U200".to_owned(),
+                    r#type: MediaType::Video.to_string(),
+                    state: MediaState::Completed.to_string(),
+                    retry_count: 0,
+                    last_error: None,
+                    updated_at: None,
+                },
+                media::Model {
+                    id: 3,
+                    bv_id: "BV1rc000000003".to_owned(),
+                    title: "S20_U100".to_owned(),
+                    r#type: MediaType::Video.to_string(),
+                    state: MediaState::Completed.to_string(),
+                    retry_count: 0,
+                    last_error: None,
+                    updated_at: None,
+                },
+            ])
+            .await
+            .unwrap();
+        ctx.db
+            .upsert_media_sets([
+                media_set::Model { id: 1, set_id: 10 },
+                media_set::Model { id: 2, set_id: 10 },
+                media_set::Model { id: 3, set_id: 20 },
+            ])
+            .await
+            .unwrap();
+        ctx.db
+            .upsert_media_ups([
+                crate::entity::media_up::Model { id: 1, up_id: 100 },
+                crate::entity::media_up::Model { id: 2, up_id: 200 },
+                crate::entity::media_up::Model { id: 3, up_id: 100 },
+            ])
+            .await
+            .unwrap();
+
+        assert_eq!(
+            compute_recheck_scope(&ctx, &PullOptions::default(), &[])
+                .await
+                .unwrap(),
+            None
+        );
+
+        let scope = compute_recheck_scope(
+            &ctx,
+            &PullOptions {
+                set_ids: vec![10, 20],
+                up_ids: vec![100],
+                ..Default::default()
+            },
+            &[1, 2],
+        )
+        .await
+        .unwrap();
+        assert_eq!(scope, Some(HashSet::from([1])));
+    }
+
+    async fn start_pull_mock_server() -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
+        use tokio::{
+            io::{AsyncReadExt as _, AsyncWriteExt as _},
+            net::TcpListener,
+        };
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let origin = format!("http://{addr}");
+
+        let handle = tokio::spawn(async move {
+            loop {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    break;
+                };
+                let origin = origin.clone();
+                tokio::spawn(async move {
+                    let mut buf = vec![0u8; 8192];
+                    let Ok(n) = stream.read(&mut buf).await else {
+                        return;
+                    };
+                    if n == 0 {
+                        return;
+                    }
+                    let req = String::from_utf8_lossy(&buf[..n]);
+                    let first_line = req.lines().next().unwrap_or_default();
+                    let target = first_line.split_whitespace().nth(1).unwrap_or("/");
+                    let (path, query) = target.split_once('?').unwrap_or((target, ""));
+                    let cookie = req
+                        .lines()
+                        .find_map(|line| {
+                            let (k, v) = line.split_once(':')?;
+                            k.eq_ignore_ascii_case("cookie").then(|| v.trim())
+                        })
+                        .unwrap_or_default();
+
+                    let (content_type, body): (&str, Vec<u8>) = if path == "/x/frontend/finger/spi"
+                    {
+                        (
+                            "application/json",
+                            r#"{"code":0,"message":"0","data":{"b_3":"BUVID3","b_4":"BUVID4"}}"#
+                                .as_bytes()
+                                .to_vec(),
+                        )
+                    } else if path == "/bapis/bilibili.api.ticket.v1.Ticket/GenWebTicket" {
+                        (
+                            "application/json",
+                            r#"{"code":0,"message":"0","data":{"ticket":"mock_ticket","created_at":1,"ttl":3600}}"#
+                                .as_bytes()
+                                .to_vec(),
+                        )
+                    } else if path == "/x/web-interface/nav" {
+                        (
+                            "application/json",
+                            r#"{"code":0,"message":"0","data":{"isLogin":true,"uname":"Mock","mid":1,"wbi_img":{"img_url":"https://i0.hdslb.com/bfs/wbi/7cd084941338484aae1ad9425b84077c.png","sub_url":"https://i0.hdslb.com/bfs/wbi/4932caff0ff746eab6f01bf08b70ac45.png"}}}"#
+                                .as_bytes()
+                                .to_vec(),
+                        )
+                    } else if path == "/x/web-interface/wbi/view" {
+                        if cookie.contains("SESSDATA=sess_expired") {
+                            (
+                                "application/json",
+                                r#"{"code":-101,"message":"not logged in","data":null}"#
+                                    .as_bytes()
+                                    .to_vec(),
+                            )
+                        } else {
+                            let aid = query
+                                .split('&')
+                                .find_map(|kv| kv.strip_prefix("aid="))
+                                .and_then(|v| v.parse::<i64>().ok())
+                                .unwrap_or(1);
+                            let cid = aid * 10;
+                            let json = format!(
+                                r#"{{"code":0,"message":"0","data":{{"aid":{aid},"bvid":"BV1ok000000{aid}","title":"Video{aid}","owner":{{"mid":99,"name":"Up"}},"pages":[{{"cid":{cid},"page":1,"part":"P1"}}]}}}}"#
+                            );
+                            ("application/json", json.into_bytes())
+                        }
+                    } else if path == "/x/player/wbi/playurl" {
+                        let json = format!(
+                            r#"{{"code":0,"message":"0","data":{{"dash":{{"video":[{{"id":80,"baseUrl":"{origin}/cdn/v.mp4","backupUrl":[],"mimeType":"video/mp4","codecs":"avc1.640032","bandwidth":1000000,"codecid":7}}],"audio":[{{"id":30280,"baseUrl":"{origin}/cdn/a.m4a","backupUrl":[],"mimeType":"audio/mp4","codecs":"mp4a.40.2","bandwidth":128000,"codecid":0}}]}}}}}}"#
+                        );
+                        ("application/json", json.into_bytes())
+                    } else if path.starts_with("/cdn/") {
+                        ("application/octet-stream", b"mock-stream-bytes".to_vec())
+                    } else {
+                        (
+                            "application/json",
+                            r#"{"code":-404,"message":"not found","data":null}"#
+                                .as_bytes()
+                                .to_vec(),
+                        )
+                    };
+
+                    let header = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                        body.len()
+                    );
+                    let _ = stream.write_all(header.as_bytes()).await;
+                    let _ = stream.write_all(&body).await;
+                });
+            }
+        });
+
+        (addr, handle)
+    }
+
+    fn mock_client_config(addr: std::net::SocketAddr) -> BiliClientConfig {
+        let base = url::Url::parse(&format!("http://{addr}")).unwrap();
+        BiliClientConfig {
+            api_base_url: base.clone(),
+            passport_base_url: base,
+            max_retries: 0,
+            base_backoff: std::time::Duration::from_millis(1),
+            max_backoff: std::time::Duration::from_millis(5),
+            min_request_interval: std::time::Duration::ZERO,
+            ..Default::default()
+        }
+    }
+
+    #[tokio::test]
+    async fn pull_returns_auth_when_only_account_with_candidates_expires() {
+        let (addr, server_handle) = start_pull_mock_server().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let ws = Workspace::new(tmp.path().to_path_buf());
+        ws.ensure_dirs().unwrap();
+        let db = Db::open_in_memory().await.unwrap();
+
+        // Alice (Active, 0 pull candidates) and Bob (Active, 1 pull candidate, returns -101).
+        db.upsert_account(account::Model {
+            account_id: 1,
+            name: "Alice".to_owned(),
+            cookies: "SESSDATA=sess_valid; bili_jct=csrf_a".to_owned(),
+            state: AccountState::Active.to_string(),
+            refresh_token: None,
+        })
+        .await
+        .unwrap();
+        db.upsert_account(account::Model {
+            account_id: 2,
+            name: "Bob".to_owned(),
+            cookies: "SESSDATA=sess_expired; bili_jct=csrf_b".to_owned(),
+            state: AccountState::Active.to_string(),
+            refresh_token: None,
+        })
+        .await
+        .unwrap();
+        db.upsert_sets([
+            set::Model {
+                set_id: 10,
+                name: "AliceEmptySet".to_owned(),
+                count: 0,
+                state: SetState::Active.to_string(),
+                kind: SetKind::Created.to_string(),
+                owner_mid: Some(1),
+                sync_complete: true,
+                resume_page: None,
+            },
+            set::Model {
+                set_id: 20,
+                name: "BobSet".to_owned(),
+                count: 1,
+                state: SetState::Active.to_string(),
+                kind: SetKind::Created.to_string(),
+                owner_mid: Some(2),
+                sync_complete: true,
+                resume_page: None,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_set_accounts([
+            set_account::Model {
+                set_id: 10,
+                account_id: 1,
+            },
+            set_account::Model {
+                set_id: 20,
+                account_id: 2,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_medias([media::Model {
+            id: 501,
+            bv_id: "BV1ex000000501".to_owned(),
+            title: "BobOnly".to_owned(),
+            r#type: MediaType::Video.to_string(),
+            state: MediaState::Pending.to_string(),
+            retry_count: 0,
+            last_error: None,
+            updated_at: None,
+        }])
+        .await
+        .unwrap();
+        db.upsert_media_sets([media_set::Model {
+            id: 501,
+            set_id: 20,
+        }])
+        .await
+        .unwrap();
+
+        let ctx = AppContext::for_test(
+            ws,
+            Config::default(),
+            db,
+            Arc::new(MockMuxer::succeeding()),
+            mock_client_config(addr),
+        );
+
+        let err = pull(&ctx, PullOptions::default()).await.unwrap_err();
+        assert_eq!(err.kind(), ExitKind::Auth);
+        assert_eq!(
+            ctx.db.get_account(1).await.unwrap().state,
+            AccountState::Active.as_str()
+        );
+        assert_eq!(
+            ctx.db.get_account(2).await.unwrap().state,
+            AccountState::Expired.as_str()
+        );
+        assert_eq!(
+            ctx.db.get_media(501).await.unwrap().state,
+            MediaState::Pending.as_str()
+        );
+
+        server_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn pull_returns_partial_when_expired_account_leaves_unfinished_items() {
+        let (addr, server_handle) = start_pull_mock_server().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let out_dir = tmp.path().join("out");
+        std::fs::create_dir_all(&out_dir).unwrap();
+        let ws = Workspace::new(tmp.path().join("ws"));
+        ws.ensure_dirs().unwrap();
+        let db = Db::open_in_memory().await.unwrap();
+
+        // Alice (Active, exclusive media 601, returns -101) and Bob (Active, exclusive media 602, succeeds).
+        db.upsert_account(account::Model {
+            account_id: 1,
+            name: "Alice".to_owned(),
+            cookies: "SESSDATA=sess_expired; bili_jct=csrf_a".to_owned(),
+            state: AccountState::Active.to_string(),
+            refresh_token: None,
+        })
+        .await
+        .unwrap();
+        db.upsert_account(account::Model {
+            account_id: 2,
+            name: "Bob".to_owned(),
+            cookies: "SESSDATA=sess_valid; bili_jct=csrf_b".to_owned(),
+            state: AccountState::Active.to_string(),
+            refresh_token: None,
+        })
+        .await
+        .unwrap();
+        db.upsert_sets([
+            set::Model {
+                set_id: 10,
+                name: "AliceSet".to_owned(),
+                count: 1,
+                state: SetState::Active.to_string(),
+                kind: SetKind::Created.to_string(),
+                owner_mid: Some(1),
+                sync_complete: true,
+                resume_page: None,
+            },
+            set::Model {
+                set_id: 20,
+                name: "BobSet".to_owned(),
+                count: 1,
+                state: SetState::Active.to_string(),
+                kind: SetKind::Created.to_string(),
+                owner_mid: Some(2),
+                sync_complete: true,
+                resume_page: None,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_set_accounts([
+            set_account::Model {
+                set_id: 10,
+                account_id: 1,
+            },
+            set_account::Model {
+                set_id: 20,
+                account_id: 2,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_medias([
+            media::Model {
+                id: 601,
+                bv_id: "BV1ex000000601".to_owned(),
+                title: "AliceExclusive".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Pending.to_string(),
+                retry_count: 0,
+                last_error: None,
+                updated_at: None,
+            },
+            media::Model {
+                id: 602,
+                bv_id: "BV1ok000000602".to_owned(),
+                title: "BobExclusive".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Pending.to_string(),
+                retry_count: 0,
+                last_error: None,
+                updated_at: None,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_media_sets([
+            media_set::Model {
+                id: 601,
+                set_id: 10,
+            },
+            media_set::Model {
+                id: 602,
+                set_id: 20,
+            },
+        ])
+        .await
+        .unwrap();
+
+        let ctx = AppContext::for_test(
+            ws,
+            Config::default(),
+            db,
+            Arc::new(MockMuxer::succeeding()),
+            mock_client_config(addr),
+        );
+
+        let err = pull(
+            &ctx,
+            PullOptions {
+                output_dir: Some(out_dir),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.kind(), ExitKind::PartialFailure);
+        assert_eq!(
+            ctx.db.get_account(1).await.unwrap().state,
+            AccountState::Expired.as_str()
+        );
+        assert_eq!(
+            ctx.db.get_media(601).await.unwrap().state,
+            MediaState::Pending.as_str()
+        );
+        assert_eq!(
+            ctx.db.get_media(602).await.unwrap().state,
+            MediaState::Completed.as_str()
+        );
+
+        server_handle.abort();
+    }
+
+    #[tokio::test]
+    async fn handle_media_api_error_cancels_cleanly_after_auth_check() {
+        let (_tmp, ctx) = make_ctx().await;
+        let row = media::Model {
+            id: 701,
+            bv_id: "BV1cn000000701".to_owned(),
+            title: "CancelledSibling".to_owned(),
+            r#type: MediaType::Video.to_string(),
+            state: MediaState::Downloading.to_string(),
+            retry_count: 0,
+            last_error: None,
+            updated_at: None,
+        };
+        ctx.db.upsert_medias([row.clone()]).await.unwrap();
+
+        let cancelled = CancellationToken::new();
+        cancelled.cancel();
+
+        // Non-auth API error while cancelled must restore Pending and return Cancelled.
+        let outcome = handle_media_api_error(
+            &ctx,
+            &row,
+            anyhow::Error::new(BiliApiError::new(-404, Some("aborted".into()), "view")),
+            &cancelled,
+            &[],
+        )
+        .await;
+        assert!(matches!(outcome, MediaOutcome::Cancelled));
+        assert_eq!(
+            ctx.db.get_media(701).await.unwrap().state,
+            MediaState::Pending.as_str()
+        );
+
+        // Auth-expired (-101) takes precedence over cancellation so account expiry is still recorded.
+        ctx.db
+            .set_media_state(701, MediaState::Downloading)
+            .await
+            .unwrap();
+        let outcome = handle_media_api_error(
+            &ctx,
+            &row,
+            anyhow::Error::new(BiliApiError::new(-101, Some("expired".into()), "view")),
+            &cancelled,
+            &[],
+        )
+        .await;
+        assert!(matches!(outcome, MediaOutcome::AccountExpired(_)));
+        assert_eq!(
+            ctx.db.get_media(701).await.unwrap().state,
+            MediaState::Pending.as_str()
         );
     }
 }

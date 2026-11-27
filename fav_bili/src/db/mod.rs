@@ -865,7 +865,7 @@ mod tests {
             .collect();
         assert_eq!(completed_all, vec![9, 10]);
 
-        // pull_candidates ALWAYS enforces active_media_condition even with explicit ids / set_id / up_id!
+        // pull_candidates ALWAYS enforces active_media_condition even with explicit ids / set_ids / up_ids!
         let all_pull: Vec<i64> = db
             .pull_candidates(&PullFilter::default())
             .await
@@ -889,7 +889,7 @@ mod tests {
 
         assert!(
             db.pull_candidates(&PullFilter {
-                set_id: Some(20),
+                set_ids: vec![20],
                 ..Default::default()
             })
             .await
@@ -899,7 +899,7 @@ mod tests {
         );
         assert!(
             db.pull_candidates(&PullFilter {
-                set_id: Some(11),
+                set_ids: vec![11],
                 ..Default::default()
             })
             .await
@@ -909,7 +909,7 @@ mod tests {
         );
         assert!(
             db.pull_candidates(&PullFilter {
-                up_id: Some(200),
+                up_ids: vec![200],
                 ..Default::default()
             })
             .await
@@ -919,7 +919,7 @@ mod tests {
         );
         let active_up_pull: Vec<i64> = db
             .pull_candidates(&PullFilter {
-                up_id: Some(100),
+                up_ids: vec![100],
                 ..Default::default()
             })
             .await
@@ -1478,5 +1478,442 @@ mod tests {
         // With 0 active accounts, activate_all_sets and activate_all_ups must activate 0 rows.
         assert_eq!(db.activate_all_sets().await.unwrap(), 0);
         assert_eq!(db.activate_all_ups().await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn pull_candidates_combines_dimensions_and_filters_bulk_force_safely() {
+        let db = Db::open_in_memory().await.unwrap();
+
+        db.upsert_account(sample_account(1, AccountState::Active))
+            .await
+            .unwrap();
+        db.upsert_sets([
+            sample_set(10, "Set10", 4, SetState::Active),
+            sample_set(20, "Set20", 4, SetState::Active),
+        ])
+        .await
+        .unwrap();
+        db.upsert_set_accounts([
+            set_account::Model {
+                set_id: 10,
+                account_id: 1,
+            },
+            set_account::Model {
+                set_id: 20,
+                account_id: 1,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_ups([
+            sample_up(100, "Up100", UpState::Active),
+            sample_up(200, "Up200", UpState::Active),
+        ])
+        .await
+        .unwrap();
+        db.upsert_up_accounts([
+            up_account::Model {
+                up_id: 100,
+                account_id: 1,
+            },
+            up_account::Model {
+                up_id: 200,
+                account_id: 1,
+            },
+        ])
+        .await
+        .unwrap();
+
+        // Dimension test medias (all Pending):
+        // 1: set 10 + up 100
+        // 2: set 10 + up 200
+        // 3: set 20 + up 100
+        // 4: set 20 only (no up)
+        // 5: up 200 only (no set)
+        // State test medias (all in set 10):
+        // 11: Downloading, 12: Completed, 13: Failed, 14: Expired, 15: PermissionDenied, 16: Skipped
+        db.upsert_medias([
+            sample_media(1, MediaState::Pending),
+            sample_media(2, MediaState::Pending),
+            sample_media(3, MediaState::Pending),
+            sample_media(4, MediaState::Pending),
+            sample_media(5, MediaState::Pending),
+            sample_media(11, MediaState::Downloading),
+            sample_media(12, MediaState::Completed),
+            sample_media(13, MediaState::Failed),
+            sample_media(14, MediaState::Expired),
+            sample_media(15, MediaState::PermissionDenied),
+            sample_media(16, MediaState::Skipped),
+        ])
+        .await
+        .unwrap();
+        db.upsert_media_sets([
+            media_set::Model { id: 1, set_id: 10 },
+            media_set::Model { id: 2, set_id: 10 },
+            media_set::Model { id: 3, set_id: 20 },
+            media_set::Model { id: 4, set_id: 20 },
+            media_set::Model { id: 11, set_id: 10 },
+            media_set::Model { id: 12, set_id: 10 },
+            media_set::Model { id: 13, set_id: 10 },
+            media_set::Model { id: 14, set_id: 10 },
+            media_set::Model { id: 15, set_id: 10 },
+            media_set::Model { id: 16, set_id: 10 },
+        ])
+        .await
+        .unwrap();
+        db.upsert_media_ups([
+            media_up::Model { id: 1, up_id: 100 },
+            media_up::Model { id: 2, up_id: 200 },
+            media_up::Model { id: 3, up_id: 100 },
+            media_up::Model { id: 5, up_id: 200 },
+        ])
+        .await
+        .unwrap();
+
+        let ids_of =
+            |rows: Vec<media::Model>| -> Vec<i64> { rows.into_iter().map(|m| m.id).collect() };
+
+        // Fix 1: OR within set_ids, OR within up_ids, AND across ids / set_ids / up_ids.
+        assert_eq!(
+            ids_of(
+                db.pull_candidates(&PullFilter {
+                    set_ids: vec![10, 20],
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+            ),
+            vec![1, 2, 3, 4, 11]
+        );
+        assert_eq!(
+            ids_of(
+                db.pull_candidates(&PullFilter {
+                    up_ids: vec![100, 200],
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+            ),
+            vec![1, 2, 3, 5]
+        );
+        assert_eq!(
+            ids_of(
+                db.pull_candidates(&PullFilter {
+                    set_ids: vec![10, 20],
+                    up_ids: vec![100],
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+            ),
+            vec![1, 3]
+        );
+        assert_eq!(
+            ids_of(
+                db.pull_candidates(&PullFilter {
+                    set_ids: vec![10, 20],
+                    up_ids: vec![100, 200],
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+            ),
+            vec![1, 2, 3]
+        );
+        assert_eq!(
+            ids_of(
+                db.pull_candidates(&PullFilter {
+                    ids: vec![1, 2, 3, 4, 5],
+                    set_ids: vec![10],
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+            ),
+            vec![1, 2]
+        );
+        assert_eq!(
+            ids_of(
+                db.pull_candidates(&PullFilter {
+                    ids: vec![1, 2, 3],
+                    set_ids: vec![10, 20],
+                    up_ids: vec![200],
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+            ),
+            vec![2]
+        );
+
+        // Fix 2: State filtering for default, --retry-failed, bulk --force, bulk --force --retry-failed, and explicit ID --force.
+        assert_eq!(
+            ids_of(
+                db.pull_candidates(&PullFilter {
+                    set_ids: vec![10],
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+            ),
+            vec![1, 2, 11]
+        );
+        assert_eq!(
+            ids_of(
+                db.pull_candidates(&PullFilter {
+                    set_ids: vec![10],
+                    retry_failed: true,
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+            ),
+            vec![1, 2, 11, 13]
+        );
+        // Bulk --force includes Pending, Downloading, Completed; excludes Failed, Expired, PermissionDenied, Skipped.
+        assert_eq!(
+            ids_of(
+                db.pull_candidates(&PullFilter {
+                    set_ids: vec![10],
+                    force: true,
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+            ),
+            vec![1, 2, 11, 12]
+        );
+        // Bulk --force --retry-failed adds Failed while still excluding Expired, PermissionDenied, Skipped.
+        assert_eq!(
+            ids_of(
+                db.pull_candidates(&PullFilter {
+                    set_ids: vec![10],
+                    force: true,
+                    retry_failed: true,
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+            ),
+            vec![1, 2, 11, 12, 13]
+        );
+        // Explicit IDs + --force allows ALL states (including Expired, PermissionDenied, Skipped, Failed, Completed).
+        assert_eq!(
+            ids_of(
+                db.pull_candidates(&PullFilter {
+                    ids: vec![1, 11, 12, 13, 14, 15, 16],
+                    force: true,
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+            ),
+            vec![1, 11, 12, 13, 14, 15, 16]
+        );
+        // Explicit IDs + --force STILL respects set_ids intersection!
+        assert!(
+            db.pull_candidates(&PullFilter {
+                ids: vec![14],
+                set_ids: vec![20],
+                force: true,
+                ..Default::default()
+            })
+            .await
+            .unwrap()
+            .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn pull_candidates_per_account_scoping_and_reset_downloading() {
+        let db = Db::open_in_memory().await.unwrap();
+
+        db.upsert_account(sample_account(1, AccountState::Active))
+            .await
+            .unwrap();
+        db.upsert_account(sample_account(2, AccountState::Active))
+            .await
+            .unwrap();
+        db.upsert_account(sample_account(3, AccountState::Inactive))
+            .await
+            .unwrap();
+
+        db.upsert_sets([
+            sample_set(10, "A_Active", 2, SetState::Active),
+            sample_set(11, "A_Inactive", 1, SetState::Inactive),
+            sample_set(20, "B_Active", 3, SetState::Active),
+            sample_set(30, "C_Active_On_InactiveAcct", 1, SetState::Active),
+        ])
+        .await
+        .unwrap();
+        db.upsert_set_accounts([
+            set_account::Model {
+                set_id: 10,
+                account_id: 1,
+            },
+            set_account::Model {
+                set_id: 11,
+                account_id: 1,
+            },
+            set_account::Model {
+                set_id: 20,
+                account_id: 2,
+            },
+            set_account::Model {
+                set_id: 30,
+                account_id: 3,
+            },
+        ])
+        .await
+        .unwrap();
+
+        db.upsert_ups([
+            sample_up(100, "A_ActiveUp", UpState::Active),
+            sample_up(200, "B_InactiveUp", UpState::Inactive),
+        ])
+        .await
+        .unwrap();
+        db.upsert_up_accounts([
+            up_account::Model {
+                up_id: 100,
+                account_id: 1,
+            },
+            up_account::Model {
+                up_id: 200,
+                account_id: 2,
+            },
+        ])
+        .await
+        .unwrap();
+
+        // 1: exclusive to A (Set 10)
+        // 2: exclusive to B (Set 20)
+        // 3: shared by A (Set 10) and B (Set 20)
+        // 4: shared by A (Active UP 100) and B (Set 20)
+        // 5: A's Inactive Set 11 only
+        // 6: exclusive to A (Active UP 100)
+        // 7: B's Inactive UP 200 only
+        // 8: C's Active Set 30 (Inactive Account 3)
+        db.upsert_medias([
+            sample_media(1, MediaState::Pending),
+            sample_media(2, MediaState::Pending),
+            sample_media(3, MediaState::Pending),
+            sample_media(4, MediaState::Pending),
+            sample_media(5, MediaState::Pending),
+            sample_media(6, MediaState::Downloading),
+            sample_media(7, MediaState::Pending),
+            sample_media(8, MediaState::Pending),
+        ])
+        .await
+        .unwrap();
+        db.upsert_media_sets([
+            media_set::Model { id: 1, set_id: 10 },
+            media_set::Model { id: 2, set_id: 20 },
+            media_set::Model { id: 3, set_id: 10 },
+            media_set::Model { id: 3, set_id: 20 },
+            media_set::Model { id: 4, set_id: 20 },
+            media_set::Model { id: 5, set_id: 11 },
+            media_set::Model { id: 8, set_id: 30 },
+        ])
+        .await
+        .unwrap();
+        db.upsert_media_ups([
+            media_up::Model { id: 4, up_id: 100 },
+            media_up::Model { id: 6, up_id: 100 },
+            media_up::Model { id: 7, up_id: 200 },
+        ])
+        .await
+        .unwrap();
+
+        let ids_of =
+            |rows: Vec<media::Model>| -> Vec<i64> { rows.into_iter().map(|m| m.id).collect() };
+
+        assert_eq!(
+            ids_of(
+                db.pull_candidates(&PullFilter {
+                    account_id: Some(1),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+            ),
+            vec![1, 3, 4, 6]
+        );
+        assert_eq!(
+            ids_of(
+                db.pull_candidates(&PullFilter {
+                    account_id: Some(2),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+            ),
+            vec![2, 3, 4]
+        );
+        assert!(
+            db.pull_candidates(&PullFilter {
+                account_id: Some(3),
+                ..Default::default()
+            })
+            .await
+            .unwrap()
+            .is_empty()
+        );
+
+        assert!(!db.is_media_active_for_any_account(1, &[]).await.unwrap());
+        assert!(
+            !db.is_media_active_for_any_account(1, &[2, 3])
+                .await
+                .unwrap()
+        );
+        assert!(
+            db.is_media_active_for_any_account(1, &[1, 2])
+                .await
+                .unwrap()
+        );
+        assert!(db.is_media_active_for_any_account(3, &[2]).await.unwrap());
+        assert!(db.is_media_active_for_any_account(4, &[2]).await.unwrap());
+        assert!(
+            !db.is_media_active_for_any_account(5, &[1, 2])
+                .await
+                .unwrap()
+        );
+        assert!(
+            !db.is_media_active_for_any_account(7, &[1, 2])
+                .await
+                .unwrap()
+        );
+        assert!(
+            !db.is_media_active_for_any_account(8, &[1, 2, 3])
+                .await
+                .unwrap()
+        );
+
+        // reset_downloading_medias resets only Downloading rows in the requested slice.
+        db.set_media_state(1, MediaState::Completed).await.unwrap();
+        db.record_media_failure(2, "transient failure")
+            .await
+            .unwrap();
+        db.set_media_state(3, MediaState::Downloading)
+            .await
+            .unwrap();
+        let reset = db.reset_downloading_medias(&[1, 2, 3, 999]).await.unwrap();
+        assert_eq!(reset, 1);
+        assert_eq!(
+            db.get_media(1).await.unwrap().state,
+            MediaState::Completed.as_str()
+        );
+        let m2 = db.get_media(2).await.unwrap();
+        assert_eq!(m2.state, MediaState::Failed.as_str());
+        assert_eq!(m2.retry_count, 1);
+        assert_eq!(m2.last_error.as_deref(), Some("transient failure"));
+        assert_eq!(
+            db.get_media(3).await.unwrap().state,
+            MediaState::Pending.as_str()
+        );
+        assert_eq!(
+            db.get_media(6).await.unwrap().state,
+            MediaState::Downloading.as_str()
+        );
     }
 }
