@@ -253,8 +253,26 @@ impl Db {
     }
 
     pub async fn activate_all_sets(&self) -> Result<u64> {
+        let active_account_sets = Query::select()
+            .column((set_account::Entity, set_account::Column::SetId))
+            .from(set_account::Entity)
+            .inner_join(
+                account::Entity,
+                Expr::col((set_account::Entity, set_account::Column::AccountId))
+                    .equals((account::Entity, account::Column::AccountId)),
+            )
+            .and_where(
+                Expr::col((account::Entity, account::Column::State))
+                    .eq(AccountState::Active.as_str()),
+            )
+            .to_owned();
         let res = set::Entity::update_many()
             .col_expr(set::Column::State, Expr::value(SetState::Active.as_str()))
+            .filter(
+                Condition::all()
+                    .add(set::Column::State.eq(SetState::Inactive))
+                    .add(set::Column::SetId.in_subquery(active_account_sets)),
+            )
             .exec(&self.conn)
             .await?;
         Ok(res.rows_affected)
@@ -286,6 +304,7 @@ impl Db {
     pub async fn deactivate_all_sets(&self) -> Result<u64> {
         let res = set::Entity::update_many()
             .col_expr(set::Column::State, Expr::value(SetState::Inactive.as_str()))
+            .filter(set::Column::State.eq(SetState::Active))
             .exec(&self.conn)
             .await?;
         Ok(res.rows_affected)

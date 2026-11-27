@@ -45,6 +45,11 @@ struct FetchSummary {
 
 pub async fn fetch(ctx: &AppContext, mut opts: FetchOptions) -> AppResult<()> {
     opts.prune = effective_prune(&opts, &ctx.config);
+    if opts.purge_completed && !opts.prune {
+        return Err(AppError::usage(anyhow!(
+            "--purge-completed requires --prune (or `prune = true` in config.toml)."
+        )));
+    }
     let accounts = ctx.db.active_accounts().await?;
     if accounts.is_empty() {
         return Err(AppError::usage(anyhow!(
@@ -2540,5 +2545,105 @@ mod tests {
             active_hint.contains("Run `fav pull` to download 1 active pending media(s)"),
             "unexpected active hint: {active_hint}"
         );
+    }
+
+    #[tokio::test]
+    async fn purge_completed_requires_effective_prune() {
+        let hits = Arc::new(Mutex::new(Vec::<String>::new()));
+        let hits_c = hits.clone();
+        let base = spawn_http(move |path| {
+            hits_c.lock().unwrap().push(path.to_owned());
+            r#"{"code":0,"data":{}}"#.to_owned()
+        })
+        .await;
+
+        let make_db_with_account = || async {
+            let db = Db::open_in_memory().await.unwrap();
+            db.upsert_account(account::Model {
+                account_id: 1,
+                name: "Alice".to_owned(),
+                cookies: "SESSDATA=ok; bili_jct=csrf".to_owned(),
+                state: AccountState::Active.to_string(),
+                refresh_token: None,
+            })
+            .await
+            .unwrap();
+            db
+        };
+
+        // 1. Neither `--prune` nor `config.prune = true` -> rejected with Usage before any HTTP calls.
+        let (_tmp1, ctx_default) = test_ctx_with_cfg(
+            base.clone(),
+            Config::default(),
+            make_db_with_account().await,
+        );
+        let err = fetch(
+            &ctx_default,
+            FetchOptions {
+                purge_completed: true,
+                dry_run: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.kind(), ExitKind::Usage);
+        assert!(err.to_string().contains("--prune"));
+        assert!(err.to_string().contains("prune = true"));
+
+        // 2. Explicit `config.prune = Some(false)` without `--prune` -> rejected with Usage.
+        let (_tmp2, ctx_false) = test_ctx_with_cfg(
+            base.clone(),
+            Config {
+                prune: Some(false),
+                ..Default::default()
+            },
+            make_db_with_account().await,
+        );
+        let err = fetch(
+            &ctx_false,
+            FetchOptions {
+                purge_completed: true,
+                dry_run: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.kind(), ExitKind::Usage);
+        assert!(hits.lock().unwrap().is_empty());
+
+        // 3. CLI `--prune` + `--purge-completed` -> accepted.
+        fetch(
+            &ctx_default,
+            FetchOptions {
+                prune: true,
+                purge_completed: true,
+                dry_run: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        // 4. `config.prune = Some(true)` + `--purge-completed` (CLI `prune = false`) -> accepted.
+        let (_tmp3, ctx_cfg_prune) = test_ctx_with_cfg(
+            base,
+            Config {
+                prune: Some(true),
+                ..Default::default()
+            },
+            make_db_with_account().await,
+        );
+        fetch(
+            &ctx_cfg_prune,
+            FetchOptions {
+                purge_completed: true,
+                dry_run: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
     }
 }

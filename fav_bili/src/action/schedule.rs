@@ -189,6 +189,38 @@ fn escape_powershell_single(s: &str) -> String {
     s.replace('\'', "''")
 }
 
+/// Quote a single argument according to Windows `CommandLineToArgvW` rules.
+///
+/// Wraps `arg` in double quotes, doubling every run of `\` immediately preceding `"`
+/// (escaping `"` as `\"`) and doubling any trailing run of `\` before the closing `"`.
+fn escape_windows_argv(arg: &str) -> String {
+    let mut out = String::with_capacity(arg.len() + 2);
+    out.push('"');
+    let mut backslashes = 0usize;
+    for ch in arg.chars() {
+        if ch == '\\' {
+            backslashes += 1;
+        } else if ch == '"' {
+            for _ in 0..backslashes * 2 {
+                out.push('\\');
+            }
+            out.push_str("\\\"");
+            backslashes = 0;
+        } else {
+            for _ in 0..backslashes {
+                out.push('\\');
+            }
+            backslashes = 0;
+            out.push(ch);
+        }
+    }
+    for _ in 0..backslashes * 2 {
+        out.push('\\');
+    }
+    out.push('"');
+    out
+}
+
 /// Generate OS scheduler templates without touching the filesystem.
 pub fn generate_schedule(
     target: ScheduleTarget,
@@ -226,12 +258,13 @@ pub fn generate_schedule(
                  WantedBy=timers.target\n",
                 parsed.systemd_spec(),
             );
-            let instructions = "\
-Enable and start the user timer (user-level, no root privileges required):\n\
-  systemctl --user daemon-reload\n\
-  systemctl --user enable --now fav.timer\n\
-  systemctl --user status fav.timer"
-                .to_owned();
+            let instructions = concat!(
+                "Enable and start the user timer (user-level, no root privileges required):\n",
+                "  systemctl --user daemon-reload\n",
+                "  systemctl --user enable --now fav.timer\n",
+                "  systemctl --user status fav.timer",
+            )
+            .to_owned();
             Ok(GeneratedSchedule {
                 files: vec![
                     ScheduleFile {
@@ -279,11 +312,12 @@ Enable and start the user timer (user-level, no root privileges required):\n\
                  </plist>\n",
                 parsed.seconds,
             );
-            let instructions = "\
-Load the LaunchAgent (user-level, no root privileges required):\n\
-  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.kingwingfly.fav.plist\n\
-  launchctl kickstart -k gui/$(id -u)/com.kingwingfly.fav"
-                .to_owned();
+            let instructions = concat!(
+                "Load the LaunchAgent (user-level, no root privileges required):\n",
+                "  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.kingwingfly.fav.plist\n",
+                "  launchctl kickstart -k gui/$(id -u)/com.kingwingfly.fav",
+            )
+            .to_owned();
             Ok(GeneratedSchedule {
                 files: vec![ScheduleFile {
                     filename: "com.kingwingfly.fav.plist".into(),
@@ -294,21 +328,26 @@ Load the LaunchAgent (user-level, no root privileges required):\n\
         }
         ScheduleTarget::TaskScheduler => {
             let bin_ps = escape_powershell_single(&fav_bin.to_string_lossy());
-            let dir_ps = escape_powershell_single(&workspace_dir.to_string_lossy());
+            let workspace_raw = workspace_dir.to_string_lossy();
+            let dir_ps = escape_powershell_single(&workspace_raw);
+            let arg_ps = escape_powershell_single(&format!(
+                "-C {} --non-interactive --no-progress sync",
+                escape_windows_argv(&workspace_raw),
+            ));
             let script = format!(
                 "$FavBin = '{bin_ps}'\n\
                  $WorkspaceDir = '{dir_ps}'\n\
-                 $EscapedWorkspace = $WorkspaceDir.Replace('\"', '\\\"')\n\
-                 $Action = New-ScheduledTaskAction -Execute $FavBin -Argument ('-C \"' + $EscapedWorkspace + '\" --non-interactive --no-progress sync')\n\
+                 $Action = New-ScheduledTaskAction -Execute $FavBin -Argument '{arg_ps}'\n\
                  $Trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval ({})\n\
                  $Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable\n\
                  Register-ScheduledTask -TaskName 'FavSync' -Action $Action -Trigger $Trigger -Settings $Settings -Force\n",
                 parsed.powershell_timespan(),
             );
-            let instructions = "\
-Register the scheduled task in PowerShell:\n\
-  powershell -ExecutionPolicy Bypass -File install-fav-task.ps1"
-                .to_owned();
+            let instructions = concat!(
+                "Register the scheduled task in PowerShell:\n",
+                "  powershell -ExecutionPolicy Bypass -File install-fav-task.ps1",
+            )
+            .to_owned();
             Ok(GeneratedSchedule {
                 files: vec![ScheduleFile {
                     filename: "install-fav-task.ps1".into(),
@@ -467,7 +506,16 @@ mod tests {
         assert_eq!(sched.files[1].filename, "fav.timer");
         assert!(sched.files[1].content.contains("OnUnitActiveSec=3h"));
         assert!(sched.files[1].content.contains("Persistent=true"));
-        assert!(sched.instructions.contains("systemctl --user"));
+        assert!(
+            sched
+                .instructions
+                .contains("\n  systemctl --user daemon-reload")
+        );
+        assert!(
+            sched
+                .instructions
+                .contains("\n  systemctl --user enable --now fav.timer")
+        );
         assert!(!sched.instructions.contains("sudo"));
     }
 
@@ -489,7 +537,7 @@ mod tests {
         assert!(xml.contains("<string>--non-interactive</string>"));
         assert!(xml.contains("<string>--no-progress</string>"));
         assert!(xml.contains("<string>sync</string>"));
-        assert!(sched.instructions.contains("launchctl"));
+        assert!(sched.instructions.contains("\n  launchctl bootstrap "));
         assert!(!sched.instructions.contains("sudo"));
     }
 
@@ -506,9 +554,8 @@ mod tests {
         assert_eq!(sched.files[0].filename, "install-fav-task.ps1");
         let ps = &sched.files[0].content;
         assert!(ps.contains(r#"$WorkspaceDir = 'C:\Users\O''Brien\$env`dir"quote\Videos'"#));
-        assert!(ps.contains(r#"$EscapedWorkspace = $WorkspaceDir.Replace('"', '\"')"#));
         assert!(ps.contains(
-            r#"$Action = New-ScheduledTaskAction -Execute $FavBin -Argument ('-C "' + $EscapedWorkspace + '" --non-interactive --no-progress sync')"#
+            r#"$Action = New-ScheduledTaskAction -Execute $FavBin -Argument '-C "C:\Users\O''Brien\$env`dir\"quote\Videos" --non-interactive --no-progress sync'"#
         ));
         assert!(!ps.contains("\"-C"));
         assert!(ps.contains("New-TimeSpan -Days 1"));
@@ -516,8 +563,44 @@ mod tests {
         assert!(
             sched
                 .instructions
-                .contains("powershell -ExecutionPolicy Bypass -File install-fav-task.ps1")
+                .contains("\n  powershell -ExecutionPolicy Bypass -File install-fav-task.ps1")
         );
+    }
+
+    #[test]
+    fn generate_task_scheduler_windows_argv_trailing_backslashes_and_quotes() {
+        assert_eq!(escape_windows_argv(r"D:\"), r#""D:\\""#);
+        assert_eq!(escape_windows_argv(r"\\?\D:\"), r#""\\?\D:\\""#);
+        assert_eq!(
+            escape_windows_argv(r#"C:\dir\"sub\"#),
+            r#""C:\dir\\\"sub\\""#
+        );
+
+        for (dir, expected_quoted) in [
+            (r"D:\", r#""D:\\""#),
+            (r"\\?\D:\", r#""\\?\D:\\""#),
+            (r#"C:\Users\a\"b\"#, r#""C:\Users\a\\\"b\\""#),
+        ] {
+            let sched = generate_schedule(
+                ScheduleTarget::TaskScheduler,
+                "3h",
+                Path::new(dir),
+                Path::new(r"C:\bin\fav.exe"),
+            )
+            .unwrap();
+            let ps = &sched.files[0].content;
+            let dir_ps = escape_powershell_single(dir);
+            assert!(
+                ps.contains(&format!("$WorkspaceDir = '{dir_ps}'")),
+                "missing $WorkspaceDir for {dir}: {ps}"
+            );
+            assert!(
+                ps.contains(&format!(
+                    "-Argument '-C {expected_quoted} --non-interactive --no-progress sync'"
+                )),
+                "unexpected -Argument quoting for {dir}: {ps}"
+            );
+        }
     }
 
     #[test]

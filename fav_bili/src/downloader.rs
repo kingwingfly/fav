@@ -25,6 +25,8 @@ const SPINNER_TEMPLATE: &str =
     "{msg} {spinner:.green} [{elapsed_precise}] {bytes} ({bytes_per_sec})";
 pub const MAX_FILENAME_BYTES: usize = 240;
 
+static STAGING_PART_COUNTER: AtomicU64 = AtomicU64::new(0);
+
 /// Stream-selection and transfer parameters shared by `fav pull` and `fav download`.
 #[derive(Debug, Clone)]
 pub struct StreamDownloadParams {
@@ -34,6 +36,10 @@ pub struct StreamDownloadParams {
     pub codec: Option<VideoCodec>,
     pub limit_rate: Option<u64>,
     pub try_look: bool,
+    /// When `true` (used by untracked `fav download`), staging `.part` filenames include
+    /// PID + atomic sequence number to avoid collisions across concurrent processes and are
+    /// always removed on drop (success, error, mux failure, or cancellation).
+    pub ephemeral_staging: bool,
 }
 
 impl Default for StreamDownloadParams {
@@ -45,7 +51,55 @@ impl Default for StreamDownloadParams {
             codec: None,
             limit_rate: None,
             try_look: false,
+            ephemeral_staging: false,
         }
+    }
+}
+
+/// RAII guard that removes ephemeral staging `.part` files on drop (success, error, mux failure,
+/// cancellation, or panic unwind) when `ephemeral_staging` is enabled.
+struct EphemeralPartGuard {
+    paths: Vec<PathBuf>,
+}
+
+impl EphemeralPartGuard {
+    fn new(ephemeral: bool, paths: impl IntoIterator<Item = PathBuf>) -> Self {
+        Self {
+            paths: if ephemeral {
+                paths.into_iter().collect()
+            } else {
+                Vec::new()
+            },
+        }
+    }
+}
+
+impl Drop for EphemeralPartGuard {
+    fn drop(&mut self) {
+        for path in &self.paths {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+fn build_staging_part_path(
+    tmp_dir: &Path,
+    aid: i64,
+    cid: i64,
+    kind: &str,
+    stream_id: Option<u32>,
+    ephemeral: bool,
+) -> PathBuf {
+    let base = match stream_id {
+        Some(id) => format!("{aid}_{cid}_{kind}_{id}"),
+        None => format!("{aid}_{cid}_{kind}"),
+    };
+    if ephemeral {
+        let pid = std::process::id();
+        let seq = STAGING_PART_COUNTER.fetch_add(1, Ordering::Relaxed);
+        tmp_dir.join(format!("{base}_{pid}_{seq}.part"))
+    } else {
+        tmp_dir.join(format!("{base}.part"))
     }
 }
 
@@ -204,10 +258,16 @@ pub async fn download_and_mux_page(
                 .audio_format
                 .extension()
                 .unwrap_or_else(|| best_audio.preferred_audio_extension());
-            let a_part = tmp_dir.join(format!(
-                "{}_{}_a_{}.part",
-                target.aid, target.cid, best_audio.id
-            ));
+            let a_part = build_staging_part_path(
+                tmp_dir,
+                target.aid,
+                target.cid,
+                "a",
+                Some(best_audio.id),
+                params.ephemeral_staging,
+            );
+            let _staging_guard =
+                EphemeralPartGuard::new(params.ephemeral_staging, [a_part.clone()]);
 
             let pb = make_progress_bar(multi_progress, &label);
             let pb_c = pb.clone();
@@ -267,12 +327,30 @@ pub async fn download_and_mux_page(
                 .unwrap_or("m4a")
         };
 
-        let v_part = best_video
-            .as_ref()
-            .map(|v| tmp_dir.join(format!("{}_{}_v_{}.part", target.aid, target.cid, v.id)));
-        let a_part = best_audio
-            .as_ref()
-            .map(|a| tmp_dir.join(format!("{}_{}_a_{}.part", target.aid, target.cid, a.id)));
+        let v_part = best_video.as_ref().map(|v| {
+            build_staging_part_path(
+                tmp_dir,
+                target.aid,
+                target.cid,
+                "v",
+                Some(v.id),
+                params.ephemeral_staging,
+            )
+        });
+        let a_part = best_audio.as_ref().map(|a| {
+            build_staging_part_path(
+                tmp_dir,
+                target.aid,
+                target.cid,
+                "a",
+                Some(a.id),
+                params.ephemeral_staging,
+            )
+        });
+        let _staging_guard = EphemeralPartGuard::new(
+            params.ephemeral_staging,
+            v_part.iter().chain(a_part.iter()).cloned(),
+        );
 
         let pb = make_progress_bar(multi_progress, &label);
 
@@ -378,7 +456,15 @@ pub async fn download_and_mux_page(
 
     // Legacy non-DASH `durl` fallback.
     if let Some(durl) = dash_data.durl.first() {
-        let part_path = tmp_dir.join(format!("{}_{}_durl.part", target.aid, target.cid));
+        let part_path = build_staging_part_path(
+            tmp_dir,
+            target.aid,
+            target.cid,
+            "durl",
+            None,
+            params.ephemeral_staging,
+        );
+        let _staging_guard = EphemeralPartGuard::new(params.ephemeral_staging, [part_path.clone()]);
         let pb = make_progress_bar(multi_progress, &label);
         let pb_c = pb.clone();
         let res = client
@@ -709,5 +795,105 @@ mod tests {
         assert!(name.ends_with(".m4a"));
         assert!(!name.ends_with("..m4a"));
         assert!(name.len() <= MAX_FILENAME_BYTES);
+    }
+
+    #[test]
+    fn ephemeral_staging_paths_are_distinct_and_resumable_paths_are_deterministic() {
+        let dir = Path::new("/tmp/stage");
+        let pid = std::process::id();
+
+        // Deterministic paths (`ephemeral = false`, used by `fav pull`) stay stable across calls.
+        assert_eq!(
+            build_staging_part_path(dir, 100, 200, "v", Some(80), false),
+            dir.join("100_200_v_80.part")
+        );
+        assert_eq!(
+            build_staging_part_path(dir, 100, 200, "v", Some(80), false),
+            dir.join("100_200_v_80.part")
+        );
+        assert_eq!(
+            build_staging_part_path(dir, 100, 200, "a", Some(30280), false),
+            dir.join("100_200_a_30280.part")
+        );
+        assert_eq!(
+            build_staging_part_path(dir, 100, 200, "durl", None, false),
+            dir.join("100_200_durl.part")
+        );
+
+        // Ephemeral paths (`ephemeral = true`, used by `fav download`) include PID + unique seq.
+        let p1 = build_staging_part_path(dir, 100, 200, "v", Some(80), true);
+        let p2 = build_staging_part_path(dir, 100, 200, "v", Some(80), true);
+        let p3 = build_staging_part_path(dir, 100, 200, "a", Some(30280), true);
+        let p4 = build_staging_part_path(dir, 100, 200, "durl", None, true);
+        assert_ne!(p1, p2);
+        assert!(
+            p1.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with(&format!("100_200_v_80_{pid}_"))
+        );
+        assert!(p2.file_name().unwrap().to_string_lossy().ends_with(".part"));
+        assert!(
+            p3.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with(&format!("100_200_a_30280_{pid}_"))
+        );
+        assert!(
+            p4.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with(&format!("100_200_durl_{pid}_"))
+        );
+
+        // Concurrent threads generating paths for the same (aid, cid, stream) never collide.
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                std::thread::spawn(|| {
+                    (0..32)
+                        .map(|_| {
+                            build_staging_part_path(
+                                Path::new("/tmp/stage"),
+                                42,
+                                99,
+                                "v",
+                                Some(80),
+                                true,
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+        let mut all_paths = std::collections::HashSet::new();
+        for h in handles {
+            for p in h.join().unwrap() {
+                assert!(all_paths.insert(p), "ephemeral staging path collided");
+            }
+        }
+        assert_eq!(all_paths.len(), 8 * 32);
+    }
+
+    #[test]
+    fn ephemeral_part_guard_removes_only_when_ephemeral() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ephem_v = tmp.path().join("1_2_v_80_123_0.part");
+        let ephem_a = tmp.path().join("1_2_a_30280_123_1.part");
+        let resumable = tmp.path().join("1_2_v_80.part");
+        std::fs::write(&ephem_v, b"v").unwrap();
+        std::fs::write(&ephem_a, b"a").unwrap();
+        std::fs::write(&resumable, b"r").unwrap();
+
+        {
+            let _g1 = EphemeralPartGuard::new(true, [ephem_v.clone(), ephem_a.clone()]);
+            let _g2 = EphemeralPartGuard::new(false, [resumable.clone()]);
+        }
+
+        assert!(!ephem_v.exists(), "ephemeral video .part must be deleted");
+        assert!(!ephem_a.exists(), "ephemeral audio .part must be deleted");
+        assert!(
+            resumable.exists(),
+            "non-ephemeral .part must be preserved for fav pull resume"
+        );
     }
 }

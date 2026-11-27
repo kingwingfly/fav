@@ -218,7 +218,8 @@ fn format_args() -> [Arg; 2] {
         Arg::new("json")
             .long("json")
             .help("Shorthand for --format json")
-            .action(ArgAction::SetTrue),
+            .action(ArgAction::SetTrue)
+            .conflicts_with("format"),
     ]
 }
 
@@ -372,9 +373,8 @@ fn pull_flags(include_shared_scope: bool) -> Vec<Arg> {
         Arg::new("audio-format")
             .long("audio-format")
             .value_name("FMT")
-            .help("Audio output format when using --sound-only")
-            .value_parser(value_parser!(AudioFormat))
-            .requires("sound-only"),
+            .help("Audio output format when using --sound-only (or sound_only = true in config.toml)")
+            .value_parser(value_parser!(AudioFormat)),
         Arg::new("clarity")
             .long("clarity")
             .alias("quality")
@@ -784,9 +784,8 @@ pub fn build_command() -> Command {
                     Arg::new("audio-format")
                         .long("audio-format")
                         .value_name("FMT")
-                        .help("Audio output format when using --sound-only")
-                        .value_parser(value_parser!(AudioFormat))
-                        .requires("sound-only"),
+                        .help("Audio output format when using --sound-only (or sound_only = true in config.toml)")
+                        .value_parser(value_parser!(AudioFormat)),
                     Arg::new("clarity")
                         .long("clarity")
                         .alias("quality")
@@ -1021,6 +1020,8 @@ fn runtime_from_matches(matches: &ArgMatches) -> RuntimeOptions {
             .get_one::<ColorChoice>("color")
             .copied()
             .unwrap_or(ColorChoice::Auto),
+        color_explicit: matches.value_source("color")
+            == Some(clap::parser::ValueSource::CommandLine),
         no_progress: matches.get_flag("no-progress"),
         non_interactive: matches.get_flag("non-interactive"),
     }
@@ -2424,17 +2425,28 @@ mod tests {
                 .is_err()
         );
 
-        // `--audio-format` requires `--sound-only`
-        assert!(
-            build_command()
-                .try_get_matches_from(["fav", "download", "BV1Q541167Qg", "--audio-format", "flac"])
-                .is_err()
-        );
-        assert!(
-            build_command()
-                .try_get_matches_from(["fav", "pull", "--audio-format", "opus"])
-                .is_err()
-        );
+        // `--audio-format` parses without `--sound-only` so `sound_only = true` in config.toml
+        // works; runtime validation enforces that effective sound_only is enabled.
+        let m = build_command()
+            .try_get_matches_from(["fav", "download", "BV1Q541167Qg", "--audio-format", "flac"])
+            .unwrap();
+        let dl_opts = parse_download_options(m.subcommand_matches("download").unwrap()).unwrap();
+        assert!(!dl_opts.sound_only);
+        assert_eq!(dl_opts.audio_format, Some(AudioFormat::Flac));
+
+        let m = build_command()
+            .try_get_matches_from(["fav", "pull", "--audio-format", "opus"])
+            .unwrap();
+        let p_opts = parse_pull_options(m.subcommand_matches("pull").unwrap(), true).unwrap();
+        assert!(!p_opts.sound_only);
+        assert_eq!(p_opts.audio_format, Some(AudioFormat::Opus));
+
+        let m = build_command()
+            .try_get_matches_from(["fav", "sync", "--audio-format", "mp3"])
+            .unwrap();
+        let s_opts = parse_pull_options(m.subcommand_matches("sync").unwrap(), false).unwrap();
+        assert!(!s_opts.sound_only);
+        assert_eq!(s_opts.audio_format, Some(AudioFormat::Mp3));
 
         // `--all-pages` + canonical clarity name
         let m = build_command()
@@ -2772,5 +2784,95 @@ mod tests {
 
         let medias = dynamic_complete_lines(&db, "medias", "").await;
         assert_eq!(medias, vec!["BV17x411w7KC\tVidTitleEscNel Line"]);
+    }
+
+    #[test]
+    fn json_flag_works_with_default_format_but_conflicts_with_explicit_format() {
+        // `--json` alone succeeds even though `--format` has default_value("table").
+        let m = build_command()
+            .try_get_matches_from(["fav", "ls", "media", "--json"])
+            .unwrap();
+        let media_m = m
+            .subcommand_matches("list")
+            .unwrap()
+            .subcommand_matches("media")
+            .unwrap();
+        assert_eq!(resolve_format(media_m), OutputFormat::Json);
+
+        let m = build_command()
+            .try_get_matches_from(["fav", "status", "--json"])
+            .unwrap();
+        assert_eq!(
+            resolve_format(m.subcommand_matches("status").unwrap()),
+            OutputFormat::Json
+        );
+
+        let m = build_command()
+            .try_get_matches_from(["fav", "doctor", "--json"])
+            .unwrap();
+        assert_eq!(
+            resolve_format(m.subcommand_matches("doctor").unwrap()),
+            OutputFormat::Json
+        );
+
+        let m = build_command()
+            .try_get_matches_from(["fav", "auth", "check", "--json"])
+            .unwrap();
+        let check_m = m
+            .subcommand_matches("auth")
+            .unwrap()
+            .subcommand_matches("check")
+            .unwrap();
+        assert_eq!(resolve_format(check_m), OutputFormat::Json);
+
+        // Explicit `--format` + `--json` conflicts across all format-supporting commands.
+        for args in [
+            vec!["fav", "ls", "media", "--format", "tsv", "--json"],
+            vec!["fav", "status", "--format", "table", "--json"],
+            vec!["fav", "status", "--json", "--format", "json"],
+            vec!["fav", "doctor", "--format", "jsonl", "--json"],
+            vec!["fav", "auth", "check", "--format", "ids", "--json"],
+            vec!["fav", "ls", "--format", "table", "--json"],
+        ] {
+            let err = build_command()
+                .try_get_matches_from(args.clone())
+                .expect_err(&format!("expected conflict for {args:?}"));
+            assert_eq!(
+                err.kind(),
+                clap::error::ErrorKind::ArgumentConflict,
+                "expected ArgumentConflict for {args:?}, got: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn runtime_from_matches_tracks_explicit_color_flag() {
+        let m_default = build_command()
+            .try_get_matches_from(["fav", "status"])
+            .unwrap();
+        let rt_default = runtime_from_matches(&m_default);
+        assert_eq!(rt_default.color, ColorChoice::Auto);
+        assert!(!rt_default.color_explicit);
+
+        let m_explicit_before = build_command()
+            .try_get_matches_from(["fav", "--color", "auto", "status"])
+            .unwrap();
+        let rt_explicit_before = runtime_from_matches(&m_explicit_before);
+        assert_eq!(rt_explicit_before.color, ColorChoice::Auto);
+        assert!(rt_explicit_before.color_explicit);
+
+        let m_explicit_after = build_command()
+            .try_get_matches_from(["fav", "status", "--color", "auto"])
+            .unwrap();
+        let rt_explicit_after = runtime_from_matches(&m_explicit_after);
+        assert_eq!(rt_explicit_after.color, ColorChoice::Auto);
+        assert!(rt_explicit_after.color_explicit);
+
+        let m_explicit_never = build_command()
+            .try_get_matches_from(["fav", "ls", "media", "--color", "never"])
+            .unwrap();
+        let rt_explicit_never = runtime_from_matches(&m_explicit_never);
+        assert_eq!(rt_explicit_never.color, ColorChoice::Never);
+        assert!(rt_explicit_never.color_explicit);
     }
 }

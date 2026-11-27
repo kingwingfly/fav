@@ -1,7 +1,6 @@
 use std::{
     fmt,
     path::{Path, PathBuf},
-    str::FromStr as _,
     sync::Arc,
 };
 
@@ -29,6 +28,7 @@ pub struct RuntimeOptions {
     pub verbose: u8,
     pub quiet: bool,
     pub color: ColorChoice,
+    pub color_explicit: bool,
     pub no_progress: bool,
     pub non_interactive: bool,
 }
@@ -234,13 +234,13 @@ fn apply_config_defaults(runtime: &mut RuntimeOptions, config: &Config) -> AppRe
     let _ = config.parsed_clarity()?;
     let _ = config.parsed_codec()?;
     let _ = config.parsed_audio_format()?;
+    let cfg_color = config.parsed_color()?;
 
     if config.no_progress == Some(true) {
         runtime.no_progress = true;
     }
-    if runtime.color == ColorChoice::Auto
-        && let Some(raw) = &config.color
-        && let Ok(parsed) = ColorChoice::from_str(raw)
+    if !runtime.color_explicit
+        && let Some(parsed) = cfg_color
     {
         runtime.color = parsed;
     }
@@ -396,11 +396,55 @@ mod tests {
                     ..Default::default()
                 },
             ),
+            (
+                "color",
+                Config {
+                    color: Some("neon".to_owned()),
+                    ..Default::default()
+                },
+            ),
         ] {
             let mut rt = RuntimeOptions::default();
             let err = apply_config_defaults(&mut rt, &cfg)
                 .expect_err(&format!("invalid {label} should fail"));
             assert_eq!(err.kind(), ExitKind::Usage, "invalid {label} exit kind");
         }
+    }
+
+    #[test]
+    fn apply_config_defaults_color_precedence_and_eager_validation() {
+        use crate::error::ExitKind;
+
+        let never_cfg = Config {
+            color: Some("never".to_owned()),
+            ..Default::default()
+        };
+
+        // Default runtime (not explicitly passed on CLI) picks up config.color.
+        let mut rt = RuntimeOptions::default();
+        apply_config_defaults(&mut rt, &never_cfg).unwrap();
+        assert_eq!(rt.color, ColorChoice::Never);
+
+        // Explicit CLI `--color auto` overrides `config.color = "never"`.
+        let mut rt_explicit_auto = RuntimeOptions {
+            color: ColorChoice::Auto,
+            color_explicit: true,
+            ..Default::default()
+        };
+        apply_config_defaults(&mut rt_explicit_auto, &never_cfg).unwrap();
+        assert_eq!(rt_explicit_auto.color, ColorChoice::Auto);
+
+        // Invalid config.color still fails eagerly with ExitKind::Usage even if CLI passed `--color`.
+        let bad_cfg = Config {
+            color: Some("bogus".to_owned()),
+            ..Default::default()
+        };
+        let mut rt_explicit = RuntimeOptions {
+            color: ColorChoice::Always,
+            color_explicit: true,
+            ..Default::default()
+        };
+        let err = apply_config_defaults(&mut rt_explicit, &bad_cfg).unwrap_err();
+        assert_eq!(err.kind(), ExitKind::Usage);
     }
 }
