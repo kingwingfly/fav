@@ -1,12 +1,16 @@
 use std::{
     fs::{File, OpenOptions},
     path::{Path, PathBuf},
+    str::FromStr as _,
 };
 
 use anyhow::{Context as _, Result, anyhow};
 use serde::{Deserialize, Serialize};
 
-use crate::error::AppError;
+use crate::{
+    error::AppError,
+    state::{AudioFormat, VideoClarity, VideoCodec},
+};
 
 pub const FAV_DIR_ENV: &str = "FAV_DIR";
 pub const FAV_META_DIR: &str = ".fav";
@@ -267,6 +271,13 @@ pub struct Config {
     pub color: Option<String>,
     pub ffmpeg_path: Option<PathBuf>,
     pub api_concurrency: Option<usize>,
+    #[serde(alias = "quality")]
+    pub clarity: Option<String>,
+    pub codec: Option<String>,
+    pub sound_only: Option<bool>,
+    pub audio_format: Option<String>,
+    pub recheck: Option<bool>,
+    pub tmp_dir: Option<PathBuf>,
 }
 
 impl Config {
@@ -329,6 +340,24 @@ impl Config {
         if overlay.api_concurrency.is_some() {
             self.api_concurrency = overlay.api_concurrency;
         }
+        if overlay.clarity.is_some() {
+            self.clarity = overlay.clarity;
+        }
+        if overlay.codec.is_some() {
+            self.codec = overlay.codec;
+        }
+        if overlay.sound_only.is_some() {
+            self.sound_only = overlay.sound_only;
+        }
+        if overlay.audio_format.is_some() {
+            self.audio_format = overlay.audio_format;
+        }
+        if overlay.recheck.is_some() {
+            self.recheck = overlay.recheck;
+        }
+        if overlay.tmp_dir.is_some() {
+            self.tmp_dir = overlay.tmp_dir;
+        }
     }
 
     /// Resolve effective output directory relative to `workspace.root()` when relative.
@@ -340,9 +369,52 @@ impl Config {
         }
     }
 
+    /// Resolve effective staging temp directory relative to `workspace.root()` when relative,
+    /// falling back to `workspace.tmp_dir()` (`.fav/tmp`).
+    pub fn resolved_tmp_dir(&self, workspace: &Workspace) -> PathBuf {
+        match &self.tmp_dir {
+            Some(p) if p.is_absolute() => p.clone(),
+            Some(p) => workspace.root().join(p),
+            None => workspace.tmp_dir(),
+        }
+    }
+
     /// Parse configured `limit_rate` into bytes per second, if set.
     pub fn parsed_limit_rate(&self) -> Result<Option<u64>> {
         self.limit_rate.as_deref().map(parse_rate_limit).transpose()
+    }
+
+    /// Parse configured `clarity` (or alias `quality`), if set.
+    pub fn parsed_clarity(&self) -> Result<Option<VideoClarity>> {
+        self.clarity
+            .as_deref()
+            .map(|s| {
+                VideoClarity::from_str(s)
+                    .map_err(|msg| anyhow::Error::from(AppError::usage(anyhow!("{msg}"))))
+            })
+            .transpose()
+    }
+
+    /// Parse configured `codec`, if set.
+    pub fn parsed_codec(&self) -> Result<Option<VideoCodec>> {
+        self.codec
+            .as_deref()
+            .map(|s| {
+                VideoCodec::from_str(s)
+                    .map_err(|msg| anyhow::Error::from(AppError::usage(anyhow!("{msg}"))))
+            })
+            .transpose()
+    }
+
+    /// Parse configured `audio_format`, if set.
+    pub fn parsed_audio_format(&self) -> Result<Option<AudioFormat>> {
+        self.audio_format
+            .as_deref()
+            .map(|s| {
+                AudioFormat::from_str(s)
+                    .map_err(|msg| anyhow::Error::from(AppError::usage(anyhow!("{msg}"))))
+            })
+            .transpose()
     }
 }
 
@@ -582,6 +654,12 @@ jobs = 4
 limit_rate = "5M"
 color = "auto"
 api_concurrency = 6
+quality = "720p"
+codec = "h264"
+sound_only = false
+audio_format = "m4a"
+recheck = false
+tmp_dir = "global_tmp"
 "#,
         )
         .unwrap();
@@ -591,6 +669,12 @@ api_concurrency = 6
 jobs = 2
 prune = true
 output_dir = "videos"
+clarity = "1080p"
+codec = "hevc"
+sound_only = true
+audio_format = "mp3"
+recheck = true
+tmp_dir = "staging"
 "#,
         )
         .unwrap();
@@ -603,6 +687,51 @@ output_dir = "videos"
         assert_eq!(cfg.api_concurrency, Some(6));
         assert_eq!(cfg.output_dir, Some(PathBuf::from("videos")));
         assert_eq!(cfg.parsed_limit_rate().unwrap(), Some(5 * 1024 * 1024));
+        assert_eq!(cfg.parsed_clarity().unwrap(), Some(VideoClarity::P1080));
+        assert_eq!(cfg.parsed_codec().unwrap(), Some(VideoCodec::Hevc));
+        assert_eq!(cfg.sound_only, Some(true));
+        assert_eq!(cfg.parsed_audio_format().unwrap(), Some(AudioFormat::Mp3));
+        assert_eq!(cfg.recheck, Some(true));
+        assert_eq!(cfg.tmp_dir, Some(PathBuf::from("staging")));
+
+        // Global `quality` alias works when not overridden by workspace `clarity`.
+        let global_only = Config::load_from_paths(Some(&global), None).unwrap();
+        assert_eq!(
+            global_only.parsed_clarity().unwrap(),
+            Some(VideoClarity::P720)
+        );
+        assert_eq!(global_only.parsed_codec().unwrap(), Some(VideoCodec::Avc));
+        assert_eq!(
+            global_only.parsed_audio_format().unwrap(),
+            Some(AudioFormat::M4a)
+        );
+
+        // resolved_tmp_dir handles None, relative, and absolute paths.
+        let ws = Workspace::new(tmp.path().join("ws"));
+        assert_eq!(Config::default().resolved_tmp_dir(&ws), ws.tmp_dir());
+        assert_eq!(cfg.resolved_tmp_dir(&ws), ws.root().join("staging"));
+        let abs_cfg = Config {
+            tmp_dir: Some(tmp.path().join("abs_tmp")),
+            ..Default::default()
+        };
+        assert_eq!(abs_cfg.resolved_tmp_dir(&ws), tmp.path().join("abs_tmp"));
+
+        // Invalid values produce Usage errors.
+        let bad_clarity = Config {
+            clarity: Some("invalid".to_owned()),
+            ..Default::default()
+        };
+        assert!(bad_clarity.parsed_clarity().is_err());
+        let bad_codec = Config {
+            codec: Some("vp9".to_owned()),
+            ..Default::default()
+        };
+        assert!(bad_codec.parsed_codec().is_err());
+        let bad_audio = Config {
+            audio_format: Some("wav".to_owned()),
+            ..Default::default()
+        };
+        assert!(bad_audio.parsed_audio_format().is_err());
     }
 
     #[test]

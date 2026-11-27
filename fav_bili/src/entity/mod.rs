@@ -40,10 +40,11 @@ impl ToTableRecord<3> for account::Model {
     }
 }
 
-impl ToTableRecord<4> for set::Model {
-    fn to_record(self) -> [String; 4] {
+impl ToTableRecord<5> for set::Model {
+    fn to_record(self) -> [String; 5] {
         [
             self.set_id.to_string(),
+            self.kind,
             truncate_cell(&self.name, 20),
             self.count.to_string(),
             self.state,

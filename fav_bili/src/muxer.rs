@@ -14,23 +14,33 @@ use tokio::{
 };
 use tracing::debug;
 
+use crate::state::AudioFormat;
+
 const MAX_STDERR_BYTES: usize = 8 * 1024;
 const MAX_PROBE_STDOUT_BYTES: usize = 4 * 1024;
 const DEFAULT_PROBE_TIMEOUT: Duration = Duration::from_secs(10);
 
 static PART_COUNTER: AtomicU64 = AtomicU64::new(0);
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct MuxRequest {
     pub video: Option<PathBuf>,
     pub audio: Option<PathBuf>,
     pub output: PathBuf,
+    pub audio_format: Option<AudioFormat>,
+    pub source_audio_codec: Option<String>,
+    pub metadata_comment: Option<String>,
 }
 
 pub trait Muxer: Send + Sync {
     fn mux<'a>(&'a self, req: MuxRequest) -> Pin<Box<dyn Future<Output = Result<()>> + Send + 'a>>;
 
     fn probe<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>>;
+
+    fn read_comment_tag<'a>(
+        &'a self,
+        path: &'a Path,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<String>>> + Send + 'a>>;
 }
 
 /// RAII guard that removes a staging `.part` file unless explicitly disarmed after atomic rename.
@@ -124,6 +134,23 @@ impl FfmpegMuxer {
         &self.ffmpeg_path
     }
 
+    fn ffprobe_path(&self) -> PathBuf {
+        let exe_name = if cfg!(windows) {
+            "ffprobe.exe"
+        } else {
+            "ffprobe"
+        };
+        if let Some(parent) = self.ffmpeg_path.parent()
+            && !parent.as_os_str().is_empty()
+        {
+            let sibling = parent.join(exe_name);
+            if sibling.exists() {
+                return sibling;
+            }
+        }
+        PathBuf::from(exe_name)
+    }
+
     async fn run_mux(&self, req: MuxRequest) -> Result<()> {
         if req.video.is_none() && req.audio.is_none() {
             return Err(anyhow!(
@@ -154,13 +181,58 @@ impl FfmpegMuxer {
         if let Some(audio) = &req.audio {
             cmd.arg("-i").arg(audio);
         }
-        cmd.args(["-c", "copy"]);
-        if uses_faststart(&req.output) {
-            cmd.args(["-movflags", "+faststart"]);
+
+        if let Some(audio_fmt) = req.audio_format {
+            cmd.arg("-vn");
+            match audio_fmt {
+                AudioFormat::Copy => {
+                    cmd.args(["-c:a", "copy"]);
+                    if uses_faststart(&req.output) {
+                        cmd.args(["-movflags", "+faststart"]);
+                    }
+                    if let Some(fmt) = ffmpeg_format_for_output(&req.output) {
+                        cmd.args(["-f", fmt]);
+                    }
+                }
+                AudioFormat::M4a => {
+                    if is_aac_codec(req.source_audio_codec.as_deref()) {
+                        cmd.args(["-c:a", "copy"]);
+                    } else {
+                        cmd.args(["-c:a", "aac", "-b:a", "192k"]);
+                    }
+                    cmd.args(["-movflags", "+faststart", "-f", "mp4"]);
+                }
+                AudioFormat::Mp3 => {
+                    cmd.args(["-c:a", "libmp3lame", "-q:a", "2", "-f", "mp3"]);
+                }
+                AudioFormat::Flac => {
+                    if is_flac_codec(req.source_audio_codec.as_deref()) {
+                        cmd.args(["-c:a", "copy"]);
+                    } else {
+                        cmd.args(["-c:a", "flac"]);
+                    }
+                    cmd.args(["-f", "flac"]);
+                }
+                AudioFormat::Opus => {
+                    cmd.args(["-c:a", "libopus", "-b:a", "160k", "-f", "opus"]);
+                }
+            }
+        } else {
+            cmd.args(["-c", "copy"]);
+            if uses_faststart(&req.output) {
+                cmd.args(["-movflags", "+faststart"]);
+            }
+            if let Some(fmt) = ffmpeg_format_for_output(&req.output) {
+                cmd.args(["-f", fmt]);
+            }
         }
-        if let Some(fmt) = ffmpeg_format_for_output(&req.output) {
-            cmd.args(["-f", fmt]);
+
+        if let Some(comment) = &req.metadata_comment
+            && !comment.is_empty()
+        {
+            cmd.args(["-metadata", &format!("comment={comment}")]);
         }
+
         cmd.arg(&part_path);
         cmd.stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -310,6 +382,91 @@ impl FfmpegMuxer {
             .unwrap_or("ffmpeg (unknown version)");
         Ok(first_line.to_string())
     }
+
+    async fn run_read_comment_tag(&self, path: &Path) -> Result<Option<String>> {
+        let ffprobe = self.ffprobe_path();
+        run_read_comment_tag_with_bin(&ffprobe, path, self.probe_timeout).await
+    }
+}
+
+async fn run_read_comment_tag_with_bin(
+    ffprobe_bin: &Path,
+    path: &Path,
+    timeout: Duration,
+) -> Result<Option<String>> {
+    let mut cmd = Command::new(ffprobe_bin);
+    cmd.args([
+        "-v",
+        "error",
+        "-show_entries",
+        "format_tags=comment:stream_tags=comment",
+        "-of",
+        "default=nw=1:nk=1",
+    ])
+    .arg(path)
+    .stdin(Stdio::null())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .kill_on_drop(true);
+
+    let mut child = match cmd.spawn() {
+        Ok(c) => c,
+        Err(e) => {
+            debug!(
+                ffprobe = %ffprobe_bin.display(),
+                path = %path.display(),
+                error = %e,
+                "ffprobe unavailable for comment tag inspection; skipping"
+            );
+            return Ok(None);
+        }
+    };
+
+    let stdout = child.stdout.take();
+    let stderr = child.stderr.take();
+    let mut child_guard = ChildKillGuard::new(child);
+
+    let probe_fut = async {
+        let stdout_fut = async move {
+            match stdout {
+                Some(r) => drain_bounded(r, MAX_PROBE_STDOUT_BYTES).await,
+                None => Ok(Vec::new()),
+            }
+        };
+        let stderr_fut = async move {
+            match stderr {
+                Some(r) => drain_bounded(r, MAX_STDERR_BYTES).await,
+                None => Ok(Vec::new()),
+            }
+        };
+        tokio::try_join!(child_guard.wait(), stdout_fut, stderr_fut)
+    };
+
+    let Ok(Ok((status, stdout_bytes, _stderr_bytes))) =
+        tokio::time::timeout(timeout, probe_fut).await
+    else {
+        debug!(
+            path = %path.display(),
+            "ffprobe comment tag read timed out or failed; skipping"
+        );
+        return Ok(None);
+    };
+
+    if !status.success() {
+        return Ok(None);
+    }
+
+    let stdout_text = String::from_utf8_lossy(&stdout_bytes);
+    let mut first_non_empty: Option<&str> = None;
+    for line in stdout_text.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        if line.contains("fav:") {
+            return Ok(Some(line.to_string()));
+        }
+        if first_non_empty.is_none() {
+            first_non_empty = Some(line);
+        }
+    }
+    Ok(first_non_empty.map(str::to_string))
 }
 
 impl Muxer for FfmpegMuxer {
@@ -320,6 +477,24 @@ impl Muxer for FfmpegMuxer {
     fn probe<'a>(&'a self) -> Pin<Box<dyn Future<Output = Result<String>> + Send + 'a>> {
         Box::pin(self.run_probe())
     }
+
+    fn read_comment_tag<'a>(
+        &'a self,
+        path: &'a Path,
+    ) -> Pin<Box<dyn Future<Output = Result<Option<String>>> + Send + 'a>> {
+        Box::pin(self.run_read_comment_tag(path))
+    }
+}
+
+fn is_aac_codec(codec: Option<&str>) -> bool {
+    codec.is_some_and(|c| {
+        let lc = c.to_ascii_lowercase();
+        lc.contains("mp4a") || lc.contains("aac")
+    })
+}
+
+fn is_flac_codec(codec: Option<&str>) -> bool {
+    codec.is_some_and(|c| c.to_ascii_lowercase().contains("flac"))
 }
 
 fn make_part_path(output: &Path) -> PathBuf {
@@ -348,6 +523,7 @@ fn ffmpeg_format_for_output(output: &Path) -> Option<&'static str> {
         "flac" => Some("flac"),
         "mp3" => Some("mp3"),
         "ogg" => Some("ogg"),
+        "opus" => Some("opus"),
         "aac" => Some("adts"),
         _ => None,
     }
@@ -392,7 +568,9 @@ fn stderr_excerpt(stderr: &str) -> String {
 
 pub mod test_support {
     use std::{
+        collections::HashMap,
         future::Future,
+        path::{Path, PathBuf},
         pin::Pin,
         sync::{Arc, Mutex},
     };
@@ -401,11 +579,14 @@ pub mod test_support {
 
     use super::{MuxRequest, Muxer};
 
+    const MOCK_STUB_PREFIX: &str = "mock-mp4\n";
+
     #[derive(Clone)]
     pub struct MockMuxer {
         requests: Arc<Mutex<Vec<MuxRequest>>>,
         fail_message: Option<String>,
         probe_result: Arc<Mutex<Result<String, String>>>,
+        comment_tags: Arc<Mutex<HashMap<PathBuf, String>>>,
         write_stub_output: bool,
     }
 
@@ -421,6 +602,7 @@ pub mod test_support {
                 requests: Arc::new(Mutex::new(Vec::new())),
                 fail_message: None,
                 probe_result: Arc::new(Mutex::new(Ok("ffmpeg version mock-1.0".to_string()))),
+                comment_tags: Arc::new(Mutex::new(HashMap::new())),
                 write_stub_output: true,
             }
         }
@@ -430,6 +612,7 @@ pub mod test_support {
                 requests: Arc::new(Mutex::new(Vec::new())),
                 fail_message: Some(msg.into()),
                 probe_result: Arc::new(Mutex::new(Ok("ffmpeg version mock-1.0".to_string()))),
+                comment_tags: Arc::new(Mutex::new(HashMap::new())),
                 write_stub_output: false,
             }
         }
@@ -437,6 +620,18 @@ pub mod test_support {
         pub fn with_probe_error(self, err: impl Into<String>) -> Self {
             *self.probe_result.lock().unwrap() = Err(err.into());
             self
+        }
+
+        pub fn with_comment_tag(self, path: impl Into<PathBuf>, tag: impl Into<String>) -> Self {
+            self.set_comment_tag(path, tag);
+            self
+        }
+
+        pub fn set_comment_tag(&self, path: impl Into<PathBuf>, tag: impl Into<String>) {
+            self.comment_tags
+                .lock()
+                .unwrap()
+                .insert(path.into(), tag.into());
         }
 
         pub fn requests(&self) -> Vec<MuxRequest> {
@@ -452,10 +647,17 @@ pub mod test_support {
             let requests = self.requests.clone();
             let fail = self.fail_message.clone();
             let write_stub = self.write_stub_output;
+            let comment_tags = self.comment_tags.clone();
             Box::pin(async move {
                 requests.lock().unwrap().push(req.clone());
                 if let Some(msg) = fail {
                     return Err(anyhow!(msg));
+                }
+                if let Some(ref comment) = req.metadata_comment {
+                    comment_tags
+                        .lock()
+                        .unwrap()
+                        .insert(req.output.clone(), comment.clone());
                 }
                 if write_stub {
                     if let Some(parent) = req.output.parent()
@@ -463,7 +665,11 @@ pub mod test_support {
                     {
                         tokio::fs::create_dir_all(parent).await?;
                     }
-                    tokio::fs::write(&req.output, b"mock-mp4").await?;
+                    let payload = match &req.metadata_comment {
+                        Some(comment) => format!("{MOCK_STUB_PREFIX}{comment}\n").into_bytes(),
+                        None => b"mock-mp4".to_vec(),
+                    };
+                    tokio::fs::write(&req.output, payload).await?;
                 }
                 Ok(())
             })
@@ -476,6 +682,48 @@ pub mod test_support {
                     Ok(v) => Ok(v.clone()),
                     Err(e) => Err(anyhow!("{e}")),
                 }
+            })
+        }
+
+        fn read_comment_tag<'a>(
+            &'a self,
+            path: &'a Path,
+        ) -> Pin<Box<dyn Future<Output = Result<Option<String>>> + Send + 'a>> {
+            let comment_tags = self.comment_tags.clone();
+            let requests = self.requests.clone();
+            Box::pin(async move {
+                if let Some(tag) = comment_tags.lock().unwrap().get(path).cloned() {
+                    return Ok(Some(tag));
+                }
+                if let Ok(canon) = std::fs::canonicalize(path) {
+                    let guard = comment_tags.lock().unwrap();
+                    for (k, v) in guard.iter() {
+                        if std::fs::canonicalize(k).ok().as_deref() == Some(canon.as_path()) {
+                            return Ok(Some(v.clone()));
+                        }
+                    }
+                }
+                if let Some(tag) = requests
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .rev()
+                    .find(|r| r.output == path)
+                    .and_then(|r| r.metadata_comment.clone())
+                {
+                    return Ok(Some(tag));
+                }
+                // Also support reading mock stub payload across file copies/renames.
+                if let Ok(bytes) = tokio::fs::read(path).await
+                    && let Ok(text) = std::str::from_utf8(&bytes)
+                    && let Some(rest) = text.strip_prefix(MOCK_STUB_PREFIX)
+                {
+                    let line = rest.lines().next().map(str::trim).unwrap_or_default();
+                    if !line.is_empty() {
+                        return Ok(Some(line.to_string()));
+                    }
+                }
+                Ok(None)
             })
         }
     }
@@ -495,17 +743,8 @@ mod tests {
             .collect()
     }
 
-    #[tokio::test]
-    async fn probe_succeeds_or_reports_missing_binary() {
-        let missing = FfmpegMuxer::new(Some(PathBuf::from("nonexistent-ffmpeg-binary-xyz-123")));
-        let err = missing.probe().await.unwrap_err();
-        assert!(
-            err.to_string().contains("ffmpeg not found on PATH"),
-            "unexpected error: {err}"
-        );
-
-        // If system ffmpeg is installed, verify probe captures a clean single-line version.
-        if Command::new("ffmpeg")
+    async fn has_ffmpeg() -> bool {
+        Command::new("ffmpeg")
             .arg("-version")
             .stdin(Stdio::null())
             .stdout(Stdio::null())
@@ -513,75 +752,14 @@ mod tests {
             .status()
             .await
             .is_ok()
-        {
-            let muxer = FfmpegMuxer::new(None);
-            let ver = muxer.probe().await.expect("ffmpeg probe should succeed");
-            assert!(ver.contains("ffmpeg"), "unexpected version line: {ver}");
-            assert!(!ver.contains('\n'));
-        }
     }
 
-    #[tokio::test]
-    async fn ffmpeg_failure_cleans_up_part_and_returns_error() {
-        if Command::new("ffmpeg")
-            .arg("-version")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .await
-            .is_err()
-        {
-            return;
-        }
+    async fn generate_synthetic_streams(dir: &Path) -> Option<(PathBuf, PathBuf, PathBuf)> {
+        let vid = dir.join("v.mp4");
+        let aud = dir.join("a.m4a");
+        let durl = dir.join("durl.mp4");
 
-        let dir = TempDir::new().unwrap();
-        let bad_video = dir.path().join("corrupt.m4s");
-        std::fs::write(&bad_video, b"not a valid media stream").unwrap();
-        let output = dir.path().join("out.mp4");
-
-        let muxer = FfmpegMuxer::new(None);
-        let err = muxer
-            .mux(MuxRequest {
-                video: Some(bad_video),
-                audio: None,
-                output: output.clone(),
-            })
-            .await
-            .unwrap_err();
-
-        assert!(
-            err.to_string().contains("ffmpeg mux failed"),
-            "expected ffmpeg failure error, got: {err}"
-        );
-        assert!(!output.exists(), "final output must not exist on failure");
-        assert!(
-            list_part_files(dir.path()).is_empty(),
-            "all .part files must be removed on failure"
-        );
-    }
-
-    #[tokio::test]
-    async fn ffmpeg_mux_valid_video_and_audio_succeeds_atomically() {
-        if Command::new("ffmpeg")
-            .arg("-version")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .await
-            .is_err()
-        {
-            return;
-        }
-
-        let dir = TempDir::new().unwrap();
-        let vid = dir.path().join("v.mp4");
-        let aud = dir.path().join("a.m4a");
-        let out = dir.path().join("muxed.mp4");
-
-        // Generate tiny synthetic video + audio inputs silently.
-        let v_status = Command::new("ffmpeg")
+        let v_ok = Command::new("ffmpeg")
             .args([
                 "-hide_banner",
                 "-loglevel",
@@ -600,11 +778,13 @@ mod tests {
             .stderr(Stdio::null())
             .status()
             .await
-            .unwrap();
-        if !v_status.success() {
-            return;
+            .ok()?
+            .success();
+        if !v_ok {
+            return None;
         }
-        let a_status = Command::new("ffmpeg")
+
+        let a_ok = Command::new("ffmpeg")
             .args([
                 "-hide_banner",
                 "-loglevel",
@@ -613,7 +793,7 @@ mod tests {
                 "-f",
                 "lavfi",
                 "-i",
-                "anullsrc=r=44100:cl=mono",
+                "anullsrc=r=48000:cl=mono",
                 "-t",
                 "0.2",
                 "-c:a",
@@ -625,10 +805,132 @@ mod tests {
             .stderr(Stdio::null())
             .status()
             .await
-            .unwrap();
-        if !a_status.success() {
+            .ok()?
+            .success();
+        if !a_ok {
+            return None;
+        }
+
+        let d_ok = Command::new("ffmpeg")
+            .args(["-hide_banner", "-loglevel", "error", "-y", "-i"])
+            .arg(&vid)
+            .arg("-i")
+            .arg(&aud)
+            .args(["-c", "copy"])
+            .arg(&durl)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .await
+            .ok()?
+            .success();
+        if !d_ok {
+            return None;
+        }
+
+        Some((vid, aud, durl))
+    }
+
+    async fn ffprobe_stream_types(path: &Path) -> Vec<String> {
+        let out = Command::new("ffprobe")
+            .args([
+                "-v",
+                "error",
+                "-show_entries",
+                "stream=codec_type",
+                "-of",
+                "default=nw=1:nk=1",
+            ])
+            .arg(path)
+            .stdin(Stdio::null())
+            .output()
+            .await
+            .expect("ffprobe should run");
+        assert!(out.status.success(), "ffprobe failed on {}", path.display());
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .map(|l| l.trim().to_string())
+            .filter(|l| !l.is_empty())
+            .collect()
+    }
+
+    #[tokio::test]
+    async fn probe_succeeds_or_reports_missing_binary() {
+        let missing = FfmpegMuxer::new(Some(PathBuf::from("nonexistent-ffmpeg-binary-xyz-123")));
+        let err = missing.probe().await.unwrap_err();
+        assert!(
+            err.to_string().contains("ffmpeg not found on PATH"),
+            "unexpected error: {err}"
+        );
+
+        // Missing ffprobe returns Ok(None) gracefully without crashing.
+        let dir = TempDir::new().unwrap();
+        let dummy = dir.path().join("x.mp4");
+        std::fs::write(&dummy, b"abc").unwrap();
+        let tag = run_read_comment_tag_with_bin(
+            Path::new("nonexistent-ffprobe-binary-xyz-123"),
+            &dummy,
+            DEFAULT_PROBE_TIMEOUT,
+        )
+        .await
+        .unwrap();
+        assert_eq!(tag, None);
+
+        // If system ffmpeg is installed, verify probe captures a clean single-line version.
+        if has_ffmpeg().await {
+            let muxer = FfmpegMuxer::new(None);
+            let ver = muxer.probe().await.expect("ffmpeg probe should succeed");
+            assert!(ver.contains("ffmpeg"), "unexpected version line: {ver}");
+            assert!(!ver.contains('\n'));
+        }
+    }
+
+    #[tokio::test]
+    async fn ffmpeg_failure_cleans_up_part_and_returns_error() {
+        if !has_ffmpeg().await {
             return;
         }
+
+        let dir = TempDir::new().unwrap();
+        let bad_video = dir.path().join("corrupt.m4s");
+        std::fs::write(&bad_video, b"not a valid media stream").unwrap();
+        let output = dir.path().join("out.mp4");
+
+        let muxer = FfmpegMuxer::new(None);
+        let err = muxer
+            .mux(MuxRequest {
+                video: Some(bad_video),
+                audio: None,
+                output: output.clone(),
+                ..Default::default()
+            })
+            .await
+            .unwrap_err();
+
+        assert!(
+            err.to_string().contains("ffmpeg mux failed"),
+            "expected ffmpeg failure error, got: {err}"
+        );
+        assert!(!output.exists(), "final output must not exist on failure");
+        assert!(
+            list_part_files(dir.path()).is_empty(),
+            "all .part files must be removed on failure"
+        );
+    }
+
+    #[tokio::test]
+    async fn ffmpeg_mux_valid_video_and_audio_succeeds_atomically_with_comment_tag() {
+        if !has_ffmpeg().await {
+            return;
+        }
+
+        let dir = TempDir::new().unwrap();
+        let Some((vid, aud, _)) = generate_synthetic_streams(dir.path()).await else {
+            return;
+        };
+        let out = dir.path().join("muxed.mp4");
+        let comment = "fav:aid=170001;cid=279786";
 
         let muxer = FfmpegMuxer::new(None);
         muxer
@@ -636,6 +938,8 @@ mod tests {
                 video: Some(vid),
                 audio: Some(aud),
                 output: out.clone(),
+                metadata_comment: Some(comment.to_string()),
+                ..Default::default()
             })
             .await
             .expect("mux should succeed");
@@ -646,6 +950,122 @@ mod tests {
             list_part_files(dir.path()).is_empty(),
             "no leftover .part files after success"
         );
+
+        let read_back = muxer.read_comment_tag(&out).await.unwrap();
+        assert_eq!(read_back.as_deref(), Some(comment));
+    }
+
+    #[tokio::test]
+    async fn ffmpeg_audio_only_formats_durl_strip_and_comment_roundtrip() {
+        if !has_ffmpeg().await {
+            return;
+        }
+
+        let dir = TempDir::new().unwrap();
+        let Some((_vid, aud, durl)) = generate_synthetic_streams(dir.path()).await else {
+            return;
+        };
+        let muxer = FfmpegMuxer::new(None);
+
+        let cases: &[(&str, AudioFormat, Option<&str>, &str)] = &[
+            (
+                "dash_copy.m4a",
+                AudioFormat::Copy,
+                Some("mp4a.40.2"),
+                "fav:aid=10;cid=101",
+            ),
+            (
+                "dash_m4a.m4a",
+                AudioFormat::M4a,
+                Some("mp4a.40.2"),
+                "fav:aid=10;cid=102",
+            ),
+            (
+                "dash_mp3.mp3",
+                AudioFormat::Mp3,
+                Some("mp4a.40.2"),
+                "fav:aid=10;cid=103",
+            ),
+            (
+                "dash_flac.flac",
+                AudioFormat::Flac,
+                Some("mp4a.40.2"),
+                "fav:aid=10;cid=104",
+            ),
+            (
+                "dash_opus.opus",
+                AudioFormat::Opus,
+                Some("mp4a.40.2"),
+                "fav:aid=10;cid=105",
+            ),
+        ];
+
+        for (file_name, fmt, src_codec, tag) in cases {
+            let out = dir.path().join(file_name);
+            muxer
+                .mux(MuxRequest {
+                    video: None,
+                    audio: Some(aud.clone()),
+                    output: out.clone(),
+                    audio_format: Some(*fmt),
+                    source_audio_codec: src_codec.map(str::to_string),
+                    metadata_comment: Some((*tag).to_string()),
+                })
+                .await
+                .unwrap_or_else(|e| panic!("audio mux failed for {file_name}: {e:#}"));
+
+            assert!(out.is_file(), "missing output {file_name}");
+            assert!(std::fs::metadata(&out).unwrap().len() > 0);
+            let stream_types = ffprobe_stream_types(&out).await;
+            assert!(
+                !stream_types.iter().any(|s| s == "video"),
+                "{file_name} must have 0 video streams, got: {stream_types:?}"
+            );
+            assert!(
+                stream_types.iter().any(|s| s == "audio"),
+                "{file_name} must have an audio stream, got: {stream_types:?}"
+            );
+            let read_back = muxer.read_comment_tag(&out).await.unwrap();
+            assert_eq!(
+                read_back.as_deref(),
+                Some(*tag),
+                "metadata comment roundtrip failed for {file_name}"
+            );
+        }
+
+        // Legacy durl audio extraction: video+audio input with audio_format=Some(M4a) strips video (-vn)
+        let durl_audio_out = dir.path().join("durl_audio.m4a");
+        let durl_tag = "fav:aid=99;cid=991";
+        muxer
+            .mux(MuxRequest {
+                video: Some(durl),
+                audio: None,
+                output: durl_audio_out.clone(),
+                audio_format: Some(AudioFormat::M4a),
+                source_audio_codec: None,
+                metadata_comment: Some(durl_tag.to_string()),
+            })
+            .await
+            .expect("durl audio extraction should succeed");
+
+        let durl_streams = ffprobe_stream_types(&durl_audio_out).await;
+        assert!(
+            !durl_streams.iter().any(|s| s == "video"),
+            "durl audio extraction must produce 0 video streams, got: {durl_streams:?}"
+        );
+        assert!(
+            durl_streams.iter().any(|s| s == "audio"),
+            "durl audio extraction must contain an audio stream, got: {durl_streams:?}"
+        );
+        assert_eq!(
+            muxer
+                .read_comment_tag(&durl_audio_out)
+                .await
+                .unwrap()
+                .as_deref(),
+            Some(durl_tag)
+        );
+        assert!(list_part_files(dir.path()).is_empty());
     }
 
     #[cfg(unix)]
@@ -687,6 +1107,7 @@ mod tests {
             video: Some(dummy_in),
             audio: None,
             output: output.clone(),
+            ..Default::default()
         });
 
         // Poll the mux future concurrently while waiting until the child creates the .part file.
@@ -757,7 +1178,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mock_muxer_records_requests() {
+    async fn mock_muxer_records_requests_and_reads_comment_tags() {
         let dir = TempDir::new().unwrap();
         let out = dir.path().join("mock.mp4");
         let mock = test_support::MockMuxer::succeeding();
@@ -765,11 +1186,25 @@ mod tests {
             video: Some(dir.path().join("v.m4s")),
             audio: Some(dir.path().join("a.m4s")),
             output: out.clone(),
+            metadata_comment: Some("fav:aid=7;cid=77".to_string()),
+            ..Default::default()
         })
         .await
         .unwrap();
         assert_eq!(mock.requests().len(), 1);
         assert!(out.exists());
         assert!(mock.probe().await.unwrap().contains("mock"));
+        assert_eq!(
+            mock.read_comment_tag(&out).await.unwrap().as_deref(),
+            Some("fav:aid=7;cid=77")
+        );
+
+        // Copied file still resolves stub tag in MockMuxer for cross-disk rename simulation
+        let copied = dir.path().join("copied_unrelated.mp4");
+        std::fs::copy(&out, &copied).unwrap();
+        assert_eq!(
+            mock.read_comment_tag(&copied).await.unwrap().as_deref(),
+            Some("fav:aid=7;cid=77")
+        );
     }
 }

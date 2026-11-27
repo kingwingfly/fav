@@ -17,6 +17,8 @@ pub struct Model {
     pub up_id: i64,
     pub name: String,
     pub state: String,
+    pub sync_complete: bool,
+    pub resume_page: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -24,6 +26,8 @@ pub enum Column {
     UpId,
     Name,
     State,
+    SyncComplete,
+    ResumePage,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -51,6 +55,8 @@ impl ColumnTrait for Column {
             Self::UpId => ColumnType::BigInteger.def(),
             Self::Name => ColumnType::String(StringLen::None).def(),
             Self::State => ColumnType::custom("enum_text").def(),
+            Self::SyncComplete => ColumnType::Boolean.def(),
+            Self::ResumePage => ColumnType::Integer.def().null(),
         }
     }
 }

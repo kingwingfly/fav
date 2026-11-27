@@ -9,6 +9,7 @@ use std::{
 use fav_bili::{
     config::Workspace,
     muxer::{FfmpegMuxer, MuxRequest, Muxer as _},
+    state::AudioFormat,
 };
 
 fn list_part_files(dir: &Path) -> Vec<PathBuf> {
@@ -80,6 +81,7 @@ async fn real_ffmpeg_mux_video_and_audio_produces_valid_dual_stream_mp4_without_
             video: Some(video),
             audio: Some(audio),
             output: output.clone(),
+            ..Default::default()
         })
         .await
         .expect("real ffmpeg mux should succeed");
@@ -134,6 +136,7 @@ async fn real_ffmpeg_corrupt_input_returns_stderr_error_and_cleans_up_part() {
             video: Some(bad_video),
             audio: Some(bad_audio),
             output: output.clone(),
+            ..Default::default()
         })
         .await
         .expect_err("corrupt inputs must fail muxing");
@@ -170,6 +173,7 @@ async fn real_ffmpeg_cancellation_kills_child_process_and_removes_part() {
         video: Some(dummy_v),
         audio: None,
         output: output.clone(),
+        ..Default::default()
     });
 
     // Poll until the wrapper has started `exec ffmpeg` and written its PID + .part file.
@@ -241,6 +245,7 @@ async fn panic_unwind_kills_child_cleans_part_and_releases_workspace_lock() {
             video: Some(dummy_v),
             audio: None,
             output,
+            ..Default::default()
         });
 
         tokio::select! {
@@ -292,4 +297,183 @@ async fn panic_unwind_kills_child_cleans_part_and_releases_workspace_lock() {
     let _relock = ws2
         .acquire_lock()
         .expect("WorkspaceLock should be released after panic unwind");
+}
+
+fn ffprobe_stream_entries(path: &Path, entry: &str) -> Vec<String> {
+    let probe = Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-show_entries",
+            entry,
+            "-of",
+            "default=noprint_wrappers=1:nokey=1",
+        ])
+        .arg(path)
+        .output()
+        .expect("run ffprobe");
+    assert!(
+        probe.status.success(),
+        "ffprobe failed on {}: {}",
+        path.display(),
+        String::from_utf8_lossy(&probe.stderr)
+    );
+    String::from_utf8_lossy(&probe.stdout)
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect()
+}
+
+#[tokio::test]
+async fn real_ffmpeg_audio_only_formats_durl_vn_and_comment_tag_roundtrip() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (video, audio) = common::generate_tiny_av_streams(tmp.path());
+    let durl = common::generate_tiny_durl_mp4(tmp.path(), &video, &audio);
+    let output_dir = tmp.path().join("out");
+    std::fs::create_dir_all(&output_dir).unwrap();
+
+    let muxer = FfmpegMuxer::new(None);
+
+    // 1. Standard dual-stream MP4 with metadata_comment -> read_comment_tag roundtrip.
+    let dual_out = output_dir.join("dual_tagged.mp4");
+    let dual_tag = "fav:aid=170001;cid=279786";
+    muxer
+        .mux(MuxRequest {
+            video: Some(video),
+            audio: Some(audio.clone()),
+            output: dual_out.clone(),
+            metadata_comment: Some(dual_tag.to_owned()),
+            ..Default::default()
+        })
+        .await
+        .expect("dual mux with metadata_comment should succeed");
+    assert_eq!(
+        muxer.read_comment_tag(&dual_out).await.unwrap().as_deref(),
+        Some(dual_tag)
+    );
+
+    // 2. DASH audio-only across all 5 AudioFormat variants: copy, m4a, mp3, flac, opus.
+    let cases: &[(&str, AudioFormat, Option<&str>, &str, &str)] = &[
+        (
+            "audio_copy.m4a",
+            AudioFormat::Copy,
+            Some("mp4a.40.2"),
+            "aac",
+            "fav:aid=201;cid=301",
+        ),
+        (
+            "audio_m4a_copy.m4a",
+            AudioFormat::M4a,
+            Some("mp4a.40.2"),
+            "aac",
+            "fav:aid=202;cid=302",
+        ),
+        (
+            "audio_m4a_transcode.m4a",
+            AudioFormat::M4a,
+            None,
+            "aac",
+            "fav:aid=203;cid=303",
+        ),
+        (
+            "audio_mp3.mp3",
+            AudioFormat::Mp3,
+            Some("mp4a.40.2"),
+            "mp3",
+            "fav:aid=204;cid=304",
+        ),
+        (
+            "audio_flac.flac",
+            AudioFormat::Flac,
+            Some("mp4a.40.2"),
+            "flac",
+            "fav:aid=205;cid=305",
+        ),
+        (
+            "audio_opus.opus",
+            AudioFormat::Opus,
+            Some("mp4a.40.2"),
+            "opus",
+            "fav:aid=206;cid=306",
+        ),
+    ];
+
+    for (name, fmt, src_codec, expected_codec, tag) in cases {
+        let out = output_dir.join(name);
+        muxer
+            .mux(MuxRequest {
+                video: None,
+                audio: Some(audio.clone()),
+                output: out.clone(),
+                audio_format: Some(*fmt),
+                source_audio_codec: src_codec.map(str::to_owned),
+                metadata_comment: Some((*tag).to_owned()),
+            })
+            .await
+            .unwrap_or_else(|e| panic!("mux failed for {name}: {e:#}"));
+
+        assert!(out.is_file(), "missing {name}");
+        assert!(std::fs::metadata(&out).unwrap().len() > 0);
+        let types = ffprobe_stream_entries(&out, "stream=codec_type");
+        assert_eq!(types, vec!["audio"], "expected audio-only for {name}");
+        let codecs = ffprobe_stream_entries(&out, "stream=codec_name");
+        assert_eq!(
+            codecs,
+            vec![(*expected_codec).to_owned()],
+            "unexpected codec for {name}"
+        );
+        assert_eq!(
+            muxer.read_comment_tag(&out).await.unwrap().as_deref(),
+            Some(*tag),
+            "comment tag roundtrip failed for {name}"
+        );
+    }
+
+    // 3. Legacy `durl` dual-stream MP4 with `-vn` audio extraction (copy + mp3).
+    for (name, fmt, expected_codec, tag) in [
+        (
+            "durl_copy.m4a",
+            AudioFormat::Copy,
+            "aac",
+            "fav:aid=301;cid=401",
+        ),
+        (
+            "durl_mp3.mp3",
+            AudioFormat::Mp3,
+            "mp3",
+            "fav:aid=302;cid=402",
+        ),
+    ] {
+        let out = output_dir.join(name);
+        muxer
+            .mux(MuxRequest {
+                video: Some(durl.clone()),
+                audio: None,
+                output: out.clone(),
+                audio_format: Some(fmt),
+                source_audio_codec: None,
+                metadata_comment: Some(tag.to_owned()),
+            })
+            .await
+            .unwrap_or_else(|e| panic!("durl -vn mux failed for {name}: {e:#}"));
+
+        let types = ffprobe_stream_entries(&out, "stream=codec_type");
+        assert_eq!(
+            types,
+            vec!["audio"],
+            "durl -vn extraction must strip video stream for {name}"
+        );
+        let codecs = ffprobe_stream_entries(&out, "stream=codec_name");
+        assert_eq!(codecs, vec![expected_codec.to_owned()]);
+        assert_eq!(
+            muxer.read_comment_tag(&out).await.unwrap().as_deref(),
+            Some(tag)
+        );
+    }
+
+    assert!(
+        list_part_files(&output_dir).is_empty(),
+        "no stale .part files may remain"
+    );
 }

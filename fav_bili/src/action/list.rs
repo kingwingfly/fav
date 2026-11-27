@@ -6,7 +6,7 @@ use crate::{
     context::AppContext,
     db::{AccountFilter, MediaFilter, MediaSort, SetFilter, UpFilter},
     error::{AppError, AppResult},
-    state::{AccountState, MediaState, SetState, UpState},
+    state::{AccountState, MediaState, SetKind, SetState, UpState},
     table::{
         OutputFormat, TableOptions, format_state_badge, render_ids, render_json, render_jsonl,
         render_table, render_tsv, write_stdout_line,
@@ -26,6 +26,7 @@ pub struct ListOptions {
     pub format: OutputFormat,
     pub wide: bool,
     pub state: Option<String>,
+    pub kind: Option<String>,
     pub set_id: Option<i64>,
     pub up_id: Option<i64>,
     pub account_id: Option<i64>,
@@ -153,6 +154,12 @@ pub async fn render_list(
             if opts.inactive_only {
                 states.push(SetState::Inactive);
             }
+            let set_kind = match opts.kind.as_deref() {
+                Some(raw) if !raw.trim().is_empty() => Some(
+                    SetKind::from_str(raw.trim()).map_err(|e| AppError::usage(anyhow!("{e}")))?,
+                ),
+                _ => None,
+            };
             let sort = parse_sort_spec(opts.sort.as_deref());
             let mut rows = ctx
                 .db
@@ -160,6 +167,7 @@ pub async fn render_list(
                     states,
                     active_only: opts.active_only,
                     account_id: opts.account_id,
+                    kind: set_kind,
                     search: opts.search.clone(),
                     limit: if sort.is_none() { opts.limit } else { None },
                 })
@@ -167,6 +175,8 @@ pub async fn render_list(
             if let Some((field, desc)) = sort {
                 match field.as_str() {
                     "id" | "set_id" => rows.sort_by_key(|s| s.set_id),
+                    "kind" => rows
+                        .sort_by(|a, b| a.kind.cmp(&b.kind).then_with(|| a.set_id.cmp(&b.set_id))),
                     "name" => rows.sort_by(|a, b| {
                         a.name
                             .to_lowercase()
@@ -181,7 +191,7 @@ pub async fn render_list(
                     }),
                     other => {
                         return Err(AppError::usage(anyhow!(
-                            "invalid sort field '{other}' for sets (expected: id, name, count, state)"
+                            "invalid sort field '{other}' for sets (expected: id, kind, name, count, state)"
                         )));
                     }
                 }
@@ -195,10 +205,11 @@ pub async fn render_list(
             let count = rows.len();
             let rendered = match opts.format {
                 OutputFormat::Table => render_table(
-                    ["set_id", "name", "count", "state"],
+                    ["set_id", "kind", "name", "count", "state"],
                     rows.iter().map(|s| {
                         [
                             s.set_id.to_string(),
+                            s.kind.clone(),
                             table_opts.format_cell(&s.name, 38),
                             s.count.to_string(),
                             format_state_badge(&s.state, table_opts.colored),
@@ -209,10 +220,11 @@ pub async fn render_list(
                 OutputFormat::Json => render_json(&rows)?,
                 OutputFormat::Jsonl => render_jsonl(&rows)?,
                 OutputFormat::Tsv => render_tsv(
-                    ["set_id", "name", "count", "state"],
+                    ["set_id", "kind", "name", "count", "state"],
                     rows.iter().map(|s| {
                         [
                             s.set_id.to_string(),
+                            s.kind.clone(),
                             s.name.clone(),
                             s.count.to_string(),
                             s.state.clone(),
@@ -388,4 +400,115 @@ pub async fn list(ctx: &AppContext, kind: ListKind, opts: ListOptions) -> AppRes
         ctx.hint(hint);
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::*;
+    use crate::{
+        api::BiliClientConfig,
+        config::{Config, Workspace},
+        db::Db,
+        entity::set,
+        error::ExitKind,
+        muxer::test_support::MockMuxer,
+    };
+
+    #[tokio::test]
+    async fn list_sets_displays_and_filters_by_kind() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ws = Workspace::new(tmp.path().to_path_buf());
+        ws.ensure_dirs().unwrap();
+        let db = Db::open_in_memory().await.unwrap();
+        db.upsert_sets([
+            set::Model {
+                set_id: 1,
+                name: "My Created".to_owned(),
+                count: 5,
+                state: SetState::Active.to_string(),
+                kind: SetKind::Created.to_string(),
+                owner_mid: Some(10),
+                sync_complete: true,
+                resume_page: None,
+            },
+            set::Model {
+                set_id: 2,
+                name: "Other Folder".to_owned(),
+                count: 3,
+                state: SetState::Inactive.to_string(),
+                kind: SetKind::Collected.to_string(),
+                owner_mid: Some(20),
+                sync_complete: false,
+                resume_page: None,
+            },
+            set::Model {
+                set_id: 3,
+                name: "Course Season".to_owned(),
+                count: 12,
+                state: SetState::Inactive.to_string(),
+                kind: SetKind::Season.to_string(),
+                owner_mid: Some(30),
+                sync_complete: false,
+                resume_page: None,
+            },
+        ])
+        .await
+        .unwrap();
+
+        let ctx = AppContext::for_test(
+            ws,
+            Config::default(),
+            db,
+            Arc::new(MockMuxer::succeeding()),
+            BiliClientConfig::default(),
+        );
+
+        let (tsv, count) = render_list(
+            &ctx,
+            ListKind::Set,
+            &ListOptions {
+                format: OutputFormat::Tsv,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(count, 3);
+        let lines: Vec<&str> = tsv.lines().collect();
+        assert_eq!(lines[0], "set_id\tkind\tname\tcount\tstate");
+        assert!(lines[1].starts_with("1\tCreated\tMy Created\t5\tActive"));
+        assert!(lines[2].starts_with("2\tCollected\tOther Folder\t3\tInactive"));
+        assert!(lines[3].starts_with("3\tSeason\tCourse Season\t12\tInactive"));
+
+        let (table, season_count) = render_list(
+            &ctx,
+            ListKind::Set,
+            &ListOptions {
+                format: OutputFormat::Table,
+                kind: Some("season".to_owned()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(season_count, 1);
+        assert!(table.contains("kind"));
+        assert!(table.contains("Season"));
+        assert!(table.contains("Course Season"));
+        assert!(!table.contains("My Created"));
+
+        let err = render_list(
+            &ctx,
+            ListKind::Set,
+            &ListOptions {
+                kind: Some("bogus".to_owned()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.kind(), ExitKind::Usage);
+    }
 }

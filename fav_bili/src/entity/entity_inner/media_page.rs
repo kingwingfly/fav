@@ -21,6 +21,8 @@ pub struct Model {
     pub state: String,
     pub local_path: Option<String>,
     pub downloaded_at: Option<i64>,
+    pub file_size: Option<i64>,
+    pub file_inode: Option<i64>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -32,6 +34,8 @@ pub enum Column {
     State,
     LocalPath,
     DownloadedAt,
+    FileSize,
+    FileInode,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -63,6 +67,8 @@ impl ColumnTrait for Column {
             Self::State => ColumnType::String(StringLen::None).def(),
             Self::LocalPath => ColumnType::String(StringLen::None).def().null(),
             Self::DownloadedAt => ColumnType::BigInteger.def().null(),
+            Self::FileSize => ColumnType::BigInteger.def().null(),
+            Self::FileInode => ColumnType::BigInteger.def().null(),
         }
     }
 }

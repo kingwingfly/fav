@@ -106,7 +106,7 @@ pub async fn deactivate(
                     .map(|s| PickerItem {
                         id: s.set_id,
                         label: s.name.clone(),
-                        meta: format!("{} medias, {}", s.count, s.state),
+                        meta: format!("{} medias, {}, {}", s.count, s.kind, s.state),
                         selected: false,
                     })
                     .collect();

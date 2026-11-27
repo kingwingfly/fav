@@ -37,6 +37,9 @@ pub struct MockAccount {
     pub is_login: bool,
     pub nav_code: i64,
     pub sets: Vec<MockSet>,
+    pub collected_sets: Vec<MockCollectedSet>,
+    /// Optional page number on `/x/v3/fav/folder/collected/list` that should return an API error.
+    pub collected_error_page: Option<i64>,
     pub followings: Vec<MockUp>,
     /// Optional page number on `/x/relation/followings` that should return an API error.
     pub following_error_page: Option<i64>,
@@ -50,6 +53,8 @@ impl MockAccount {
             is_login: true,
             nav_code: 0,
             sets: Vec::new(),
+            collected_sets: Vec::new(),
+            collected_error_page: None,
             followings: Vec::new(),
             following_error_page: None,
         }
@@ -61,6 +66,20 @@ pub struct MockSet {
     pub id: i64,
     pub title: String,
     pub media_count: i64,
+}
+
+#[derive(Debug, Clone)]
+pub struct MockCollectedSet {
+    pub id: i64,
+    pub mid: i64,
+    pub title: String,
+    pub media_count: i64,
+    /// `11` = collected favorite folder, `21` = video collection/season.
+    pub set_type: u8,
+    pub attr: i64,
+    /// `0` = normal, non-zero (e.g. `1`) = invalidated/unreachable.
+    pub state: i64,
+    pub upper: Option<MockUp>,
 }
 
 #[derive(Debug, Clone)]
@@ -164,6 +183,11 @@ pub struct MockState {
     pub accounts_by_sessdata: HashMap<String, MockAccount>,
     /// Keyed by `set_id`.
     pub set_medias: HashMap<i64, Vec<MockMediaItem>>,
+    /// Optional page number on `/x/v3/fav/resource/list` (keyed by `set_id`) that returns an error.
+    pub set_error_page: HashMap<i64, i64>,
+    /// Keyed by `(owner_mid, season_id)` in chronological/oldest-first order
+    /// (reversed when `sort_reverse=true` is requested).
+    pub season_archives: HashMap<(i64, i64), Vec<MockMediaItem>>,
     /// Keyed by `up_id`.
     pub up_medias: HashMap<i64, Vec<MockMediaItem>>,
     /// Keyed by `aid`.
@@ -248,6 +272,31 @@ impl MockBiliServer {
             .iter()
             .filter(|r| r.path.starts_with(path_prefix))
             .count()
+    }
+
+    pub fn requests_for(&self, path: &str) -> Vec<RecordedRequest> {
+        self.state
+            .lock()
+            .unwrap()
+            .requests
+            .iter()
+            .filter(|r| r.path == path)
+            .cloned()
+            .collect()
+    }
+
+    pub fn cdn_hits(&self, path: &str) -> usize {
+        self.state
+            .lock()
+            .unwrap()
+            .cdn_assets
+            .get(path)
+            .map(|a| a.hits)
+            .unwrap_or(0)
+    }
+
+    pub fn clear_requests(&self) {
+        self.state.lock().unwrap().requests.clear();
     }
 }
 
@@ -472,24 +521,131 @@ fn route_request(
                 json!({ "code": 0, "message": "0", "data": { "list": [], "total": 0 } })
             }
         }
-        "/x/v3/fav/resource/list" => {
-            let media_id: i64 = q.get("media_id").and_then(|v| v.parse().ok()).unwrap_or(0);
-            let pn: usize = q.get("pn").and_then(|v| v.parse().ok()).unwrap_or(1);
-            let ps: usize = q.get("ps").and_then(|v| v.parse().ok()).unwrap_or(20);
-            let items = st.set_medias.get(&media_id).cloned().unwrap_or_default();
-            let start = (pn.saturating_sub(1)) * ps;
-            let has_more = start + ps < items.len();
-            let medias: Vec<Value> = items
+        "/x/v3/fav/folder/collected/list" => {
+            if q.get("platform").map(String::as_str) != Some("web") {
+                json!({ "code": -400, "message": "missing platform=web", "data": null })
+            } else {
+                let up_mid: i64 = q.get("up_mid").and_then(|v| v.parse().ok()).unwrap_or(0);
+                let pn: usize = q.get("pn").and_then(|v| v.parse().ok()).unwrap_or(1);
+                let ps: usize = q.get("ps").and_then(|v| v.parse().ok()).unwrap_or(20);
+                if let Some(acc) = st.accounts_by_sessdata.values().find(|a| a.mid == up_mid) {
+                    if acc.collected_error_page == Some(pn as i64) {
+                        json!({ "code": -400, "message": "simulated collected page error", "data": null })
+                    } else {
+                        let start = (pn.saturating_sub(1)) * ps;
+                        let has_more = start + ps < acc.collected_sets.len();
+                        let list: Vec<Value> = acc
+                            .collected_sets
+                            .iter()
+                            .skip(start)
+                            .take(ps)
+                            .map(|s| {
+                                let upper = s
+                                    .upper
+                                    .as_ref()
+                                    .map(|u| json!({ "mid": u.mid, "name": u.name }))
+                                    .unwrap_or(Value::Null);
+                                json!({
+                                    "id": s.id,
+                                    "mid": s.mid,
+                                    "title": s.title,
+                                    "media_count": s.media_count,
+                                    "type": s.set_type,
+                                    "attr": s.attr,
+                                    "state": s.state,
+                                    "upper": upper,
+                                })
+                            })
+                            .collect();
+                        json!({
+                            "code": 0,
+                            "message": "0",
+                            "data": {
+                                "count": acc.collected_sets.len(),
+                                "has_more": has_more,
+                                "list": list,
+                            }
+                        })
+                    }
+                } else {
+                    json!({
+                        "code": 0,
+                        "message": "0",
+                        "data": { "count": 0, "has_more": false, "list": [] }
+                    })
+                }
+            }
+        }
+        "/x/polymer/web-space/seasons_archives_list" => {
+            let mid: i64 = q.get("mid").and_then(|v| v.parse().ok()).unwrap_or(0);
+            let season_id: i64 = q.get("season_id").and_then(|v| v.parse().ok()).unwrap_or(0);
+            let page_num: usize = q.get("page_num").and_then(|v| v.parse().ok()).unwrap_or(1);
+            let page_size: usize = q
+                .get("page_size")
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(30);
+            let sort_reverse = q
+                .get("sort_reverse")
+                .is_some_and(|v| v.eq_ignore_ascii_case("true"));
+            let mut items = st
+                .season_archives
+                .get(&(mid, season_id))
+                .cloned()
+                .unwrap_or_default();
+            if sort_reverse {
+                items.reverse();
+            }
+            let total = items.len();
+            let start = (page_num.saturating_sub(1)) * page_size;
+            let archives: Vec<Value> = items
                 .iter()
                 .skip(start)
-                .take(ps)
-                .map(media_item_json)
+                .take(page_size)
+                .map(|item| {
+                    json!({
+                        "aid": item.id,
+                        "bvid": item.bvid,
+                        "title": item.title,
+                        "type": item.media_type,
+                        "attr": item.attr,
+                    })
+                })
                 .collect();
             json!({
                 "code": 0,
                 "message": "0",
-                "data": { "medias": medias, "has_more": has_more }
+                "data": {
+                    "archives": archives,
+                    "page": {
+                        "page_num": page_num,
+                        "page_size": page_size,
+                        "total": total,
+                    }
+                }
             })
+        }
+        "/x/v3/fav/resource/list" => {
+            let media_id: i64 = q.get("media_id").and_then(|v| v.parse().ok()).unwrap_or(0);
+            let pn: usize = q.get("pn").and_then(|v| v.parse().ok()).unwrap_or(1);
+            let ps: usize = q.get("ps").and_then(|v| v.parse().ok()).unwrap_or(20);
+            if st.set_error_page.get(&media_id).copied() == Some(pn as i64) {
+                json!({ "code": -400, "message": "simulated set page error", "data": null })
+            } else {
+                let items = st.set_medias.get(&media_id).cloned().unwrap_or_default();
+                let start = (pn.saturating_sub(1)) * ps;
+                let has_more = start + ps < items.len();
+                let medias: Vec<Value> = items
+                    .iter()
+                    .skip(start)
+                    .take(ps)
+                    .map(media_item_json)
+                    .collect();
+                json!({
+                    "code": 0,
+                    "message": "0",
+                    "data": { "medias": medias, "has_more": has_more }
+                })
+            }
         }
         "/x/space/navnum" => {
             let mid: i64 = q.get("mid").and_then(|v| v.parse().ok()).unwrap_or(0);
@@ -823,4 +979,20 @@ pub fn generate_tiny_av_streams(dir: &Path) -> (PathBuf, PathBuf) {
     assert!(a_status.success(), "ffmpeg failed generating sample audio");
 
     (video, audio)
+}
+
+/// Mux tiny video + audio files into a single dual-stream MP4 (simulating legacy `durl` streams).
+pub fn generate_tiny_durl_mp4(dir: &Path, video: &Path, audio: &Path) -> PathBuf {
+    let durl = dir.join("sample_durl.mp4");
+    let status = Command::new("ffmpeg")
+        .args(["-hide_banner", "-loglevel", "error", "-y", "-i"])
+        .arg(video)
+        .arg("-i")
+        .arg(audio)
+        .args(["-c", "copy"])
+        .arg(&durl)
+        .status()
+        .expect("run ffmpeg to generate sample durl mp4");
+    assert!(status.success(), "ffmpeg failed generating sample durl mp4");
+    durl
 }

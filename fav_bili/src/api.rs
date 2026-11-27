@@ -32,14 +32,16 @@ use crate::{
         set_cookie_in_jar,
     },
     payload::{
-        ConfirmRefreshPayload, CookieRefreshPayload, DashPayload, FollowingNumPayload,
-        FollowingUpPayload, InSetPayload, InUpPayload, LikePayload, ListSetPayload, LogoutPayload,
-        MediaInfoPayload, PublishNumPayload, QrPollPayload, TicketPayload,
+        CollectedSetsPayload, ConfirmRefreshPayload, CookieRefreshPayload, DashPayload,
+        FollowingNumPayload, FollowingUpPayload, InSetPayload, InUpPayload, LikePayload,
+        ListSetPayload, LogoutPayload, MediaInfoPayload, PublishNumPayload, QrPollPayload,
+        SeasonArchivesPayload, TicketPayload,
     },
     response::{
-        AccountInfo, BiliEnvelope, Buvid3Data, CookieInfoData, CookieRefreshData, DashData,
-        FollowingNumData, FollowingUpData, InSetData, InUpData, ListSetData, LogoutResp,
-        MediaInfoData, PublishNumData, QrData, QrPollData, Set, TicketData,
+        AccountInfo, BiliEnvelope, Buvid3Data, CollectedSetsData, CookieInfoData,
+        CookieRefreshData, DashData, FollowingNumData, FollowingUpData, InSetData, InUpData,
+        ListSetData, LogoutResp, MediaInfoData, PublishNumData, QrData, QrPollData,
+        SeasonArchivesData, Set, TicketData,
     },
     wbi::{WbiCache, WbiEncoder},
 };
@@ -443,6 +445,43 @@ impl BiliClient {
         Ok(env.data.map(|d| d.list).unwrap_or_default())
     }
 
+    pub async fn list_collected_sets(
+        &self,
+        up_mid: i64,
+        pn: i64,
+        ps: u8,
+    ) -> Result<CollectedSetsData> {
+        let path = "/x/v3/fav/folder/collected/list";
+        let url = join_url(&self.config.api_base_url, path)?;
+        let payload = CollectedSetsPayload::new(up_mid, pn, ps);
+        for attempt in 0..=self.config.max_retries {
+            let env: BiliEnvelope<CollectedSetsData> = self
+                .send_json_with_retry(path, || {
+                    self.client
+                        .get(url.clone())
+                        .timeout(self.config.api_request_timeout)
+                        .query(&payload)
+                })
+                .await?;
+            if env.code == 0 {
+                return Ok(env.data.unwrap_or_default());
+            }
+            let api_err = BiliApiError::new(env.code, env.message, path);
+            if api_err.is_retryable() && attempt < self.config.max_retries {
+                warn!(
+                    path,
+                    code = api_err.code,
+                    attempt = attempt + 1,
+                    "Transient Bilibili API error; backing off and retrying"
+                );
+                self.sleep_backoff(attempt).await;
+                continue;
+            }
+            return Err(api_err.into());
+        }
+        unreachable!("retry loop always returns")
+    }
+
     pub async fn following_count(&self, vmid: i64) -> Result<i64> {
         let data: FollowingNumData = self
             .get_envelope(
@@ -467,7 +506,23 @@ impl BiliClient {
         self.get_envelope(
             &self.config.api_base_url,
             "/x/v3/fav/resource/list",
-            &InSetPayload { media_id, pn, ps },
+            &InSetPayload::new(media_id, pn, ps),
+        )
+        .await
+    }
+
+    pub async fn season_archives(
+        &self,
+        mid: i64,
+        season_id: i64,
+        page_num: i64,
+        page_size: u8,
+        sort_reverse: bool,
+    ) -> Result<SeasonArchivesData> {
+        let payload = SeasonArchivesPayload::new(mid, season_id, page_num, page_size, sort_reverse);
+        self.get_wbi(
+            "/x/polymer/web-space/seasons_archives_list",
+            payload.to_wbi_params(),
         )
         .await
     }
@@ -1371,5 +1426,103 @@ mod tests {
         assert_eq!(r1, 11);
         assert_eq!(r2, 22);
         assert!(!c2.export_cookie_map().contains_key("extra"));
+    }
+
+    #[tokio::test]
+    async fn archive_and_set_endpoints_send_expected_query_params() {
+        let seen_paths = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let seen_c = seen_paths.clone();
+
+        let base = spawn_mock_server(move |path, _req| {
+            seen_c.lock().unwrap().push(path.clone());
+            if path.starts_with("/x/web-interface/nav") {
+                let body = r#"{
+                    "code": 0,
+                    "data": {
+                        "isLogin": true,
+                        "mid": 42,
+                        "uname": "tester",
+                        "wbi_img": {
+                            "img_url": "https://i0.hdslb.com/bfs/wbi/7cd084941338484aae1ad9425b84077c.png",
+                            "sub_url": "https://i0.hdslb.com/bfs/wbi/4932caff0ff746eab6f01bf08b70ac45.png"
+                        }
+                    }
+                }"#;
+                (
+                    200,
+                    vec![("Content-Type".into(), "application/json".into())],
+                    body.as_bytes().to_vec(),
+                )
+            } else if path.starts_with("/x/v3/fav/resource/list") {
+                let body = r#"{"code": 0, "data": {"medias": [], "has_more": false}}"#;
+                (
+                    200,
+                    vec![("Content-Type".into(), "application/json".into())],
+                    body.as_bytes().to_vec(),
+                )
+            } else if path.starts_with("/x/v3/fav/folder/collected/list") {
+                let body = r#"{"code": 0, "data": {"count": 1, "has_more": false, "list": [{"id": 500, "mid": 77, "title": "SeasonA", "media_count": 3, "type": 21, "state": 0}]}}"#;
+                (
+                    200,
+                    vec![("Content-Type".into(), "application/json".into())],
+                    body.as_bytes().to_vec(),
+                )
+            } else if path.starts_with("/x/polymer/web-space/seasons_archives_list") {
+                let body = r#"{"code": 0, "data": {"archives": [{"aid": 99, "bvid": "BV1xx411c7mD", "title": "Ep1"}], "page": {"page_num": 1, "page_size": 30, "total": 1}}}"#;
+                (
+                    200,
+                    vec![("Content-Type".into(), "application/json".into())],
+                    body.as_bytes().to_vec(),
+                )
+            } else {
+                (404, vec![], b"{}".to_vec())
+            }
+        })
+        .await;
+
+        let client = BiliClient::with_config("SESSDATA=ok", test_config(base)).unwrap();
+
+        let _ = client.set_medias(123, 1, 20).await.unwrap();
+        let collected = client.list_collected_sets(42, 1, 20).await.unwrap();
+        assert_eq!(collected.list.len(), 1);
+        assert_eq!(collected.list[0].id, 500);
+
+        let archives = client.season_archives(77, 500, 1, 30, true).await.unwrap();
+        assert_eq!(archives.archives.len(), 1);
+        assert_eq!(archives.archives[0].id, 99);
+
+        let paths = seen_paths.lock().unwrap().clone();
+        let set_req = paths
+            .iter()
+            .find(|p| p.starts_with("/x/v3/fav/resource/list"))
+            .unwrap();
+        assert!(set_req.contains("order=mtime"), "set_req={set_req}");
+        assert!(set_req.contains("platform=web"), "set_req={set_req}");
+
+        let col_req = paths
+            .iter()
+            .find(|p| p.starts_with("/x/v3/fav/folder/collected/list"))
+            .unwrap();
+        assert!(col_req.contains("up_mid=42"), "col_req={col_req}");
+        assert!(col_req.contains("platform=web"), "col_req={col_req}");
+
+        let season_req = paths
+            .iter()
+            .find(|p| p.starts_with("/x/polymer/web-space/seasons_archives_list"))
+            .unwrap();
+        assert!(season_req.contains("mid=77"), "season_req={season_req}");
+        assert!(
+            season_req.contains("season_id=500"),
+            "season_req={season_req}"
+        );
+        assert!(
+            season_req.contains("sort_reverse=true"),
+            "season_req={season_req}"
+        );
+        assert!(
+            season_req.contains("web_location=333.999"),
+            "season_req={season_req}"
+        );
+        assert!(season_req.contains("w_rid="), "season_req={season_req}");
     }
 }

@@ -18,6 +18,10 @@ pub struct Model {
     pub name: String,
     pub count: i64,
     pub state: String,
+    pub kind: String,
+    pub owner_mid: Option<i64>,
+    pub sync_complete: bool,
+    pub resume_page: Option<i32>,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
@@ -26,6 +30,10 @@ pub enum Column {
     Name,
     Count,
     State,
+    Kind,
+    OwnerMid,
+    SyncComplete,
+    ResumePage,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -54,6 +62,10 @@ impl ColumnTrait for Column {
             Self::Name => ColumnType::String(StringLen::None).def(),
             Self::Count => ColumnType::BigInteger.def(),
             Self::State => ColumnType::custom("enum_text").def(),
+            Self::Kind => ColumnType::String(StringLen::None).def(),
+            Self::OwnerMid => ColumnType::BigInteger.def().null(),
+            Self::SyncComplete => ColumnType::Boolean.def(),
+            Self::ResumePage => ColumnType::Integer.def().null(),
         }
     }
 }
