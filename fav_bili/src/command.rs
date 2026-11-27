@@ -20,6 +20,7 @@ use crate::{
             CheckOptions, LoginOptions, LogoutOptions, UseCookiesOptions, check, login, logout,
             use_cookies,
         },
+        config_cmd::{config_path, config_show},
         deactivate::{DeactivateOptions, deactivate},
         doctor::{DoctorOptions, doctor_with_options},
         download::{DownloadOptions, download},
@@ -28,7 +29,7 @@ use crate::{
         list::{ListKind, ListOptions, list},
         media::{MediaResetOptions, reset as media_reset, skip as media_skip},
         pull::{PullOptions, pull},
-        schedule::{ScheduleTarget, schedule},
+        schedule::{ScheduleTarget, schedule_named},
         status::status,
         sync::{SyncOptions, sync},
     },
@@ -761,7 +762,7 @@ pub fn build_command() -> Command {
                 .arg_required_else_help(true)
                 .args([
                     Arg::new("targets")
-                        .help("BVID(s), avID(s), numeric AID(s), Bilibili video URL(s), or '-' to read from stdin")
+                        .help("BVID(s), avID(s), numeric AID(s), Bilibili/b23.tv URL(s), or '-' to read from stdin")
                         .action(ArgAction::Append),
                     Arg::new("stdin")
                         .long("stdin")
@@ -835,7 +836,7 @@ pub fn build_command() -> Command {
                 .about("Like (or unlike) Bilibili medias by BVID/AID/URL, set, or stdin")
                 .args([
                     Arg::new("targets")
-                        .help("BVID(s), avID(s), numeric AID(s), URL(s), or '-' to read from stdin")
+                        .help("BVID(s), avID(s), numeric AID(s), Bilibili/b23.tv URL(s), or '-' to read from stdin")
                         .action(ArgAction::Append),
                     Arg::new("stdin")
                         .long("stdin")
@@ -973,6 +974,10 @@ pub fn build_command() -> Command {
                         .long("interval")
                         .help("Sync interval (e.g. 30m, 3h, 1d)")
                         .default_value("3h"),
+                    Arg::new("name")
+                        .long("name")
+                        .value_name("NAME")
+                        .help("Optional suffix for unit/task names to manage multiple workspaces"),
                     Arg::new("bin")
                         .long("bin")
                         .help("Path to the `fav` binary to invoke")
@@ -981,6 +986,17 @@ pub fn build_command() -> Command {
                         .long("install")
                         .help("Write user-level schedule files directly (no sudo)")
                         .action(ArgAction::SetTrue),
+                ]),
+            Command::new("config")
+                .about("Inspect effective configuration and config file paths (bare `fav config` runs `show`)")
+                .args(format_args())
+                .subcommands([
+                    Command::new("show")
+                        .about("Show effective configuration values and their provenance")
+                        .args(format_args()),
+                    Command::new("path")
+                        .about("Show global and workspace config file paths")
+                        .args(format_args()),
                 ]),
             Command::new("completion")
                 .about("Generate shell completion scripts (with optional dynamic DB completion)")
@@ -1164,9 +1180,9 @@ fn sanitize_shell_fn_ident(bin_name: &str) -> String {
     out
 }
 
-const VALUE_TAKING_FLAGS_SH: &str = "-C|--dir|--color|--format|--state|--search|--sort|--limit|--type|--kind|--set|--up|--account|-j|--jobs|-o|--output|--limit-rate|--clarity|--quality|--codec|--audio-format|--page|--top|--target|--interval|--bin|--bin-name|--file";
+const VALUE_TAKING_FLAGS_SH: &str = "-C|--dir|--color|--format|--state|--search|--sort|--limit|--type|--kind|--set|--up|--account|-j|--jobs|-o|--output|--limit-rate|--clarity|--quality|--codec|--audio-format|--page|--top|--target|--interval|--name|--bin|--bin-name|--file";
 
-const VALUE_TAKING_FLAGS_FISH: &str = "-C --dir --color --format --state --search --sort --limit --type --kind --set --up --account -j --jobs -o --output --limit-rate --clarity --quality --codec --audio-format --page --top --target --interval --bin --bin-name --file";
+const VALUE_TAKING_FLAGS_FISH: &str = "-C --dir --color --format --state --search --sort --limit --type --kind --set --up --account -j --jobs -o --output --limit-rate --clarity --quality --codec --audio-format --page --top --target --interval --name --bin --bin-name --file";
 
 fn dynamic_completion_snippet(shell: CompletionShell, bin_name: &str) -> String {
     let fn_ident = sanitize_shell_fn_ident(bin_name);
@@ -1512,7 +1528,7 @@ Register-ArgumentCompleter -Native -CommandName '__PS_BIN__' -ScriptBlock ({
         '-C', '--dir', '--color', '--format', '--state', '--search', '--sort', '--limit',
         '--type', '--kind', '--set', '--up', '--account', '-j', '--jobs', '-o', '--output',
         '--limit-rate', '--clarity', '--quality', '--codec', '--audio-format', '--page',
-        '--top', '--target', '--interval', '--bin', '--bin-name', '--file'
+        '--top', '--target', '--interval', '--name', '--bin', '--bin-name', '--file'
     )
 
     switch ($prev) {
@@ -1922,6 +1938,7 @@ async fn dispatch(cmd: &mut Command, matches: ArgMatches) -> AppResult<()> {
                 .get_one::<String>("interval")
                 .map(String::as_str)
                 .unwrap_or("3h");
+            let name = sub.get_one::<String>("name").map(String::as_str);
             let install = sub.get_flag("install");
             let ws = Workspace::discover_or_init(runtime.explicit_dir.as_deref())?;
             let ws_root =
@@ -1931,11 +1948,16 @@ async fn dispatch(cmd: &mut Command, matches: ArgMatches) -> AppResult<()> {
                 .cloned()
                 .or_else(|| std::env::current_exe().ok())
                 .unwrap_or_else(|| PathBuf::from("fav"));
-            let output =
-                schedule(target, interval, &ws_root, &fav_bin, install).map_err(AppError::usage)?;
+            let output = schedule_named(target, interval, &ws_root, &fav_bin, install, name)?;
             write_stdout_line(&output).map_err(AppError::runtime)?;
             Ok(())
         }
+        Some(("config", sub)) => match sub.subcommand() {
+            None => config_show(&runtime, resolve_format(sub)),
+            Some(("show", s)) => config_show(&runtime, resolve_format(s)),
+            Some(("path", s)) => config_path(&runtime, resolve_format(s)),
+            _ => Err(AppError::usage(anyhow!("unknown config subcommand"))),
+        },
         Some(("auth", sub)) => match sub.subcommand() {
             Some(("login", s)) => {
                 let ctx = AppContext::open_read_write(runtime, true).await?;
@@ -2483,6 +2505,44 @@ mod tests {
                 .unwrap();
             assert_eq!(shell, expected);
         }
+
+        // `schedule --name`
+        let m = build_command()
+            .try_get_matches_from(["fav", "schedule", "--target", "systemd", "--name", "work"])
+            .unwrap();
+        let sched_m = m.subcommand_matches("schedule").unwrap();
+        assert_eq!(
+            sched_m.get_one::<String>("name").map(String::as_str),
+            Some("work")
+        );
+
+        // `config` (bare), `config show`, and `config path` with format flags
+        let m = build_command()
+            .try_get_matches_from(["fav", "config", "--json"])
+            .unwrap();
+        let cfg_m = m.subcommand_matches("config").unwrap();
+        assert!(cfg_m.subcommand().is_none());
+        assert_eq!(resolve_format(cfg_m), OutputFormat::Json);
+
+        let m = build_command()
+            .try_get_matches_from(["fav", "config", "show", "--format", "tsv"])
+            .unwrap();
+        let show_m = m
+            .subcommand_matches("config")
+            .unwrap()
+            .subcommand_matches("show")
+            .unwrap();
+        assert_eq!(resolve_format(show_m), OutputFormat::Tsv);
+
+        let m = build_command()
+            .try_get_matches_from(["fav", "config", "path", "--json"])
+            .unwrap();
+        let path_m = m
+            .subcommand_matches("config")
+            .unwrap()
+            .subcommand_matches("path")
+            .unwrap();
+        assert_eq!(resolve_format(path_m), OutputFormat::Json);
     }
 
     #[test]

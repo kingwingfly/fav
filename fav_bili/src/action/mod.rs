@@ -1,5 +1,6 @@
 pub mod activate;
 pub mod auth;
+pub mod config_cmd;
 pub mod deactivate;
 pub mod doctor;
 pub mod download;

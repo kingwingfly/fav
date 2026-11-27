@@ -5,6 +5,9 @@ use std::str::FromStr;
 
 use anyhow::{Context as _, Result, anyhow, bail};
 use clap::{ValueEnum, builder::PossibleValue};
+use tracing::warn;
+
+use crate::error::AppError;
 
 /// Supported OS scheduler backends for `fav schedule`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -187,20 +190,68 @@ fn escape_powershell_single(s: &str) -> String {
     s.replace('\'', "''")
 }
 
-/// Generate OS scheduler templates without touching the filesystem.
+/// Validate an optional `--name` suffix for `fav schedule`.
+///
+/// Must match `^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$` (1..=48 ASCII chars).
+pub fn validate_schedule_name(name: &str) -> Result<&str> {
+    let bytes = name.as_bytes();
+    if bytes.is_empty()
+        || bytes.len() > 48
+        || !bytes[0].is_ascii_alphanumeric()
+        || !bytes[1..]
+            .iter()
+            .all(|b| b.is_ascii_alphanumeric() || *b == b'_' || *b == b'-')
+    {
+        return Err(AppError::usage(anyhow!(
+            "invalid schedule --name '{name}' (must match ^[A-Za-z0-9][A-Za-z0-9_-]{{0,47}}$)"
+        ))
+        .into());
+    }
+    Ok(name)
+}
+
+/// Generate OS scheduler templates without touching the filesystem using default unit/task names.
 pub fn generate_schedule(
     target: ScheduleTarget,
     interval: &str,
     workspace_dir: &Path,
     fav_bin: &Path,
 ) -> Result<GeneratedSchedule> {
-    let parsed = parse_interval(interval)?;
+    generate_schedule_named(target, interval, workspace_dir, fav_bin, None)
+}
+
+/// Generate OS scheduler templates without touching the filesystem, optionally suffixing
+/// unit/label/task names with `name` so multiple workspaces can coexist cleanly.
+pub fn generate_schedule_named(
+    target: ScheduleTarget,
+    interval: &str,
+    workspace_dir: &Path,
+    fav_bin: &Path,
+    name: Option<&str>,
+) -> Result<GeneratedSchedule> {
+    let parsed = parse_interval(interval).map_err(|e| anyhow::Error::from(AppError::usage(e)))?;
+    let suffix = match name {
+        Some(raw) => Some(validate_schedule_name(raw)?),
+        None => None,
+    };
 
     match target {
         ScheduleTarget::Systemd => {
+            let unit_base = match suffix {
+                Some(s) => format!("fav-{s}"),
+                None => "fav".to_owned(),
+            };
+            let service_desc = match suffix {
+                Some(s) => format!("Fav Bilibili Backup Sync ({s})"),
+                None => "Fav Bilibili Backup Sync".to_owned(),
+            };
+            let timer_desc = match suffix {
+                Some(s) => format!("Run fav sync ({s}) every {parsed}"),
+                None => format!("Run fav sync every {parsed}"),
+            };
             let service = format!(
                 "[Unit]\n\
-                 Description=Fav Bilibili Backup Sync\n\
+                 Description={service_desc}\n\
                  After=network-online.target\n\
                  Wants=network-online.target\n\
                  \n\
@@ -212,7 +263,7 @@ pub fn generate_schedule(
             );
             let timer = format!(
                 "[Unit]\n\
-                 Description=Run fav sync every {parsed}\n\
+                 Description={timer_desc}\n\
                  \n\
                  [Timer]\n\
                  OnBootSec=5min\n\
@@ -224,20 +275,20 @@ pub fn generate_schedule(
                  WantedBy=timers.target\n",
                 parsed.systemd_spec(),
             );
-            let instructions = "\
-Enable and start the user timer (user-level, no root privileges required):\n\
-  systemctl --user daemon-reload\n\
-  systemctl --user enable --now fav.timer\n\
-  systemctl --user status fav.timer"
-                .to_owned();
+            let instructions = format!(
+                "Enable and start the user timer (user-level, no root privileges required):\n\
+                   systemctl --user daemon-reload\n\
+                   systemctl --user enable --now {unit_base}.timer\n\
+                   systemctl --user status {unit_base}.timer"
+            );
             Ok(GeneratedSchedule {
                 files: vec![
                     ScheduleFile {
-                        filename: "fav.service".into(),
+                        filename: format!("{unit_base}.service"),
                         content: service,
                     },
                     ScheduleFile {
-                        filename: "fav.timer".into(),
+                        filename: format!("{unit_base}.timer"),
                         content: timer,
                     },
                 ],
@@ -245,6 +296,11 @@ Enable and start the user timer (user-level, no root privileges required):\n\
             })
         }
         ScheduleTarget::Launchd => {
+            let label = match suffix {
+                Some(s) => format!("com.kingwingfly.fav.{s}"),
+                None => "com.kingwingfly.fav".to_owned(),
+            };
+            let plist_name = format!("{label}.plist");
             let bin_xml = escape_xml(&fav_bin.to_string_lossy());
             let dir_xml = escape_xml(&workspace_dir.to_string_lossy());
             let log_xml = escape_xml(&workspace_dir.join(".fav/schedule.log").to_string_lossy());
@@ -255,7 +311,7 @@ Enable and start the user timer (user-level, no root privileges required):\n\
                  <plist version=\"1.0\">\n\
                  <dict>\n\
                    <key>Label</key>\n\
-                   <string>com.kingwingfly.fav</string>\n\
+                   <string>{label}</string>\n\
                    <key>ProgramArguments</key>\n\
                    <array>\n\
                      <string>{bin_xml}</string>\n\
@@ -275,20 +331,28 @@ Enable and start the user timer (user-level, no root privileges required):\n\
                  </plist>\n",
                 parsed.seconds,
             );
-            let instructions = "\
-Load the LaunchAgent (user-level, no root privileges required):\n\
-  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.kingwingfly.fav.plist\n\
-  launchctl kickstart -k gui/$(id -u)/com.kingwingfly.fav"
-                .to_owned();
+            let instructions = format!(
+                "Load the LaunchAgent (user-level, no root privileges required):\n\
+                   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/{plist_name}\n\
+                   launchctl kickstart -k gui/$(id -u)/{label}"
+            );
             Ok(GeneratedSchedule {
                 files: vec![ScheduleFile {
-                    filename: "com.kingwingfly.fav.plist".into(),
+                    filename: plist_name,
                     content: plist,
                 }],
                 instructions,
             })
         }
         ScheduleTarget::TaskScheduler => {
+            let task_name = match suffix {
+                Some(s) => format!("FavSync-{s}"),
+                None => "FavSync".to_owned(),
+            };
+            let script_name = match suffix {
+                Some(s) => format!("install-fav-task-{s}.ps1"),
+                None => "install-fav-task.ps1".to_owned(),
+            };
             let bin_ps = escape_powershell_single(&fav_bin.to_string_lossy());
             let dir_ps = escape_powershell_single(&workspace_dir.to_string_lossy());
             let script = format!(
@@ -297,22 +361,80 @@ Load the LaunchAgent (user-level, no root privileges required):\n\
                  $Action = New-ScheduledTaskAction -Execute $FavBin -Argument \"-C `\"$WorkspaceDir`\" sync\"\n\
                  $Trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval ({})\n\
                  $Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable\n\
-                 Register-ScheduledTask -TaskName 'FavSync' -Action $Action -Trigger $Trigger -Settings $Settings -Force\n",
+                 Register-ScheduledTask -TaskName '{task_name}' -Action $Action -Trigger $Trigger -Settings $Settings -Force\n",
                 parsed.powershell_timespan(),
             );
-            let instructions = "\
-Register the scheduled task in PowerShell:\n\
-  powershell -ExecutionPolicy Bypass -File install-fav-task.ps1"
-                .to_owned();
+            let instructions = format!(
+                "Register the scheduled task in PowerShell:\n\
+                   powershell -ExecutionPolicy Bypass -File {script_name}"
+            );
             Ok(GeneratedSchedule {
                 files: vec![ScheduleFile {
-                    filename: "install-fav-task.ps1".into(),
+                    filename: script_name,
                     content: script,
                 }],
                 instructions,
             })
         }
     }
+}
+
+fn content_mentions_workspace(content: &str, target: ScheduleTarget, workspace_dir: &Path) -> bool {
+    let raw = workspace_dir.to_string_lossy();
+    if raw.is_empty() {
+        return false;
+    }
+    let exact_marker = match target {
+        ScheduleTarget::Systemd => escape_systemd_arg(workspace_dir),
+        ScheduleTarget::Launchd => format!("<string>{}</string>", escape_xml(&raw)),
+        ScheduleTarget::TaskScheduler => format!("'{}'", escape_powershell_single(&raw)),
+    };
+    if content.contains(&exact_marker) {
+        return true;
+    }
+    // Fallback for manually edited files containing the raw workspace path as a delimited token.
+    let bytes = content.as_bytes();
+    let needle = raw.as_bytes();
+    let mut offset = 0;
+    while let Some(pos) = content[offset..].find(raw.as_ref()) {
+        let abs = offset + pos;
+        let end = abs + needle.len();
+        let prev_ok = abs == 0
+            || matches!(
+                bytes[abs - 1],
+                b' ' | b'\t' | b'\r' | b'\n' | b'"' | b'\'' | b'>' | b'='
+            );
+        let next_ok = bytes
+            .get(end)
+            .is_none_or(|b| matches!(b, b' ' | b'\t' | b'\r' | b'\n' | b'"' | b'\'' | b'<'));
+        if prev_ok && next_ok {
+            return true;
+        }
+        offset = abs + 1;
+    }
+    false
+}
+
+fn detect_cross_workspace_overwrites(
+    target: ScheduleTarget,
+    generated: &GeneratedSchedule,
+    workspace_dir: &Path,
+    dest_dir: &Path,
+) -> Vec<PathBuf> {
+    let mut overwritten = Vec::new();
+    for file in &generated.files {
+        if !content_mentions_workspace(&file.content, target, workspace_dir) {
+            continue;
+        }
+        let dest = dest_dir.join(&file.filename);
+        if dest.is_file()
+            && let Ok(existing) = fs::read_to_string(&dest)
+            && !content_mentions_workspace(&existing, target, workspace_dir)
+        {
+            overwritten.push(dest);
+        }
+    }
+    overwritten
 }
 
 /// Write generated schedule files into `target_dir` and return their written paths.
@@ -355,8 +477,8 @@ fn default_install_dir(target: ScheduleTarget, workspace_dir: &Path) -> Result<P
     }
 }
 
-/// Generate (and optionally install) a user-level schedule configuration, returning
-/// human-readable output ready to print.
+/// Generate (and optionally install) a user-level schedule configuration using default
+/// unit/task names, returning human-readable output ready to print.
 pub fn schedule(
     target: ScheduleTarget,
     interval: &str,
@@ -364,14 +486,65 @@ pub fn schedule(
     fav_bin: &Path,
     install: bool,
 ) -> Result<String> {
-    let generated = generate_schedule(target, interval, workspace_dir, fav_bin)?;
-    if install {
-        let dest_dir = default_install_dir(target, workspace_dir)?;
-        let written = write_schedule_files(&generated, &dest_dir)?;
+    schedule_named(target, interval, workspace_dir, fav_bin, install, None)
+}
+
+/// Generate (and optionally install) a user-level schedule configuration with an optional
+/// `--name` suffix for managing multiple workspaces cleanly.
+pub fn schedule_named(
+    target: ScheduleTarget,
+    interval: &str,
+    workspace_dir: &Path,
+    fav_bin: &Path,
+    install: bool,
+    name: Option<&str>,
+) -> Result<String> {
+    let dest_dir = if install {
+        Some(default_install_dir(target, workspace_dir)?)
+    } else {
+        None
+    };
+    schedule_named_with_install_dir(
+        target,
+        interval,
+        workspace_dir,
+        fav_bin,
+        dest_dir.as_deref(),
+        name,
+    )
+}
+
+fn schedule_named_with_install_dir(
+    target: ScheduleTarget,
+    interval: &str,
+    workspace_dir: &Path,
+    fav_bin: &Path,
+    install_dir: Option<&Path>,
+    name: Option<&str>,
+) -> Result<String> {
+    let generated = generate_schedule_named(target, interval, workspace_dir, fav_bin, name)?;
+    if let Some(dest_dir) = install_dir {
+        let overwritten_other =
+            detect_cross_workspace_overwrites(target, &generated, workspace_dir, dest_dir);
+        let written = write_schedule_files(&generated, dest_dir)?;
         let mut out = String::new();
         out.push_str("Installed schedule files:\n");
         for path in written {
             out.push_str(&format!("  {}\n", path.display()));
+        }
+        if !overwritten_other.is_empty() {
+            let files_list = overwritten_other
+                .iter()
+                .map(|p| p.display().to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            warn!(
+                "Overwrote existing schedule file(s) ({files_list}) that referenced a different workspace; pass `--name <NAME>` to manage multiple workspaces separately."
+            );
+            out.push_str(&format!(
+                "\nNote: Overwrote existing schedule file(s) ({files_list}) belonging to another workspace.\n\
+                 To keep schedules for multiple workspaces separate, pass `--name <NAME>` (e.g. `fav schedule --name work --install`).\n"
+            ));
         }
         out.push('\n');
         out.push_str(&generated.instructions);
@@ -514,5 +687,209 @@ mod tests {
             fs::read_to_string(tmp.path().join("fav.timer")).unwrap(),
             sched.files[1].content
         );
+    }
+
+    #[test]
+    fn generate_schedule_named_customizes_all_three_backends() {
+        let ws = Path::new("/tmp/work-archive");
+        let bin = Path::new("/usr/local/bin/fav");
+
+        let sys = generate_schedule_named(ScheduleTarget::Systemd, "2h", ws, bin, Some("work_1"))
+            .unwrap();
+        assert_eq!(sys.files.len(), 2);
+        assert_eq!(sys.files[0].filename, "fav-work_1.service");
+        assert_eq!(sys.files[1].filename, "fav-work_1.timer");
+        assert!(
+            sys.instructions
+                .contains("systemctl --user enable --now fav-work_1.timer")
+        );
+        assert!(
+            sys.instructions
+                .contains("systemctl --user status fav-work_1.timer")
+        );
+
+        let mac = generate_schedule_named(ScheduleTarget::Launchd, "30m", ws, bin, Some("media-2"))
+            .unwrap();
+        assert_eq!(mac.files.len(), 1);
+        assert_eq!(mac.files[0].filename, "com.kingwingfly.fav.media-2.plist");
+        assert!(
+            mac.files[0]
+                .content
+                .contains("<string>com.kingwingfly.fav.media-2</string>")
+        );
+        assert!(
+            mac.instructions
+                .contains("~/Library/LaunchAgents/com.kingwingfly.fav.media-2.plist")
+        );
+        assert!(
+            mac.instructions
+                .contains("gui/$(id -u)/com.kingwingfly.fav.media-2")
+        );
+
+        let win = generate_schedule_named(
+            ScheduleTarget::TaskScheduler,
+            "1d",
+            ws,
+            bin,
+            Some("Personal"),
+        )
+        .unwrap();
+        assert_eq!(win.files.len(), 1);
+        assert_eq!(win.files[0].filename, "install-fav-task-Personal.ps1");
+        assert!(
+            win.files[0]
+                .content
+                .contains("-TaskName 'FavSync-Personal'")
+        );
+        assert!(win.instructions.contains("install-fav-task-Personal.ps1"));
+    }
+
+    #[test]
+    fn validate_schedule_name_accepts_valid_and_rejects_invalid_with_usage_error() {
+        use crate::error::{ExitKind, classify_anyhow};
+
+        let max_len = "A".repeat(48);
+        for ok in ["a", "0", "work", "my-ws_01", max_len.as_str()] {
+            assert_eq!(validate_schedule_name(ok).unwrap(), ok);
+        }
+
+        let too_long = "a".repeat(49);
+        for bad in [
+            "",
+            "-leading-dash",
+            "_leading_under",
+            "has space",
+            "has.dot",
+            "../escape",
+            "sub/dir",
+            "中文",
+            too_long.as_str(),
+        ] {
+            let err = generate_schedule_named(
+                ScheduleTarget::Systemd,
+                "3h",
+                Path::new("/tmp/ws"),
+                Path::new("/usr/bin/fav"),
+                Some(bad),
+            )
+            .unwrap_err();
+            assert_eq!(
+                classify_anyhow(&err),
+                ExitKind::Usage,
+                "expected Usage error for --name '{bad}', got {err:#}"
+            );
+        }
+    }
+
+    #[test]
+    fn install_detects_cross_workspace_overwrite_without_false_positives() {
+        let tmp = tempfile::tempdir().unwrap();
+        let install_dir = tmp.path().join("units");
+        let ws_a = tmp.path().join("ws");
+        let ws_b = tmp.path().join("ws2");
+        let bin = Path::new("/usr/local/bin/fav");
+
+        // 1. Fresh install for ws_a: no overwrite note.
+        let out1 = schedule_named_with_install_dir(
+            ScheduleTarget::Systemd,
+            "3h",
+            &ws_a,
+            bin,
+            Some(&install_dir),
+            None,
+        )
+        .unwrap();
+        assert!(
+            !out1.contains("Note:"),
+            "fresh install must not warn: {out1}"
+        );
+
+        // 2. Re-install for SAME ws_a (including fav.timer which has no workspace path): no warning.
+        let out2 = schedule_named_with_install_dir(
+            ScheduleTarget::Systemd,
+            "6h",
+            &ws_a,
+            bin,
+            Some(&install_dir),
+            None,
+        )
+        .unwrap();
+        assert!(
+            !out2.contains("Note:"),
+            "same-workspace reinstall must not warn: {out2}"
+        );
+
+        // 3. Install for DIFFERENT ws_b with same default name -> warns and includes Note suggesting --name!
+        let out3 = schedule_named_with_install_dir(
+            ScheduleTarget::Systemd,
+            "3h",
+            &ws_b,
+            bin,
+            Some(&install_dir),
+            None,
+        )
+        .unwrap();
+        assert!(out3.contains("Note:"), "expected overwrite Note: {out3}");
+        assert!(
+            out3.contains("--name <NAME>"),
+            "expected --name hint in Note: {out3}"
+        );
+
+        // 4. Prefix-path edge case: ws_a (".../ws") overwriting ws_b (".../ws2") must ALSO warn!
+        let out4 = schedule_named_with_install_dir(
+            ScheduleTarget::Systemd,
+            "3h",
+            &ws_a,
+            bin,
+            Some(&install_dir),
+            None,
+        )
+        .unwrap();
+        assert!(
+            out4.contains("Note:"),
+            "prefix path ws overwriting ws2 must warn: {out4}"
+        );
+
+        // 5. Installing ws_b with a separate `--name work` does NOT overwrite ws_a and emits no warning.
+        let out5 = schedule_named_with_install_dir(
+            ScheduleTarget::Systemd,
+            "3h",
+            &ws_b,
+            bin,
+            Some(&install_dir),
+            Some("work"),
+        )
+        .unwrap();
+        assert!(
+            !out5.contains("Note:"),
+            "distinct --name install must not warn: {out5}"
+        );
+        assert!(install_dir.join("fav.service").is_file());
+        assert!(install_dir.join("fav-work.service").is_file());
+        assert!(install_dir.join("fav-work.timer").is_file());
+
+        // 6. Launchd cross-workspace overwrite detection.
+        let mac_dir = tmp.path().join("launchd");
+        let mac1 = schedule_named_with_install_dir(
+            ScheduleTarget::Launchd,
+            "1h",
+            &ws_a,
+            bin,
+            Some(&mac_dir),
+            None,
+        )
+        .unwrap();
+        assert!(!mac1.contains("Note:"));
+        let mac2 = schedule_named_with_install_dir(
+            ScheduleTarget::Launchd,
+            "1h",
+            &ws_b,
+            bin,
+            Some(&mac_dir),
+            None,
+        )
+        .unwrap();
+        assert!(mac2.contains("Note:"));
+        assert!(mac2.contains("--name <NAME>"));
     }
 }

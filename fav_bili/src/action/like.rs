@@ -5,11 +5,11 @@ use futures::StreamExt as _;
 use tracing::{error, info, warn};
 
 use crate::{
-    api::BiliApiError,
+    api::{BiliApiError, BiliClient},
     context::AppContext,
     cookies::extract_csrf,
     error::{AppError, AppResult},
-    id_parse::parse_media_ident,
+    id_parse::{parse_media_ident, parse_short_link},
     state::{AccountState, SetState},
     table::write_stdout_line,
 };
@@ -179,10 +179,43 @@ pub async fn like(ctx: &AppContext, opts: LikeOptions) -> AppResult<()> {
     Ok(())
 }
 
+async fn resolve_and_parse_aid(
+    token: &str,
+    ctx: &AppContext,
+    anon_client: &mut Option<BiliClient>,
+) -> AppResult<i64> {
+    let effective = if let Some(short_url) = parse_short_link(token) {
+        let client = match anon_client {
+            Some(c) => c,
+            None => anon_client.insert(ctx.anonymous_client()?),
+        };
+        let resolved = client
+            .resolve_short_link(&short_url)
+            .await
+            .with_context(|| format!("Failed to resolve short link '{token}'"))?;
+        info!("Resolved short link '{token}' -> '{resolved}'");
+        resolved.to_string()
+    } else {
+        token.to_owned()
+    };
+
+    let ident = if effective == token {
+        parse_media_ident(&effective).map_err(AppError::usage)?
+    } else {
+        parse_media_ident(&effective)
+            .with_context(|| format!("Resolved short link '{token}' to '{effective}'"))
+            .map_err(AppError::usage)?
+    };
+    ident
+        .to_aid()
+        .ok_or_else(|| AppError::usage(anyhow!("Cannot convert '{token}' to numeric AID")))
+}
+
 async fn collect_target_aids(ctx: &AppContext, opts: &LikeOptions) -> AppResult<Vec<i64>> {
     let mut aids = Vec::new();
     let mut seen = HashSet::new();
     let mut wants_stdin = opts.read_stdin;
+    let mut anon_client: Option<BiliClient> = None;
 
     for raw in &opts.targets {
         let trimmed = raw.trim();
@@ -193,10 +226,7 @@ async fn collect_target_aids(ctx: &AppContext, opts: &LikeOptions) -> AppResult<
         if trimmed.is_empty() {
             continue;
         }
-        let ident = parse_media_ident(trimmed).map_err(AppError::usage)?;
-        let aid = ident
-            .to_aid()
-            .ok_or_else(|| AppError::usage(anyhow!("Cannot convert '{trimmed}' to numeric AID")))?;
+        let aid = resolve_and_parse_aid(trimmed, ctx, &mut anon_client).await?;
         if seen.insert(aid) {
             aids.push(aid);
         }
@@ -215,10 +245,7 @@ async fn collect_target_aids(ctx: &AppContext, opts: &LikeOptions) -> AppResult<
             if token.starts_with('#') {
                 continue;
             }
-            let ident = parse_media_ident(token).map_err(AppError::usage)?;
-            let aid = ident.to_aid().ok_or_else(|| {
-                AppError::usage(anyhow!("Cannot convert '{token}' to numeric AID"))
-            })?;
+            let aid = resolve_and_parse_aid(token, ctx, &mut anon_client).await?;
             if seen.insert(aid) {
                 aids.push(aid);
             }
