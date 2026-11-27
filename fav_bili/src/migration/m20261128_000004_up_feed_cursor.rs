@@ -17,10 +17,10 @@ impl MigrationTrait for Migration {
 
         let backend = manager.get_database_backend();
         let db = manager.get_connection();
-        // Preserve fast 1-page incremental sync for already-Active UPs.
+        // Preserve fast 1-page incremental sync for already-Active UPs that have synced or started backfilling.
         db.execute(Statement::from_string(
             backend,
-            r#"UPDATE media_up SET from_up_feed = 1 WHERE up_id IN (SELECT up_id FROM "up" WHERE state = 'Active');"#,
+            r#"UPDATE media_up SET from_up_feed = 1 WHERE up_id IN (SELECT up_id FROM "up" WHERE state = 'Active' AND (sync_complete = 1 OR resume_page IS NOT NULL));"#,
         ))
         .await?;
         // Reset non-Active UPs so favorite-set creators previously marked sync_complete = 1 by

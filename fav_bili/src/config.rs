@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     error::AppError,
     state::{AudioFormat, VideoClarity, VideoCodec},
+    table::ColorChoice,
 };
 
 pub const FAV_DIR_ENV: &str = "FAV_DIR";
@@ -310,8 +311,12 @@ impl Config {
         }
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("Failed to read config file '{}'", path.display()))?;
-        let parsed: Self = toml::from_str(&content)
-            .with_context(|| format!("Failed to parse TOML config file '{}'", path.display()))?;
+        let parsed: Self = toml::from_str(&content).map_err(|err| {
+            AppError::usage(anyhow::Error::new(err).context(format!(
+                "Failed to parse TOML config file '{}'",
+                path.display()
+            )))
+        })?;
         Ok(Some(parsed))
     }
 
@@ -412,6 +417,17 @@ impl Config {
             .as_deref()
             .map(|s| {
                 AudioFormat::from_str(s)
+                    .map_err(|msg| anyhow::Error::from(AppError::usage(anyhow!("{msg}"))))
+            })
+            .transpose()
+    }
+
+    /// Parse configured `color`, if set.
+    pub fn parsed_color(&self) -> Result<Option<ColorChoice>> {
+        self.color
+            .as_deref()
+            .map(|s| {
+                ColorChoice::from_str(s)
                     .map_err(|msg| anyhow::Error::from(AppError::usage(anyhow!("{msg}"))))
             })
             .transpose()
@@ -691,6 +707,7 @@ tmp_dir = "staging"
         assert_eq!(cfg.parsed_codec().unwrap(), Some(VideoCodec::Hevc));
         assert_eq!(cfg.sound_only, Some(true));
         assert_eq!(cfg.parsed_audio_format().unwrap(), Some(AudioFormat::Mp3));
+        assert_eq!(cfg.parsed_color().unwrap(), Some(ColorChoice::Auto));
         assert_eq!(cfg.recheck, Some(true));
         assert_eq!(cfg.tmp_dir, Some(PathBuf::from("staging")));
 
@@ -732,6 +749,50 @@ tmp_dir = "staging"
             ..Default::default()
         };
         assert!(bad_audio.parsed_audio_format().is_err());
+        let bad_color = Config {
+            color: Some("rainbow".to_owned()),
+            ..Default::default()
+        };
+        let err = bad_color.parsed_color().unwrap_err();
+        assert_eq!(
+            crate::error::classify_anyhow(&err),
+            crate::error::ExitKind::Usage
+        );
+        assert_eq!(
+            Config {
+                color: Some("never".to_owned()),
+                ..Default::default()
+            }
+            .parsed_color()
+            .unwrap(),
+            Some(ColorChoice::Never)
+        );
+        assert_eq!(
+            Config {
+                color: Some("always".to_owned()),
+                ..Default::default()
+            }
+            .parsed_color()
+            .unwrap(),
+            Some(ColorChoice::Always)
+        );
+        assert_eq!(Config::default().parsed_color().unwrap(), None);
+    }
+
+    #[test]
+    fn malformed_toml_config_classifies_as_usage_error() {
+        use crate::error::{ExitKind, classify_anyhow};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let syntax_err_path = tmp.path().join("syntax.toml");
+        std::fs::write(&syntax_err_path, "jobs = [unclosed\n").unwrap();
+        let err = Config::load_file(&syntax_err_path).unwrap_err();
+        assert_eq!(classify_anyhow(&err), ExitKind::Usage);
+
+        let type_err_path = tmp.path().join("bad_type.toml");
+        std::fs::write(&type_err_path, "jobs = \"not_a_number\"\n").unwrap();
+        let err = Config::load_file(&type_err_path).unwrap_err();
+        assert_eq!(classify_anyhow(&err), ExitKind::Usage);
     }
 
     #[test]

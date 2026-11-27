@@ -894,7 +894,7 @@ mod tests {
             .collect();
         assert_eq!(completed_all, vec![9, 10]);
 
-        // pull_candidates ALWAYS enforces active_media_condition even with explicit ids / set_id / up_id!
+        // pull_candidates ALWAYS enforces active_media_condition even with explicit ids / set_ids / up_ids!
         let all_pull: Vec<i64> = db
             .pull_candidates(&PullFilter::default())
             .await
@@ -918,7 +918,7 @@ mod tests {
 
         assert!(
             db.pull_candidates(&PullFilter {
-                set_id: Some(20),
+                set_ids: vec![20],
                 ..Default::default()
             })
             .await
@@ -928,7 +928,7 @@ mod tests {
         );
         assert!(
             db.pull_candidates(&PullFilter {
-                set_id: Some(11),
+                set_ids: vec![11],
                 ..Default::default()
             })
             .await
@@ -938,7 +938,7 @@ mod tests {
         );
         assert!(
             db.pull_candidates(&PullFilter {
-                up_id: Some(200),
+                up_ids: vec![200],
                 ..Default::default()
             })
             .await
@@ -948,7 +948,7 @@ mod tests {
         );
         let active_up_pull: Vec<i64> = db
             .pull_candidates(&PullFilter {
-                up_id: Some(100),
+                up_ids: vec![100],
                 ..Default::default()
             })
             .await
@@ -1229,11 +1229,15 @@ mod tests {
         Migrator::up(&conn, Some(2)).await.unwrap();
         for sql in [
             r#"INSERT INTO "up" (up_id, name, state) VALUES (10, 'ActiveUp', 'Active');"#,
+            r#"INSERT INTO "up" (up_id, name, state) VALUES (11, 'ActiveUnsyncedUp', 'Active');"#,
+            r#"INSERT INTO "up" (up_id, name, state) VALUES (12, 'ActiveResumingUp', 'Active');"#,
             r#"INSERT INTO "up" (up_id, name, state) VALUES (20, 'InactiveFavCreator', 'Inactive');"#,
             r#"INSERT INTO "up" (up_id, name, state) VALUES (30, 'DeactivatedUp', 'Deactivated');"#,
             r#"INSERT INTO media (id, bv_id, title, type, state, retry_count) VALUES (100, 'BV1m4test00100', 'M100', 'Video', 'Pending', 0);"#,
             r#"INSERT INTO media (id, bv_id, title, type, state, retry_count) VALUES (101, 'BV1m4test00101', 'M101', 'Video', 'Pending', 0);"#,
             r#"INSERT INTO media (id, bv_id, title, type, state, retry_count) VALUES (102, 'BV1m4test00102', 'M102', 'Video', 'Pending', 0);"#,
+            r#"INSERT INTO media (id, bv_id, title, type, state, retry_count) VALUES (103, 'BV1m4test00103', 'M103', 'Video', 'Pending', 0);"#,
+            r#"INSERT INTO media (id, bv_id, title, type, state, retry_count) VALUES (104, 'BV1m4test00104', 'M104', 'Video', 'Pending', 0);"#,
             r#"INSERT INTO media_up (id, up_id) VALUES (100, 10);"#,
             r#"INSERT INTO media_up (id, up_id) VALUES (101, 20);"#,
             r#"INSERT INTO media_up (id, up_id) VALUES (102, 30);"#,
@@ -1243,16 +1247,24 @@ mod tests {
                 .unwrap();
         }
 
-        // Apply Migration #3 only: it prematurely marks Inactive/Deactivated UPs sync_complete = 1.
+        // Apply Migration #3 only: it marks UPs with pre-existing media_up rows (10, 20, 30)
+        // sync_complete = 1, while UPs 11 and 12 stay sync_complete = 0.
         Migrator::up(&conn, Some(1)).await.unwrap();
-        conn.execute(Statement::from_string(
-            DatabaseBackend::Sqlite,
+        for sql in [
+            // Active UP 11 has sync_complete = 0, resume_page = NULL, with a favorite-set media_up link.
+            r#"INSERT INTO media_up (id, up_id) VALUES (103, 11);"#,
+            // Active UP 12 has sync_complete = 0, resume_page = 2 (in-progress UP feed backfill).
+            r#"INSERT INTO media_up (id, up_id) VALUES (104, 12);"#,
+            r#"UPDATE "up" SET resume_page = 2 WHERE up_id = 12;"#,
             r#"UPDATE "up" SET resume_page = 3 WHERE up_id IN (20, 30);"#,
-        ))
-        .await
-        .unwrap();
+        ] {
+            conn.execute(Statement::from_string(DatabaseBackend::Sqlite, sql))
+                .await
+                .unwrap();
+        }
 
-        // Apply Migration #4: backfills from_up_feed = 1 for Active UPs only, and resets non-Active UPs.
+        // Apply Migration #4: backfills from_up_feed = 1 only for Active UPs with
+        // (sync_complete = 1 OR resume_page IS NOT NULL), and resets non-Active UPs.
         Migrator::up(&conn, None).await.unwrap();
         let db = Db { conn };
         db.check_integrity().await.unwrap();
@@ -1261,6 +1273,17 @@ mod tests {
         assert!(u10.sync_complete);
         assert_eq!(u10.resume_page, None);
         assert_eq!(db.get_up_feed_media_ids(10).await.unwrap(), vec![100]);
+
+        let u11 = db.get_up(11).await.unwrap();
+        assert!(!u11.sync_complete);
+        assert_eq!(u11.resume_page, None);
+        assert!(db.get_up_feed_media_ids(11).await.unwrap().is_empty());
+        assert_eq!(db.get_up_ids_of_media(103).await.unwrap(), vec![11]);
+
+        let u12 = db.get_up(12).await.unwrap();
+        assert!(!u12.sync_complete);
+        assert_eq!(u12.resume_page, Some(2));
+        assert_eq!(db.get_up_feed_media_ids(12).await.unwrap(), vec![104]);
 
         let u20 = db.get_up(20).await.unwrap();
         assert!(!u20.sync_complete);
@@ -1345,6 +1368,771 @@ mod tests {
         let mut feed_ids_roundtrip = db.get_up_feed_media_ids(10).await.unwrap();
         feed_ids_roundtrip.sort_unstable();
         assert_eq!(feed_ids_roundtrip, vec![100, 200, 201, 202]);
+        assert!(db.get_up_feed_media_ids(11).await.unwrap().is_empty());
+        assert_eq!(db.get_up_feed_media_ids(12).await.unwrap(), vec![104]);
         assert!(db.get_up_feed_media_ids(20).await.unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn safe_bulk_activate_and_deactivate_state_transitions() {
+        let db = Db::open_in_memory().await.unwrap();
+
+        // Accounts: Active (1), Inactive (2), Expired (3)
+        db.upsert_account(sample_account(1, AccountState::Active))
+            .await
+            .unwrap();
+        db.upsert_account(sample_account(2, AccountState::Inactive))
+            .await
+            .unwrap();
+        db.upsert_account(sample_account(3, AccountState::Expired))
+            .await
+            .unwrap();
+
+        // Sets:
+        // 10: Inactive, owned by Active acct 1 -> should activate
+        // 11: Active, owned by Active acct 1 -> already Active (unchanged, not recounted)
+        // 12: Unreachable, owned by Active acct 1 -> MUST stay Unreachable
+        // 13: Inactive, owned only by Inactive acct 2 -> MUST stay Inactive until acct 2 is active
+        // 14: Inactive, owned only by Expired acct 3 -> MUST stay Inactive
+        // 15: Inactive, shared by Inactive acct 2 and Active acct 1 -> should activate
+        // 16: Inactive, orphan (no set_account link) -> MUST stay Inactive
+        // 17: Active, owned only by Inactive acct 2 -> stays Active on activate_all, deactivates on deactivate_all
+        db.upsert_sets([
+            sample_set(10, "InactiveActiveAcct", 1, SetState::Inactive),
+            sample_set(11, "ActiveActiveAcct", 1, SetState::Active),
+            sample_set(12, "UnreachableActiveAcct", 1, SetState::Unreachable),
+            sample_set(13, "InactiveInactiveAcct", 1, SetState::Inactive),
+            sample_set(14, "InactiveExpiredAcct", 1, SetState::Inactive),
+            sample_set(15, "InactiveShared", 1, SetState::Inactive),
+            sample_set(16, "InactiveOrphan", 1, SetState::Inactive),
+            sample_set(17, "ActiveInactiveAcct", 1, SetState::Active),
+        ])
+        .await
+        .unwrap();
+        db.upsert_set_accounts([
+            set_account::Model {
+                set_id: 10,
+                account_id: 1,
+            },
+            set_account::Model {
+                set_id: 11,
+                account_id: 1,
+            },
+            set_account::Model {
+                set_id: 12,
+                account_id: 1,
+            },
+            set_account::Model {
+                set_id: 13,
+                account_id: 2,
+            },
+            set_account::Model {
+                set_id: 14,
+                account_id: 3,
+            },
+            set_account::Model {
+                set_id: 15,
+                account_id: 2,
+            },
+            set_account::Model {
+                set_id: 15,
+                account_id: 1,
+            },
+            set_account::Model {
+                set_id: 17,
+                account_id: 2,
+            },
+        ])
+        .await
+        .unwrap();
+
+        // UPs:
+        // 100: Inactive, followed by Active acct 1 -> should activate
+        // 101: Active, followed by Active acct 1 -> already Active (unchanged)
+        // 102: Deactivated, followed by Active acct 1 -> MUST stay Deactivated
+        // 103: Inactive, followed only by Inactive acct 2 -> MUST stay Inactive
+        // 104: Inactive, followed only by Expired acct 3 -> MUST stay Inactive
+        // 105: Inactive, unfollowed (discovered via favorite set) -> MUST stay Inactive
+        // 106: Inactive, shared by Inactive acct 2 and Active acct 1 -> should activate
+        // 107: Active, unfollowed -> stays Active on activate_all, deactivates on deactivate_all
+        db.upsert_ups([
+            sample_up(100, "InactiveFollowedActive", UpState::Inactive),
+            sample_up(101, "ActiveFollowedActive", UpState::Active),
+            sample_up(102, "DeactivatedFollowedActive", UpState::Deactivated),
+            sample_up(103, "InactiveFollowedInactive", UpState::Inactive),
+            sample_up(104, "InactiveFollowedExpired", UpState::Inactive),
+            sample_up(105, "InactiveUnfollowed", UpState::Inactive),
+            sample_up(106, "InactiveShared", UpState::Inactive),
+            sample_up(107, "ActiveUnfollowed", UpState::Active),
+        ])
+        .await
+        .unwrap();
+        db.upsert_up_accounts([
+            up_account::Model {
+                up_id: 100,
+                account_id: 1,
+            },
+            up_account::Model {
+                up_id: 101,
+                account_id: 1,
+            },
+            up_account::Model {
+                up_id: 102,
+                account_id: 1,
+            },
+            up_account::Model {
+                up_id: 103,
+                account_id: 2,
+            },
+            up_account::Model {
+                up_id: 104,
+                account_id: 3,
+            },
+            up_account::Model {
+                up_id: 106,
+                account_id: 2,
+            },
+            up_account::Model {
+                up_id: 106,
+                account_id: 1,
+            },
+        ])
+        .await
+        .unwrap();
+
+        // 1. activate_all_sets only activates Inactive sets owned by Active accounts (10 and 15).
+        assert_eq!(db.activate_all_sets().await.unwrap(), 2);
+        assert_eq!(
+            db.get_set(10).await.unwrap().state,
+            SetState::Active.as_str()
+        );
+        assert_eq!(
+            db.get_set(11).await.unwrap().state,
+            SetState::Active.as_str()
+        );
+        assert_eq!(
+            db.get_set(12).await.unwrap().state,
+            SetState::Unreachable.as_str()
+        );
+        assert_eq!(
+            db.get_set(13).await.unwrap().state,
+            SetState::Inactive.as_str()
+        );
+        assert_eq!(
+            db.get_set(14).await.unwrap().state,
+            SetState::Inactive.as_str()
+        );
+        assert_eq!(
+            db.get_set(15).await.unwrap().state,
+            SetState::Active.as_str()
+        );
+        assert_eq!(
+            db.get_set(16).await.unwrap().state,
+            SetState::Inactive.as_str()
+        );
+        assert_eq!(
+            db.get_set(17).await.unwrap().state,
+            SetState::Active.as_str()
+        );
+        // Second call is idempotent (0 newly activated).
+        assert_eq!(db.activate_all_sets().await.unwrap(), 0);
+
+        // 2. activate_all_ups only activates Inactive UPs followed by Active accounts (100 and 106).
+        assert_eq!(db.activate_all_ups().await.unwrap(), 2);
+        assert_eq!(
+            db.get_up(100).await.unwrap().state,
+            UpState::Active.as_str()
+        );
+        assert_eq!(
+            db.get_up(101).await.unwrap().state,
+            UpState::Active.as_str()
+        );
+        assert_eq!(
+            db.get_up(102).await.unwrap().state,
+            UpState::Deactivated.as_str()
+        );
+        assert_eq!(
+            db.get_up(103).await.unwrap().state,
+            UpState::Inactive.as_str()
+        );
+        assert_eq!(
+            db.get_up(104).await.unwrap().state,
+            UpState::Inactive.as_str()
+        );
+        assert_eq!(
+            db.get_up(105).await.unwrap().state,
+            UpState::Inactive.as_str()
+        );
+        assert_eq!(
+            db.get_up(106).await.unwrap().state,
+            UpState::Active.as_str()
+        );
+        assert_eq!(
+            db.get_up(107).await.unwrap().state,
+            UpState::Active.as_str()
+        );
+        assert_eq!(db.activate_all_ups().await.unwrap(), 0);
+
+        // 3. activate_all_accounts transitions Inactive (2) -> Active, preserving Expired (3).
+        assert_eq!(db.activate_all_accounts().await.unwrap(), 1);
+        assert_eq!(
+            db.get_account(1).await.unwrap().state,
+            AccountState::Active.as_str()
+        );
+        assert_eq!(
+            db.get_account(2).await.unwrap().state,
+            AccountState::Active.as_str()
+        );
+        assert_eq!(
+            db.get_account(3).await.unwrap().state,
+            AccountState::Expired.as_str()
+        );
+        assert_eq!(db.activate_all_accounts().await.unwrap(), 0);
+
+        // Now that acct 2 is Active, set 13 and UP 103 become eligible; Expired acct 3's set 14 / UP 104
+        // and orphan set 16 / unfollowed UP 105 remain Inactive.
+        assert_eq!(db.activate_all_sets().await.unwrap(), 1);
+        assert_eq!(
+            db.get_set(13).await.unwrap().state,
+            SetState::Active.as_str()
+        );
+        assert_eq!(
+            db.get_set(14).await.unwrap().state,
+            SetState::Inactive.as_str()
+        );
+        assert_eq!(
+            db.get_set(16).await.unwrap().state,
+            SetState::Inactive.as_str()
+        );
+
+        assert_eq!(db.activate_all_ups().await.unwrap(), 1);
+        assert_eq!(
+            db.get_up(103).await.unwrap().state,
+            UpState::Active.as_str()
+        );
+        assert_eq!(
+            db.get_up(104).await.unwrap().state,
+            UpState::Inactive.as_str()
+        );
+        assert_eq!(
+            db.get_up(105).await.unwrap().state,
+            UpState::Inactive.as_str()
+        );
+
+        // 4. deactivate_all_* transitions ONLY Active -> Inactive, preserving Expired/Unreachable/Deactivated.
+        // Active sets: 10, 11, 13, 15, 17 (5 total)
+        assert_eq!(db.deactivate_all_sets().await.unwrap(), 5);
+        for id in [10, 11, 13, 14, 15, 16, 17] {
+            assert_eq!(
+                db.get_set(id).await.unwrap().state,
+                SetState::Inactive.as_str(),
+                "set {id} should be Inactive"
+            );
+        }
+        assert_eq!(
+            db.get_set(12).await.unwrap().state,
+            SetState::Unreachable.as_str()
+        );
+        assert_eq!(db.deactivate_all_sets().await.unwrap(), 0);
+
+        // Active UPs: 100, 101, 103, 106, 107 (5 total, including Active unfollowed UP 107)
+        assert_eq!(db.deactivate_all_ups().await.unwrap(), 5);
+        for id in [100, 101, 103, 104, 105, 106, 107] {
+            assert_eq!(
+                db.get_up(id).await.unwrap().state,
+                UpState::Inactive.as_str(),
+                "UP {id} should be Inactive"
+            );
+        }
+        assert_eq!(
+            db.get_up(102).await.unwrap().state,
+            UpState::Deactivated.as_str()
+        );
+        assert_eq!(db.deactivate_all_ups().await.unwrap(), 0);
+
+        // Active accounts: 1, 2 (2 total); Expired account 3 MUST remain Expired.
+        assert_eq!(db.deactivate_all_accounts().await.unwrap(), 2);
+        assert_eq!(
+            db.get_account(1).await.unwrap().state,
+            AccountState::Inactive.as_str()
+        );
+        assert_eq!(
+            db.get_account(2).await.unwrap().state,
+            AccountState::Inactive.as_str()
+        );
+        assert_eq!(
+            db.get_account(3).await.unwrap().state,
+            AccountState::Expired.as_str()
+        );
+        assert_eq!(db.deactivate_all_accounts().await.unwrap(), 0);
+
+        // With 0 active accounts, activate_all_sets and activate_all_ups must activate 0 rows.
+        assert_eq!(db.activate_all_sets().await.unwrap(), 0);
+        assert_eq!(db.activate_all_ups().await.unwrap(), 0);
+    }
+
+    #[tokio::test]
+    async fn pull_candidates_combines_dimensions_and_filters_bulk_force_safely() {
+        let db = Db::open_in_memory().await.unwrap();
+
+        db.upsert_account(sample_account(1, AccountState::Active))
+            .await
+            .unwrap();
+        db.upsert_sets([
+            sample_set(10, "Set10", 4, SetState::Active),
+            sample_set(20, "Set20", 4, SetState::Active),
+        ])
+        .await
+        .unwrap();
+        db.upsert_set_accounts([
+            set_account::Model {
+                set_id: 10,
+                account_id: 1,
+            },
+            set_account::Model {
+                set_id: 20,
+                account_id: 1,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_ups([
+            sample_up(100, "Up100", UpState::Active),
+            sample_up(200, "Up200", UpState::Active),
+        ])
+        .await
+        .unwrap();
+        db.upsert_up_accounts([
+            up_account::Model {
+                up_id: 100,
+                account_id: 1,
+            },
+            up_account::Model {
+                up_id: 200,
+                account_id: 1,
+            },
+        ])
+        .await
+        .unwrap();
+
+        // Dimension test medias (all Pending):
+        // 1: set 10 + up 100
+        // 2: set 10 + up 200
+        // 3: set 20 + up 100
+        // 4: set 20 only (no up)
+        // 5: up 200 only (no set)
+        // State test medias (all in set 10):
+        // 11: Downloading, 12: Completed, 13: Failed, 14: Expired, 15: PermissionDenied, 16: Skipped
+        db.upsert_medias([
+            sample_media(1, MediaState::Pending),
+            sample_media(2, MediaState::Pending),
+            sample_media(3, MediaState::Pending),
+            sample_media(4, MediaState::Pending),
+            sample_media(5, MediaState::Pending),
+            sample_media(11, MediaState::Downloading),
+            sample_media(12, MediaState::Completed),
+            sample_media(13, MediaState::Failed),
+            sample_media(14, MediaState::Expired),
+            sample_media(15, MediaState::PermissionDenied),
+            sample_media(16, MediaState::Skipped),
+        ])
+        .await
+        .unwrap();
+        db.upsert_media_sets([
+            media_set::Model { id: 1, set_id: 10 },
+            media_set::Model { id: 2, set_id: 10 },
+            media_set::Model { id: 3, set_id: 20 },
+            media_set::Model { id: 4, set_id: 20 },
+            media_set::Model { id: 11, set_id: 10 },
+            media_set::Model { id: 12, set_id: 10 },
+            media_set::Model { id: 13, set_id: 10 },
+            media_set::Model { id: 14, set_id: 10 },
+            media_set::Model { id: 15, set_id: 10 },
+            media_set::Model { id: 16, set_id: 10 },
+        ])
+        .await
+        .unwrap();
+        db.upsert_media_ups([
+            media_up::Model {
+                id: 1,
+                up_id: 100,
+                from_up_feed: false,
+            },
+            media_up::Model {
+                id: 2,
+                up_id: 200,
+                from_up_feed: false,
+            },
+            media_up::Model {
+                id: 3,
+                up_id: 100,
+                from_up_feed: false,
+            },
+            media_up::Model {
+                id: 5,
+                up_id: 200,
+                from_up_feed: false,
+            },
+        ])
+        .await
+        .unwrap();
+
+        let ids_of =
+            |rows: Vec<media::Model>| -> Vec<i64> { rows.into_iter().map(|m| m.id).collect() };
+
+        // Fix 1: OR within set_ids, OR within up_ids, AND across ids / set_ids / up_ids.
+        assert_eq!(
+            ids_of(
+                db.pull_candidates(&PullFilter {
+                    set_ids: vec![10, 20],
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+            ),
+            vec![1, 2, 3, 4, 11]
+        );
+        assert_eq!(
+            ids_of(
+                db.pull_candidates(&PullFilter {
+                    up_ids: vec![100, 200],
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+            ),
+            vec![1, 2, 3, 5]
+        );
+        assert_eq!(
+            ids_of(
+                db.pull_candidates(&PullFilter {
+                    set_ids: vec![10, 20],
+                    up_ids: vec![100],
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+            ),
+            vec![1, 3]
+        );
+        assert_eq!(
+            ids_of(
+                db.pull_candidates(&PullFilter {
+                    set_ids: vec![10, 20],
+                    up_ids: vec![100, 200],
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+            ),
+            vec![1, 2, 3]
+        );
+        assert_eq!(
+            ids_of(
+                db.pull_candidates(&PullFilter {
+                    ids: vec![1, 2, 3, 4, 5],
+                    set_ids: vec![10],
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+            ),
+            vec![1, 2]
+        );
+        assert_eq!(
+            ids_of(
+                db.pull_candidates(&PullFilter {
+                    ids: vec![1, 2, 3],
+                    set_ids: vec![10, 20],
+                    up_ids: vec![200],
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+            ),
+            vec![2]
+        );
+
+        // Fix 2: State filtering for default, --retry-failed, bulk --force, bulk --force --retry-failed, and explicit ID --force.
+        assert_eq!(
+            ids_of(
+                db.pull_candidates(&PullFilter {
+                    set_ids: vec![10],
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+            ),
+            vec![1, 2, 11]
+        );
+        assert_eq!(
+            ids_of(
+                db.pull_candidates(&PullFilter {
+                    set_ids: vec![10],
+                    retry_failed: true,
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+            ),
+            vec![1, 2, 11, 13]
+        );
+        // Bulk --force includes Pending, Downloading, Completed; excludes Failed, Expired, PermissionDenied, Skipped.
+        assert_eq!(
+            ids_of(
+                db.pull_candidates(&PullFilter {
+                    set_ids: vec![10],
+                    force: true,
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+            ),
+            vec![1, 2, 11, 12]
+        );
+        // Bulk --force --retry-failed adds Failed while still excluding Expired, PermissionDenied, Skipped.
+        assert_eq!(
+            ids_of(
+                db.pull_candidates(&PullFilter {
+                    set_ids: vec![10],
+                    force: true,
+                    retry_failed: true,
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+            ),
+            vec![1, 2, 11, 12, 13]
+        );
+        // Explicit IDs + --force allows ALL states (including Expired, PermissionDenied, Skipped, Failed, Completed).
+        assert_eq!(
+            ids_of(
+                db.pull_candidates(&PullFilter {
+                    ids: vec![1, 11, 12, 13, 14, 15, 16],
+                    force: true,
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+            ),
+            vec![1, 11, 12, 13, 14, 15, 16]
+        );
+        // Explicit IDs + --force STILL respects set_ids intersection!
+        assert!(
+            db.pull_candidates(&PullFilter {
+                ids: vec![14],
+                set_ids: vec![20],
+                force: true,
+                ..Default::default()
+            })
+            .await
+            .unwrap()
+            .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn pull_candidates_per_account_scoping_and_reset_downloading() {
+        let db = Db::open_in_memory().await.unwrap();
+
+        db.upsert_account(sample_account(1, AccountState::Active))
+            .await
+            .unwrap();
+        db.upsert_account(sample_account(2, AccountState::Active))
+            .await
+            .unwrap();
+        db.upsert_account(sample_account(3, AccountState::Inactive))
+            .await
+            .unwrap();
+
+        db.upsert_sets([
+            sample_set(10, "A_Active", 2, SetState::Active),
+            sample_set(11, "A_Inactive", 1, SetState::Inactive),
+            sample_set(20, "B_Active", 3, SetState::Active),
+            sample_set(30, "C_Active_On_InactiveAcct", 1, SetState::Active),
+        ])
+        .await
+        .unwrap();
+        db.upsert_set_accounts([
+            set_account::Model {
+                set_id: 10,
+                account_id: 1,
+            },
+            set_account::Model {
+                set_id: 11,
+                account_id: 1,
+            },
+            set_account::Model {
+                set_id: 20,
+                account_id: 2,
+            },
+            set_account::Model {
+                set_id: 30,
+                account_id: 3,
+            },
+        ])
+        .await
+        .unwrap();
+
+        db.upsert_ups([
+            sample_up(100, "A_ActiveUp", UpState::Active),
+            sample_up(200, "B_InactiveUp", UpState::Inactive),
+        ])
+        .await
+        .unwrap();
+        db.upsert_up_accounts([
+            up_account::Model {
+                up_id: 100,
+                account_id: 1,
+            },
+            up_account::Model {
+                up_id: 200,
+                account_id: 2,
+            },
+        ])
+        .await
+        .unwrap();
+
+        // 1: exclusive to A (Set 10)
+        // 2: exclusive to B (Set 20)
+        // 3: shared by A (Set 10) and B (Set 20)
+        // 4: shared by A (Active UP 100) and B (Set 20)
+        // 5: A's Inactive Set 11 only
+        // 6: exclusive to A (Active UP 100)
+        // 7: B's Inactive UP 200 only
+        // 8: C's Active Set 30 (Inactive Account 3)
+        db.upsert_medias([
+            sample_media(1, MediaState::Pending),
+            sample_media(2, MediaState::Pending),
+            sample_media(3, MediaState::Pending),
+            sample_media(4, MediaState::Pending),
+            sample_media(5, MediaState::Pending),
+            sample_media(6, MediaState::Downloading),
+            sample_media(7, MediaState::Pending),
+            sample_media(8, MediaState::Pending),
+        ])
+        .await
+        .unwrap();
+        db.upsert_media_sets([
+            media_set::Model { id: 1, set_id: 10 },
+            media_set::Model { id: 2, set_id: 20 },
+            media_set::Model { id: 3, set_id: 10 },
+            media_set::Model { id: 3, set_id: 20 },
+            media_set::Model { id: 4, set_id: 20 },
+            media_set::Model { id: 5, set_id: 11 },
+            media_set::Model { id: 8, set_id: 30 },
+        ])
+        .await
+        .unwrap();
+        db.upsert_media_ups([
+            media_up::Model {
+                id: 4,
+                up_id: 100,
+                from_up_feed: false,
+            },
+            media_up::Model {
+                id: 6,
+                up_id: 100,
+                from_up_feed: false,
+            },
+            media_up::Model {
+                id: 7,
+                up_id: 200,
+                from_up_feed: false,
+            },
+        ])
+        .await
+        .unwrap();
+
+        let ids_of =
+            |rows: Vec<media::Model>| -> Vec<i64> { rows.into_iter().map(|m| m.id).collect() };
+
+        assert_eq!(
+            ids_of(
+                db.pull_candidates(&PullFilter {
+                    account_id: Some(1),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+            ),
+            vec![1, 3, 4, 6]
+        );
+        assert_eq!(
+            ids_of(
+                db.pull_candidates(&PullFilter {
+                    account_id: Some(2),
+                    ..Default::default()
+                })
+                .await
+                .unwrap()
+            ),
+            vec![2, 3, 4]
+        );
+        assert!(
+            db.pull_candidates(&PullFilter {
+                account_id: Some(3),
+                ..Default::default()
+            })
+            .await
+            .unwrap()
+            .is_empty()
+        );
+
+        assert!(!db.is_media_active_for_any_account(1, &[]).await.unwrap());
+        assert!(
+            !db.is_media_active_for_any_account(1, &[2, 3])
+                .await
+                .unwrap()
+        );
+        assert!(
+            db.is_media_active_for_any_account(1, &[1, 2])
+                .await
+                .unwrap()
+        );
+        assert!(db.is_media_active_for_any_account(3, &[2]).await.unwrap());
+        assert!(db.is_media_active_for_any_account(4, &[2]).await.unwrap());
+        assert!(
+            !db.is_media_active_for_any_account(5, &[1, 2])
+                .await
+                .unwrap()
+        );
+        assert!(
+            !db.is_media_active_for_any_account(7, &[1, 2])
+                .await
+                .unwrap()
+        );
+        assert!(
+            !db.is_media_active_for_any_account(8, &[1, 2, 3])
+                .await
+                .unwrap()
+        );
+
+        // reset_downloading_medias resets only Downloading rows in the requested slice.
+        db.set_media_state(1, MediaState::Completed).await.unwrap();
+        db.record_media_failure(2, "transient failure")
+            .await
+            .unwrap();
+        db.set_media_state(3, MediaState::Downloading)
+            .await
+            .unwrap();
+        let reset = db.reset_downloading_medias(&[1, 2, 3, 999]).await.unwrap();
+        assert_eq!(reset, 1);
+        assert_eq!(
+            db.get_media(1).await.unwrap().state,
+            MediaState::Completed.as_str()
+        );
+        let m2 = db.get_media(2).await.unwrap();
+        assert_eq!(m2.state, MediaState::Failed.as_str());
+        assert_eq!(m2.retry_count, 1);
+        assert_eq!(m2.last_error.as_deref(), Some("transient failure"));
+        assert_eq!(
+            db.get_media(3).await.unwrap().state,
+            MediaState::Pending.as_str()
+        );
+        assert_eq!(
+            db.get_media(6).await.unwrap().state,
+            MediaState::Downloading.as_str()
+        );
     }
 }
