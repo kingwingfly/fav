@@ -141,13 +141,25 @@ pub async fn download_with_env(
     let cfg_clarity = config.parsed_clarity()?;
     let cfg_codec = config.parsed_codec()?;
     let cfg_audio_fmt = config.parsed_audio_format()?;
+    let cfg_color = config.parsed_color()?;
     if config.no_progress == Some(true) {
         runtime.no_progress = true;
+    }
+    if !runtime.color_explicit
+        && let Some(color) = cfg_color
+    {
+        runtime.color = color;
     }
 
     if opts.all_pages && opts.pages.is_some() {
         return Err(AppError::usage(anyhow!(
             "Cannot combine `--all-pages` with `--page <SPEC>`."
+        )));
+    }
+    let sound_only = opts.sound_only || config.sound_only.unwrap_or(false);
+    if opts.audio_format.is_some() && !sound_only {
+        return Err(AppError::usage(anyhow!(
+            "--audio-format requires --sound-only (or `sound_only = true` in config.toml)."
         )));
     }
     let explicit_pages: Option<BTreeSet<i64>> = opts
@@ -172,7 +184,6 @@ pub async fn download_with_env(
 
     let jobs = opts.jobs.or(config.jobs).unwrap_or(DEFAULT_JOBS).max(1);
     let limit_rate = opts.limit_rate.or(cfg_rate);
-    let sound_only = opts.sound_only || config.sound_only.unwrap_or(false);
     let audio_format = opts.audio_format.or(cfg_audio_fmt).unwrap_or_default();
     let clarity = opts.clarity.or(cfg_clarity).unwrap_or_default();
     let codec = opts.codec.or(cfg_codec);
@@ -1712,5 +1723,83 @@ mod tests {
         assert!(!failover_out.join(".fav-tmp").exists());
 
         failover_server.abort();
+    }
+
+    #[tokio::test]
+    async fn download_with_env_validates_audio_format_and_config_color() {
+        use crate::{error::ExitKind, muxer::test_support::MockMuxer, table::ColorChoice};
+
+        let muxer: Arc<dyn Muxer> = Arc::new(MockMuxer::succeeding());
+        let base_rt = RuntimeOptions {
+            no_progress: true,
+            non_interactive: true,
+            ..Default::default()
+        };
+
+        // `--audio-format` without `--sound-only` or `config.sound_only = true` is rejected.
+        let err = download_with_env(
+            None,
+            Config::default(),
+            muxer.clone(),
+            BiliClientConfig::default(),
+            base_rt.clone(),
+            DownloadOptions {
+                targets: vec!["BV1Q541167Qg".to_owned()],
+                audio_format: Some(AudioFormat::Flac),
+                dry_run: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.kind(), ExitKind::Usage);
+        assert!(err.to_string().contains("--sound-only"));
+        assert!(err.to_string().contains("sound_only = true"));
+
+        // `--audio-format` without CLI `--sound-only` succeeds when `config.sound_only = Some(true)`.
+        let tmp = tempfile::tempdir().unwrap();
+        download_with_env(
+            None,
+            Config {
+                sound_only: Some(true),
+                ..Default::default()
+            },
+            muxer.clone(),
+            BiliClientConfig::default(),
+            base_rt.clone(),
+            DownloadOptions {
+                targets: vec!["BV1Q541167Qg".to_owned()],
+                output_dir: Some(tmp.path().join("out")),
+                audio_format: Some(AudioFormat::Mp3),
+                dry_run: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        // Invalid `config.color` fails eagerly with ExitKind::Usage (even if `--color` was explicit).
+        let err = download_with_env(
+            None,
+            Config {
+                color: Some("invalid".to_owned()),
+                ..Default::default()
+            },
+            muxer,
+            BiliClientConfig::default(),
+            RuntimeOptions {
+                color: ColorChoice::Auto,
+                color_explicit: true,
+                ..base_rt
+            },
+            DownloadOptions {
+                targets: vec!["BV1Q541167Qg".to_owned()],
+                dry_run: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.kind(), ExitKind::Usage);
     }
 }
