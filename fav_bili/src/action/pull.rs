@@ -2,7 +2,7 @@ use std::{
     collections::{BTreeSet, HashMap, HashSet},
     path::{Path, PathBuf},
     str::FromStr as _,
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 use anyhow::{Context as _, Result, anyhow};
@@ -14,7 +14,7 @@ pub use crate::downloader::build_safe_filename;
 use crate::{
     api::{BiliApiError, BiliClient},
     context::AppContext,
-    db::PullFilter,
+    db::{Db, PullFilter},
     downloader::{
         PageTarget, StreamDownloadParams, download_and_mux_page, fetch_page_playurl,
         preview_extension, resolve_recorded_path,
@@ -54,6 +54,7 @@ pub struct PullOptions {
 enum MediaOutcome {
     Downloaded,
     Skipped,
+    DeferredToNextAccount,
     Failed(String),
     AccountExpired(String),
     Cancelled,
@@ -179,24 +180,42 @@ pub async fn pull(ctx: &AppContext, opts: PullOptions) -> AppResult<()> {
     let mut failed_total = 0usize;
     let mut skipped_total = 0usize;
     let mut expired_accounts = 0usize;
-    let mut attempted_failed_ids: HashSet<i64> = HashSet::new();
+    let mut handled_ids: HashSet<i64> = HashSet::new();
     let mut interrupted = false;
 
-    'accounts: for account in &accounts {
+    'accounts: for (idx, account) in accounts.iter().enumerate() {
         if global_cancel.is_cancelled() {
             interrupted = true;
             break 'accounts;
         }
 
-        // Re-query candidates on every account iteration so already-completed/expired items
-        // from earlier accounts are not retried.
-        let candidates = query_pull_candidates(ctx, &opts, &target_aids).await?;
-        let candidates: Vec<media::Model> = candidates
-            .into_iter()
-            .filter(|m| !attempted_failed_ids.contains(&m.id))
-            .collect();
-        if candidates.is_empty() {
+        let remaining_limit = opts
+            .limit
+            .map(|limit| limit.saturating_sub(downloaded_total + failed_total + skipped_total));
+        if remaining_limit == Some(0) {
             break 'accounts;
+        }
+
+        // Re-query candidates scoped to this active account so Account A never attempts
+        // Account B's exclusive videos, and already-handled items from earlier accounts are
+        // not re-attempted (including during `--force` or `--retry-failed` runs).
+        let query_limit = remaining_limit.map(|rem| rem.saturating_add(handled_ids.len()));
+        let mut candidates: Vec<media::Model> = query_pull_candidates(
+            ctx,
+            &opts,
+            &target_aids,
+            Some(account.account_id),
+            query_limit,
+        )
+        .await?
+        .into_iter()
+        .filter(|m| !handled_ids.contains(&m.id))
+        .collect();
+        if let Some(rem) = remaining_limit {
+            candidates.truncate(rem);
+        }
+        if candidates.is_empty() {
+            continue 'accounts;
         }
 
         info!(
@@ -226,6 +245,9 @@ pub async fn pull(ctx: &AppContext, opts: PullOptions) -> AppResult<()> {
         let account_cancel = global_cancel.child_token();
         let output_dir_arc = Arc::new(output_dir.clone());
         let tmp_dir_arc = Arc::new(tmp_dir.clone());
+        let in_flight = Arc::new(Mutex::new(HashSet::new()));
+        let remaining_account_ids: Arc<Vec<i64>> =
+            Arc::new(accounts[idx + 1..].iter().map(|a| a.account_id).collect());
 
         let mut tasks = futures::stream::iter(candidates)
             .map(|media_row| {
@@ -234,6 +256,8 @@ pub async fn pull(ctx: &AppContext, opts: PullOptions) -> AppResult<()> {
                 let output_dir = output_dir_arc.clone();
                 let tmp_dir = tmp_dir_arc.clone();
                 let params = stream_params.clone();
+                let in_flight = in_flight.clone();
+                let remaining_accounts = remaining_account_ids.clone();
                 let force = opts.force;
                 async move {
                     if token.is_cancelled() {
@@ -248,6 +272,8 @@ pub async fn pull(ctx: &AppContext, opts: PullOptions) -> AppResult<()> {
                         &params,
                         force,
                         token,
+                        &in_flight,
+                        &remaining_accounts,
                     )
                     .await;
                     (media_row.id, outcome)
@@ -264,11 +290,18 @@ pub async fn pull(ctx: &AppContext, opts: PullOptions) -> AppResult<()> {
                         break;
                     };
                     match outcome {
-                        MediaOutcome::Downloaded => downloaded_total += 1,
-                        MediaOutcome::Skipped => skipped_total += 1,
+                        MediaOutcome::Downloaded => {
+                            downloaded_total += 1;
+                            handled_ids.insert(media_id);
+                        }
+                        MediaOutcome::Skipped => {
+                            skipped_total += 1;
+                            handled_ids.insert(media_id);
+                        }
+                        MediaOutcome::DeferredToNextAccount => {}
                         MediaOutcome::Failed(msg) => {
                             failed_total += 1;
-                            attempted_failed_ids.insert(media_id);
+                            handled_ids.insert(media_id);
                             error!("{msg}");
                         }
                         MediaOutcome::AccountExpired(msg) => {
@@ -296,6 +329,15 @@ pub async fn pull(ctx: &AppContext, opts: PullOptions) -> AppResult<()> {
                     // Drop the unordered stream immediately so in-flight muxer futures unwind and
                     // their RAII guards kill child `ffmpeg` processes and remove `.part` outputs.
                     drop(tasks);
+                    match rollback_inflight_downloading(&ctx.db, &in_flight).await {
+                        Ok(reset) if reset > 0 => {
+                            info!("Reset {reset} interrupted in-flight media(s) back to Pending.");
+                        }
+                        Ok(_) => {}
+                        Err(e) => {
+                            warn!("Failed rolling back interrupted in-flight media(s): {e:#}");
+                        }
+                    }
                     break 'accounts;
                 }
             }
@@ -436,10 +478,7 @@ async fn compute_recheck_scope(
     opts: &PullOptions,
     target_aids: &[i64],
 ) -> Result<Option<HashSet<i64>>> {
-    if !target_aids.is_empty() {
-        return Ok(Some(target_aids.iter().copied().collect()));
-    }
-    if opts.set_ids.is_empty() && opts.up_ids.is_empty() {
+    if target_aids.is_empty() && opts.set_ids.is_empty() && opts.up_ids.is_empty() {
         return Ok(None);
     }
     let scope_opts = PullOptions {
@@ -449,13 +488,21 @@ async fn compute_recheck_scope(
         limit: None,
         ..Default::default()
     };
-    let rows = query_pull_candidates(ctx, &scope_opts, &[]).await?;
+    let rows = query_pull_candidates(ctx, &scope_opts, target_aids, None, None).await?;
     let ids: HashSet<i64> = rows
         .into_iter()
         .filter(|m| m.state == MediaState::Completed.as_str())
         .map(|m| m.id)
         .collect();
     Ok(Some(ids))
+}
+
+async fn rollback_inflight_downloading(db: &Db, in_flight: &Mutex<HashSet<i64>>) -> Result<u64> {
+    let ids: Vec<i64> = {
+        let mut guard = in_flight.lock().unwrap_or_else(|e| e.into_inner());
+        guard.drain().collect()
+    };
+    db.reset_downloading_medias(&ids).await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -468,6 +515,8 @@ async fn download_media(
     stream_params: &StreamDownloadParams,
     force: bool,
     cancel: CancellationToken,
+    in_flight: &Mutex<HashSet<i64>>,
+    remaining_account_ids: &[i64],
 ) -> MediaOutcome {
     match MediaType::from_str(&media_row.r#type) {
         Ok(MediaType::Video) => {}
@@ -487,6 +536,41 @@ async fn download_media(
         }
     }
 
+    {
+        let mut guard = in_flight.lock().unwrap_or_else(|e| e.into_inner());
+        guard.insert(media_row.id);
+    }
+    let outcome = download_video_media(
+        ctx,
+        client,
+        media_row,
+        output_dir,
+        tmp_dir,
+        stream_params,
+        force,
+        cancel,
+        remaining_account_ids,
+    )
+    .await;
+    {
+        let mut guard = in_flight.lock().unwrap_or_else(|e| e.into_inner());
+        guard.remove(&media_row.id);
+    }
+    outcome
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn download_video_media(
+    ctx: &AppContext,
+    client: &BiliClient,
+    media_row: &media::Model,
+    output_dir: &Path,
+    tmp_dir: &Path,
+    stream_params: &StreamDownloadParams,
+    force: bool,
+    cancel: CancellationToken,
+    remaining_account_ids: &[i64],
+) -> MediaOutcome {
     if let Err(e) = ctx
         .db
         .set_media_state(media_row.id, MediaState::Downloading)
@@ -501,7 +585,7 @@ async fn download_media(
     let info = match client.media_info(media_row.id).await {
         Ok(info) => info,
         Err(e) => {
-            return handle_media_api_error(ctx, media_row, e).await;
+            return handle_media_api_error(ctx, media_row, e, remaining_account_ids).await;
         }
     };
 
@@ -572,11 +656,15 @@ async fn download_media(
         let dash_data = match fetch_page_playurl(client, media_row.id, cid, stream_params).await {
             Ok(d) => d,
             Err(e) => {
-                let _ = ctx
-                    .db
-                    .mark_page_failed(media_row.id, cid, page as i32, part.clone())
-                    .await;
-                return handle_media_api_error(ctx, media_row, e).await;
+                let outcome =
+                    handle_media_api_error(ctx, media_row, e, remaining_account_ids).await;
+                if matches!(outcome, MediaOutcome::Failed(_)) {
+                    let _ = ctx
+                        .db
+                        .mark_page_failed(media_row.id, cid, page as i32, part.clone())
+                        .await;
+                }
+                return outcome;
             }
         };
 
@@ -667,6 +755,7 @@ async fn handle_media_api_error(
     ctx: &AppContext,
     media_row: &media::Model,
     err: anyhow::Error,
+    remaining_account_ids: &[i64],
 ) -> MediaOutcome {
     if let Some(api_err) = err.downcast_ref::<BiliApiError>() {
         if api_err.is_auth_expired() {
@@ -688,6 +777,22 @@ async fn handle_media_api_error(
             ));
         }
         if api_err.is_permission_denied() {
+            if ctx
+                .db
+                .is_media_active_for_any_account(media_row.id, remaining_account_ids)
+                .await
+                .unwrap_or(false)
+            {
+                let _ = ctx
+                    .db
+                    .set_media_state(media_row.id, MediaState::Pending)
+                    .await;
+                warn!(
+                    "Media<{} {}> returned permission denied ({api_err}); deferring to another active account.",
+                    media_row.id, media_row.title
+                );
+                return MediaOutcome::DeferredToNextAccount;
+            }
             let _ = ctx
                 .db
                 .set_media_state(media_row.id, MediaState::PermissionDenied)
@@ -712,63 +817,20 @@ async fn query_pull_candidates(
     ctx: &AppContext,
     opts: &PullOptions,
     target_aids: &[i64],
+    account_id: Option<i64>,
+    limit: Option<usize>,
 ) -> Result<Vec<media::Model>> {
-    let limit_u64 = opts.limit.map(|l| l as u64);
-
-    if !target_aids.is_empty() || (opts.set_ids.len() <= 1 && opts.up_ids.len() <= 1) {
-        return ctx
-            .db
-            .pull_candidates(&PullFilter {
-                ids: target_aids.to_vec(),
-                set_id: opts.set_ids.first().copied(),
-                up_id: opts.up_ids.first().copied(),
-                retry_failed: opts.retry_failed,
-                force: opts.force,
-                limit: limit_u64,
-            })
-            .await;
-    }
-
-    // Multiple `--set` and/or `--up` filters: union candidates and deduplicate by media ID.
-    let mut seen = HashSet::new();
-    let mut combined = Vec::new();
-    for &set_id in &opts.set_ids {
-        let rows = ctx
-            .db
-            .pull_candidates(&PullFilter {
-                set_id: Some(set_id),
-                retry_failed: opts.retry_failed,
-                force: opts.force,
-                ..Default::default()
-            })
-            .await?;
-        for row in rows {
-            if seen.insert(row.id) {
-                combined.push(row);
-            }
-        }
-    }
-    for &up_id in &opts.up_ids {
-        let rows = ctx
-            .db
-            .pull_candidates(&PullFilter {
-                up_id: Some(up_id),
-                retry_failed: opts.retry_failed,
-                force: opts.force,
-                ..Default::default()
-            })
-            .await?;
-        for row in rows {
-            if seen.insert(row.id) {
-                combined.push(row);
-            }
-        }
-    }
-    combined.sort_by_key(|m| m.id);
-    if let Some(limit) = opts.limit {
-        combined.truncate(limit);
-    }
-    Ok(combined)
+    ctx.db
+        .pull_candidates(&PullFilter {
+            ids: target_aids.to_vec(),
+            set_ids: opts.set_ids.clone(),
+            up_ids: opts.up_ids.clone(),
+            account_id,
+            retry_failed: opts.retry_failed,
+            force: opts.force,
+            limit: limit.map(|l| l as u64),
+        })
+        .await
 }
 
 async fn run_pull_dry_run(
@@ -780,7 +842,7 @@ async fn run_pull_dry_run(
     audio_format: AudioFormat,
     recheck_report: Option<&ReconcileReport>,
 ) -> AppResult<()> {
-    let mut candidates = query_pull_candidates(ctx, opts, target_aids).await?;
+    let mut candidates = query_pull_candidates(ctx, opts, target_aids, None, opts.limit).await?;
     let mut existing_ids: BTreeSet<i64> = candidates.iter().map(|m| m.id).collect();
 
     if let Some(rep) = recheck_report {
@@ -1129,5 +1191,248 @@ mod tests {
             ctx.db.pages_for_media(170_001).await.unwrap()[0].state,
             MediaPageState::Completed.as_str()
         );
+    }
+
+    #[tokio::test]
+    async fn rollback_inflight_downloading_resets_only_downloading_rows() {
+        let (_tmp, ctx) = make_ctx().await;
+
+        ctx.db
+            .upsert_medias([
+                media::Model {
+                    id: 1,
+                    bv_id: "BV1dl000000001".to_owned(),
+                    title: "InFlightDownloading".to_owned(),
+                    r#type: MediaType::Video.to_string(),
+                    state: MediaState::Downloading.to_string(),
+                    retry_count: 0,
+                    last_error: Some("stale".to_owned()),
+                    updated_at: None,
+                },
+                media::Model {
+                    id: 2,
+                    bv_id: "BV1dl000000002".to_owned(),
+                    title: "AlreadyCompleted".to_owned(),
+                    r#type: MediaType::Video.to_string(),
+                    state: MediaState::Completed.to_string(),
+                    retry_count: 0,
+                    last_error: None,
+                    updated_at: None,
+                },
+                media::Model {
+                    id: 3,
+                    bv_id: "BV1dl000000003".to_owned(),
+                    title: "AlreadyFailed".to_owned(),
+                    r#type: MediaType::Video.to_string(),
+                    state: MediaState::Failed.to_string(),
+                    retry_count: 2,
+                    last_error: Some("network timeout".to_owned()),
+                    updated_at: None,
+                },
+                media::Model {
+                    id: 4,
+                    bv_id: "BV1dl000000004".to_owned(),
+                    title: "AlreadyExpired".to_owned(),
+                    r#type: MediaType::Video.to_string(),
+                    state: MediaState::Expired.to_string(),
+                    retry_count: 0,
+                    last_error: None,
+                    updated_at: None,
+                },
+                media::Model {
+                    id: 5,
+                    bv_id: "BV1dl000000005".to_owned(),
+                    title: "NotInFlightDownloading".to_owned(),
+                    r#type: MediaType::Video.to_string(),
+                    state: MediaState::Downloading.to_string(),
+                    retry_count: 0,
+                    last_error: None,
+                    updated_at: None,
+                },
+            ])
+            .await
+            .unwrap();
+
+        let in_flight = Mutex::new(HashSet::from([1, 2, 3, 4]));
+        let reset = rollback_inflight_downloading(&ctx.db, &in_flight)
+            .await
+            .unwrap();
+        assert_eq!(reset, 1);
+        assert!(in_flight.lock().unwrap().is_empty());
+
+        let m1 = ctx.db.get_media(1).await.unwrap();
+        assert_eq!(m1.state, MediaState::Pending.as_str());
+        assert_eq!(m1.last_error, None);
+
+        let m2 = ctx.db.get_media(2).await.unwrap();
+        assert_eq!(m2.state, MediaState::Completed.as_str());
+
+        let m3 = ctx.db.get_media(3).await.unwrap();
+        assert_eq!(m3.state, MediaState::Failed.as_str());
+        assert_eq!(m3.retry_count, 2);
+        assert_eq!(m3.last_error.as_deref(), Some("network timeout"));
+
+        let m4 = ctx.db.get_media(4).await.unwrap();
+        assert_eq!(m4.state, MediaState::Expired.as_str());
+
+        let m5 = ctx.db.get_media(5).await.unwrap();
+        assert_eq!(m5.state, MediaState::Downloading.as_str());
+    }
+
+    #[tokio::test]
+    async fn compute_recheck_scope_intersects_targets_sets_and_ups() {
+        let (_tmp, ctx) = make_ctx().await;
+
+        ctx.db
+            .upsert_account(account::Model {
+                account_id: 1,
+                name: "Alice".to_owned(),
+                cookies: "SESSDATA=s".to_owned(),
+                state: AccountState::Active.to_string(),
+                refresh_token: None,
+            })
+            .await
+            .unwrap();
+        ctx.db
+            .upsert_sets([
+                set::Model {
+                    set_id: 10,
+                    name: "Set10".to_owned(),
+                    count: 2,
+                    state: SetState::Active.to_string(),
+                    kind: SetKind::Created.to_string(),
+                    owner_mid: Some(1),
+                    sync_complete: true,
+                    resume_page: None,
+                },
+                set::Model {
+                    set_id: 20,
+                    name: "Set20".to_owned(),
+                    count: 1,
+                    state: SetState::Active.to_string(),
+                    kind: SetKind::Created.to_string(),
+                    owner_mid: Some(1),
+                    sync_complete: true,
+                    resume_page: None,
+                },
+            ])
+            .await
+            .unwrap();
+        ctx.db
+            .upsert_set_accounts([
+                set_account::Model {
+                    set_id: 10,
+                    account_id: 1,
+                },
+                set_account::Model {
+                    set_id: 20,
+                    account_id: 1,
+                },
+            ])
+            .await
+            .unwrap();
+        ctx.db
+            .upsert_ups([
+                up::Model {
+                    up_id: 100,
+                    name: "Up100".to_owned(),
+                    state: UpState::Active.to_string(),
+                    sync_complete: true,
+                    resume_page: None,
+                },
+                up::Model {
+                    up_id: 200,
+                    name: "Up200".to_owned(),
+                    state: UpState::Active.to_string(),
+                    sync_complete: true,
+                    resume_page: None,
+                },
+            ])
+            .await
+            .unwrap();
+        ctx.db
+            .upsert_up_accounts([
+                up_account::Model {
+                    up_id: 100,
+                    account_id: 1,
+                },
+                up_account::Model {
+                    up_id: 200,
+                    account_id: 1,
+                },
+            ])
+            .await
+            .unwrap();
+        ctx.db
+            .upsert_medias([
+                media::Model {
+                    id: 1,
+                    bv_id: "BV1rc000000001".to_owned(),
+                    title: "S10_U100".to_owned(),
+                    r#type: MediaType::Video.to_string(),
+                    state: MediaState::Completed.to_string(),
+                    retry_count: 0,
+                    last_error: None,
+                    updated_at: None,
+                },
+                media::Model {
+                    id: 2,
+                    bv_id: "BV1rc000000002".to_owned(),
+                    title: "S10_U200".to_owned(),
+                    r#type: MediaType::Video.to_string(),
+                    state: MediaState::Completed.to_string(),
+                    retry_count: 0,
+                    last_error: None,
+                    updated_at: None,
+                },
+                media::Model {
+                    id: 3,
+                    bv_id: "BV1rc000000003".to_owned(),
+                    title: "S20_U100".to_owned(),
+                    r#type: MediaType::Video.to_string(),
+                    state: MediaState::Completed.to_string(),
+                    retry_count: 0,
+                    last_error: None,
+                    updated_at: None,
+                },
+            ])
+            .await
+            .unwrap();
+        ctx.db
+            .upsert_media_sets([
+                media_set::Model { id: 1, set_id: 10 },
+                media_set::Model { id: 2, set_id: 10 },
+                media_set::Model { id: 3, set_id: 20 },
+            ])
+            .await
+            .unwrap();
+        ctx.db
+            .upsert_media_ups([
+                crate::entity::media_up::Model { id: 1, up_id: 100 },
+                crate::entity::media_up::Model { id: 2, up_id: 200 },
+                crate::entity::media_up::Model { id: 3, up_id: 100 },
+            ])
+            .await
+            .unwrap();
+
+        assert_eq!(
+            compute_recheck_scope(&ctx, &PullOptions::default(), &[])
+                .await
+                .unwrap(),
+            None
+        );
+
+        let scope = compute_recheck_scope(
+            &ctx,
+            &PullOptions {
+                set_ids: vec![10, 20],
+                up_ids: vec![100],
+                ..Default::default()
+            },
+            &[1, 2],
+        )
+        .await
+        .unwrap();
+        assert_eq!(scope, Some(HashSet::from([1])));
     }
 }

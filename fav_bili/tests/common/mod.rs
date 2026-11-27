@@ -192,8 +192,12 @@ pub struct MockState {
     pub up_medias: HashMap<i64, Vec<MockMediaItem>>,
     /// Keyed by `aid`.
     pub views: HashMap<i64, MockViewResponse>,
+    /// Optional per-account (`SESSDATA`, `aid`) overrides for `/x/web-interface/wbi/view`.
+    pub views_by_sessdata: HashMap<(String, i64), MockViewResponse>,
     /// Keyed by `(aid, cid)`.
     pub playurls: HashMap<(i64, i64), MockPlayurlResponse>,
+    /// Optional per-account (`SESSDATA`, `aid`, `cid`) overrides for `/x/player/wbi/playurl`.
+    pub playurls_by_sessdata: HashMap<(String, i64, i64), MockPlayurlResponse>,
     /// Keyed by URL path (e.g. `"/cdn/v1.m4s"`).
     pub cdn_assets: HashMap<String, MockCdnAsset>,
     /// Keyed by `aid` -> `(code, message)`.
@@ -675,7 +679,11 @@ fn route_request(
         }
         "/x/web-interface/wbi/view" => {
             let aid: i64 = q.get("aid").and_then(|v| v.parse().ok()).unwrap_or(0);
-            match st.views.get(&aid) {
+            match st
+                .views_by_sessdata
+                .get(&(sessdata.clone(), aid))
+                .or_else(|| st.views.get(&aid))
+            {
                 Some(MockViewResponse::Ok {
                     aid,
                     bvid,
@@ -706,7 +714,11 @@ fn route_request(
         "/x/player/wbi/playurl" => {
             let avid: i64 = q.get("avid").and_then(|v| v.parse().ok()).unwrap_or(0);
             let cid: i64 = q.get("cid").and_then(|v| v.parse().ok()).unwrap_or(0);
-            match st.playurls.get(&(avid, cid)) {
+            match st
+                .playurls_by_sessdata
+                .get(&(sessdata.clone(), avid, cid))
+                .or_else(|| st.playurls.get(&(avid, cid)))
+            {
                 Some(MockPlayurlResponse::Dash { videos, audios }) => {
                     let v_json: Vec<Value> =
                         videos.iter().map(|s| stream_spec_json(origin, s)).collect();
