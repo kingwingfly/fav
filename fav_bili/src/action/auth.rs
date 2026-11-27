@@ -199,13 +199,16 @@ pub async fn use_cookies(ctx: &AppContext, opts: UseCookiesOptions) -> AppResult
     }
 
     let mut errors = Vec::new();
+    let mut validation_errors = 0usize;
     let mut imported = 0usize;
 
     for (idx, map) in cookie_maps.into_iter().enumerate() {
         if let Err(e) = validate_sessdata(&map) {
-            return Err(AppError::usage(
-                e.context(format!("Invalid cookies for entry #{}", idx + 1)),
-            ));
+            let msg = format!("Invalid cookies for entry #{}: {e:#}", idx + 1);
+            error!("{msg}");
+            errors.push(msg);
+            validation_errors += 1;
+            continue;
         }
 
         let cookie_header = format_cookie_header(&map);
@@ -245,13 +248,19 @@ pub async fn use_cookies(ctx: &AppContext, opts: UseCookiesOptions) -> AppResult
         }
 
         let final_cookies = client.export_cookies();
+        let existing_refresh_token = ctx
+            .db
+            .get_account(mid)
+            .await
+            .ok()
+            .and_then(|acct| acct.refresh_token);
         ctx.db
             .upsert_account(account::Model {
                 account_id: mid,
                 name: uname.clone(),
                 cookies: final_cookies,
                 state: AccountState::Active.to_string(),
-                refresh_token: None,
+                refresh_token: existing_refresh_token,
             })
             .await?;
 
@@ -263,6 +272,12 @@ pub async fn use_cookies(ctx: &AppContext, opts: UseCookiesOptions) -> AppResult
     }
 
     if imported == 0 && !errors.is_empty() {
+        if validation_errors == errors.len() {
+            return Err(AppError::usage(anyhow!(
+                "Invalid cookies provided: {}",
+                errors.join("; ")
+            )));
+        }
         return Err(AppError::auth(anyhow!(
             "Failed to authenticate with provided cookies: {}",
             errors.join("; ")
@@ -691,5 +706,188 @@ fn parse_cookie_blob(content: &str) -> Vec<BTreeMap<String, String>> {
             .map(parse_cookie_header)
             .filter(|m| !m.is_empty())
             .collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use tokio::{
+        io::{AsyncReadExt as _, AsyncWriteExt as _},
+        net::TcpListener,
+    };
+    use url::Url;
+
+    use super::*;
+    use crate::{
+        api::BiliClientConfig,
+        config::{Config, Workspace},
+        db::Db,
+        error::ExitKind,
+        muxer::test_support::MockMuxer,
+    };
+
+    async fn spawn_auth_mock_server() -> Url {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        tokio::spawn(async move {
+            while let Ok((mut stream, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let mut buf = vec![0u8; 8192];
+                    let n = match stream.read(&mut buf).await {
+                        Ok(n) if n > 0 => n,
+                        _ => return,
+                    };
+                    let req = String::from_utf8_lossy(&buf[..n]);
+                    let path = req
+                        .lines()
+                        .next()
+                        .and_then(|l| l.split_whitespace().nth(1))
+                        .unwrap_or("/");
+                    let body = if path.starts_with("/x/web-interface/nav") {
+                        if req.contains("SESSDATA=valid_sess") || req.contains("SESSDATA=new_sess")
+                        {
+                            r#"{"code":0,"data":{"isLogin":true,"mid":1001,"uname":"Alice"}}"#
+                        } else if req.contains("SESSDATA=second_sess") {
+                            r#"{"code":0,"data":{"isLogin":true,"mid":1002,"uname":"Bob"}}"#
+                        } else {
+                            r#"{"code":-101,"data":{"isLogin":false}}"#
+                        }
+                    } else if path.starts_with("/bapis/bilibili.api.ticket.v1.Ticket/GenWebTicket")
+                    {
+                        r#"{"code":0,"data":{"ticket":"t_fresh","created_at":4000000000,"ttl":259200}}"#
+                    } else if path.starts_with("/x/web-frontend/getbuvid") {
+                        r#"{"code":0,"data":{"buvid":"BUV-1"}}"#
+                    } else {
+                        r#"{"code":-404,"message":"not found","data":null}"#
+                    };
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    let _ = stream.write_all(resp.as_bytes()).await;
+                });
+            }
+        });
+        Url::parse(&format!("http://{addr}")).unwrap()
+    }
+
+    fn test_api_config(base: Url) -> BiliClientConfig {
+        BiliClientConfig {
+            api_base_url: base.clone(),
+            passport_base_url: base,
+            connect_timeout: Duration::from_secs(5),
+            read_timeout: Duration::from_secs(5),
+            api_request_timeout: Duration::from_secs(5),
+            max_retries: 0,
+            base_backoff: Duration::ZERO,
+            max_backoff: Duration::ZERO,
+            min_request_interval: Duration::ZERO,
+            wbi_ttl: Duration::from_secs(60),
+        }
+    }
+
+    #[tokio::test]
+    async fn use_cookies_preserves_existing_refresh_token() {
+        let base = spawn_auth_mock_server().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let ws = Workspace::new(tmp.path().join("ws"));
+        ws.ensure_dirs().unwrap();
+        let db = Db::open_in_memory().await.unwrap();
+
+        db.upsert_account(account::Model {
+            account_id: 1001,
+            name: "AliceOld".to_owned(),
+            cookies: "SESSDATA=old_sess".to_owned(),
+            state: AccountState::Expired.to_string(),
+            refresh_token: Some("rt_preserve_me".to_owned()),
+        })
+        .await
+        .unwrap();
+
+        let ctx = AppContext::for_test(
+            ws,
+            Config::default(),
+            db,
+            Arc::new(MockMuxer::succeeding()),
+            test_api_config(base),
+        );
+
+        use_cookies(
+            &ctx,
+            UseCookiesOptions {
+                cookies: vec![
+                    "SESSDATA=new_sess; bili_jct=csrf_new".to_owned(),
+                    "SESSDATA=second_sess; bili_jct=csrf_bob".to_owned(),
+                ],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        let alice = ctx.db.get_account(1001).await.unwrap();
+        assert_eq!(alice.name, "Alice");
+        assert_eq!(alice.state, AccountState::Active.to_string());
+        assert_eq!(alice.refresh_token.as_deref(), Some("rt_preserve_me"));
+        assert!(alice.cookies.contains("SESSDATA=new_sess"));
+
+        let bob = ctx.db.get_account(1002).await.unwrap();
+        assert_eq!(bob.name, "Bob");
+        assert_eq!(bob.refresh_token, None);
+    }
+
+    #[tokio::test]
+    async fn use_cookies_collects_missing_sessdata_errors_for_usage_and_partial() {
+        let base = spawn_auth_mock_server().await;
+        let tmp = tempfile::tempdir().unwrap();
+        let ws = Workspace::new(tmp.path().join("ws"));
+        ws.ensure_dirs().unwrap();
+        let db = Db::open_in_memory().await.unwrap();
+        let ctx = AppContext::for_test(
+            ws,
+            Config::default(),
+            db,
+            Arc::new(MockMuxer::succeeding()),
+            test_api_config(base),
+        );
+
+        // All entries missing SESSDATA -> Usage error covering all entries.
+        let err_usage = use_cookies(
+            &ctx,
+            UseCookiesOptions {
+                cookies: vec![
+                    "bili_jct=only_csrf".to_owned(),
+                    "buvid3=only_buv".to_owned(),
+                ],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err_usage.kind(), ExitKind::Usage);
+        let msg = format!("{err_usage:#}");
+        assert!(msg.contains("entry #1"), "msg={msg}");
+        assert!(msg.contains("entry #2"), "msg={msg}");
+        assert!(ctx.db.all_accounts().await.unwrap().is_empty());
+
+        // First entry missing SESSDATA, second valid -> continues and imports second, returns PartialFailure.
+        let err_partial = use_cookies(
+            &ctx,
+            UseCookiesOptions {
+                cookies: vec![
+                    "bili_jct=missing_sess".to_owned(),
+                    "SESSDATA=valid_sess; bili_jct=csrf_ok".to_owned(),
+                ],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err_partial.kind(), ExitKind::PartialFailure);
+        let alice = ctx.db.get_account(1001).await.unwrap();
+        assert_eq!(alice.name, "Alice");
     }
 }

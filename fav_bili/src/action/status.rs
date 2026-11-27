@@ -73,119 +73,7 @@ fn format_status_report(
             ];
             Ok(render_tsv(["section", "metric", "value"], rows))
         }
-        OutputFormat::Table => {
-            let c = table_opts.colored;
-            let s = &report.summary;
-
-            let pending_display =
-                if s.medias.pending > 0 && s.medias.active_pending != s.medias.pending {
-                    format!("{} ({} active)", s.medias.pending, s.medias.active_pending)
-                } else {
-                    s.medias.pending.to_string()
-                };
-            let failed_display = if s.medias.failed > 0 && s.medias.active_failed != s.medias.failed
-            {
-                format!("{} ({} active)", s.medias.failed, s.medias.active_failed)
-            } else {
-                s.medias.failed.to_string()
-            };
-
-            let mut overview = table(
-                ["resource", "total", "breakdown"],
-                [
-                    [
-                        "Accounts".to_owned(),
-                        s.accounts.total.to_string(),
-                        format!(
-                            "{}: {}, {}: {}, {}: {}",
-                            format_state_badge("Active", c),
-                            s.accounts.active,
-                            format_state_badge("Inactive", c),
-                            s.accounts.inactive,
-                            format_state_badge("Expired", c),
-                            s.accounts.expired,
-                        ),
-                    ],
-                    [
-                        "Sets".to_owned(),
-                        s.sets.total.to_string(),
-                        format!(
-                            "{}: {}, {}: {}, {}: {}",
-                            format_state_badge("Active", c),
-                            s.sets.active,
-                            format_state_badge("Inactive", c),
-                            s.sets.inactive,
-                            format_state_badge("Unreachable", c),
-                            s.sets.unreachable,
-                        ),
-                    ],
-                    [
-                        "UPs".to_owned(),
-                        s.ups.total.to_string(),
-                        format!(
-                            "{}: {}, {}: {}, {}: {}",
-                            format_state_badge("Active", c),
-                            s.ups.active,
-                            format_state_badge("Inactive", c),
-                            s.ups.inactive,
-                            format_state_badge("Deactivated", c),
-                            s.ups.deactivated,
-                        ),
-                    ],
-                    [
-                        "Medias".to_owned(),
-                        s.medias.total.to_string(),
-                        format!(
-                            "{}: {}, {}: {}, {}: {}, {}: {}, {}: {}, {}: {}",
-                            format_state_badge("Pending", c),
-                            pending_display,
-                            format_state_badge("Completed", c),
-                            s.medias.completed,
-                            format_state_badge("Failed", c),
-                            failed_display,
-                            format_state_badge("Expired", c),
-                            s.medias.expired,
-                            format_state_badge("PermissionDenied", c),
-                            s.medias.permission_denied,
-                            format_state_badge("Skipped", c),
-                            s.medias.skipped,
-                        ),
-                    ],
-                ],
-            );
-            if !table_opts.wide
-                && let Some(max_width) = table_opts.term_width
-            {
-                overview.fit_to_width(max_width);
-            }
-
-            let mut out = format!(
-                "Workspace : {}\nDatabase  : {}\nOutput Dir: {}\n\n{overview}",
-                report.workspace, report.db_path, report.output_dir
-            );
-
-            if !s.top_ups.is_empty() {
-                let mut top_tbl = table(
-                    ["up_id", "name", "medias"],
-                    s.top_ups.iter().map(|u| {
-                        [
-                            u.up_id.to_string(),
-                            table_opts.format_cell(&u.name, 30),
-                            u.media_count.to_string(),
-                        ]
-                    }),
-                );
-                if !table_opts.wide
-                    && let Some(max_width) = table_opts.term_width
-                {
-                    top_tbl.fit_to_width(max_width);
-                }
-                out.push_str("\n\nTop UPs:\n");
-                out.push_str(&top_tbl.to_string());
-            }
-
-            Ok(out)
-        }
+        OutputFormat::Table => Ok(render_status_table(report, table_opts)),
     }
 }
 
@@ -221,6 +109,120 @@ pub async fn status(ctx: &AppContext, format: OutputFormat, top: usize) -> AppRe
     }
 
     Ok(())
+}
+
+fn render_status_table(report: &StatusReport, table_opts: TableOptions) -> String {
+    let c = table_opts.colored;
+    let s = &report.summary;
+
+    let pending_display = if s.medias.pending > 0 && s.medias.active_pending != s.medias.pending {
+        format!("{} ({} active)", s.medias.pending, s.medias.active_pending)
+    } else {
+        s.medias.pending.to_string()
+    };
+    let failed_display = if s.medias.failed > 0 && s.medias.active_failed != s.medias.failed {
+        format!("{} ({} active)", s.medias.failed, s.medias.active_failed)
+    } else {
+        s.medias.failed.to_string()
+    };
+
+    let mut overview = table(
+        ["resource", "total", "breakdown"],
+        [
+            [
+                "Accounts".to_owned(),
+                s.accounts.total.to_string(),
+                format!(
+                    "{}: {}, {}: {}, {}: {}",
+                    format_state_badge("Active", c),
+                    s.accounts.active,
+                    format_state_badge("Inactive", c),
+                    s.accounts.inactive,
+                    format_state_badge("Expired", c),
+                    s.accounts.expired,
+                ),
+            ],
+            [
+                "Sets".to_owned(),
+                s.sets.total.to_string(),
+                format!(
+                    "{}: {}, {}: {}, {}: {}",
+                    format_state_badge("Active", c),
+                    s.sets.active,
+                    format_state_badge("Inactive", c),
+                    s.sets.inactive,
+                    format_state_badge("Unreachable", c),
+                    s.sets.unreachable,
+                ),
+            ],
+            [
+                "UPs".to_owned(),
+                s.ups.total.to_string(),
+                format!(
+                    "{}: {}, {}: {}, {}: {}",
+                    format_state_badge("Active", c),
+                    s.ups.active,
+                    format_state_badge("Inactive", c),
+                    s.ups.inactive,
+                    format_state_badge("Deactivated", c),
+                    s.ups.deactivated,
+                ),
+            ],
+            [
+                "Medias".to_owned(),
+                s.medias.total.to_string(),
+                format!(
+                    "{}: {}, {}: {}, {}: {}, {}: {}, {}: {}, {}: {}, {}: {}",
+                    format_state_badge("Pending", c),
+                    pending_display,
+                    format_state_badge("Downloading", c),
+                    s.medias.downloading,
+                    format_state_badge("Completed", c),
+                    s.medias.completed,
+                    format_state_badge("Failed", c),
+                    failed_display,
+                    format_state_badge("Expired", c),
+                    s.medias.expired,
+                    format_state_badge("PermissionDenied", c),
+                    s.medias.permission_denied,
+                    format_state_badge("Skipped", c),
+                    s.medias.skipped,
+                ),
+            ],
+        ],
+    );
+    if !table_opts.wide
+        && let Some(max_width) = table_opts.term_width
+    {
+        overview.fit_to_width(max_width);
+    }
+
+    let mut out = format!(
+        "Workspace : {}\nDatabase  : {}\nOutput Dir: {}\n\n{overview}",
+        report.workspace, report.db_path, report.output_dir
+    );
+
+    if !s.top_ups.is_empty() {
+        let mut top_tbl = table(
+            ["up_id", "name", "medias"],
+            s.top_ups.iter().map(|u| {
+                [
+                    u.up_id.to_string(),
+                    table_opts.format_cell(&u.name, 30),
+                    u.media_count.to_string(),
+                ]
+            }),
+        );
+        if !table_opts.wide
+            && let Some(max_width) = table_opts.term_width
+        {
+            top_tbl.fit_to_width(max_width);
+        }
+        out.push_str("\n\nTop UPs:\n");
+        out.push_str(&top_tbl.to_string());
+    }
+
+    out
 }
 
 fn build_status_hint(s: &StatusSummary) -> Option<String> {
@@ -596,5 +598,62 @@ mod tests {
         let jsonl_val: serde_json::Value = serde_json::from_str(&jsonl_mixed).unwrap();
         assert_eq!(jsonl_val["medias"]["active_pending"], 1);
         assert_eq!(jsonl_val["medias"]["active_failed"], 1);
+    }
+
+    #[tokio::test]
+    async fn status_table_includes_downloading_breakdown_matching_total() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ws = Workspace::new(tmp.path().join("ws"));
+        ws.ensure_dirs().unwrap();
+        let db = Db::open_in_memory().await.unwrap();
+
+        let medias = [
+            (1, "BV17x411w7KC", MediaState::Pending),
+            (2, "BV1Q541167Qg", MediaState::Downloading),
+            (3, "BV1xx411c7mD", MediaState::Downloading),
+            (4, "BV1ab411c7mD", MediaState::Completed),
+            (5, "BV1cd411c7mD", MediaState::Failed),
+            (6, "BV1ef411c7mD", MediaState::Expired),
+            (7, "BV1gh411c7mD", MediaState::PermissionDenied),
+            (8, "BV1ij411c7mD", MediaState::Skipped),
+        ]
+        .into_iter()
+        .map(|(id, bv_id, state)| media::Model {
+            id,
+            bv_id: bv_id.to_owned(),
+            title: format!("Media {id}"),
+            r#type: MediaType::Video.to_string(),
+            state: state.to_string(),
+            retry_count: 0,
+            last_error: None,
+            updated_at: None,
+        });
+        db.upsert_medias(medias).await.unwrap();
+
+        let summary = db.status_summary(0).await.unwrap();
+        assert_eq!(summary.medias.total, 8);
+        assert_eq!(summary.medias.downloading, 2);
+
+        let report = StatusReport {
+            workspace: ws.root().display().to_string(),
+            db_path: ws.db_path().display().to_string(),
+            output_dir: ws.root().display().to_string(),
+            summary,
+        };
+        let rendered = render_status_table(
+            &report,
+            TableOptions {
+                wide: true,
+                is_tty: false,
+                colored: false,
+                term_width: None,
+            },
+        );
+        assert!(
+            rendered.contains(
+                "Pending: 1 (0 active), Downloading: 2, Completed: 1, Failed: 1 (0 active), Expired: 1, PermissionDenied: 1, Skipped: 1"
+            ),
+            "unexpected status table:\n{rendered}"
+        );
     }
 }

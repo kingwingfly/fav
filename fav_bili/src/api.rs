@@ -431,18 +431,32 @@ impl BiliClient {
         let path = "/x/v3/fav/folder/created/list-all";
         let url = join_url(&self.config.api_base_url, path)?;
         let payload = ListSetPayload { up_mid };
-        let env: BiliEnvelope<ListSetData> = self
-            .send_json_with_retry(path, || {
-                self.client
-                    .get(url.clone())
-                    .timeout(self.config.api_request_timeout)
-                    .query(&payload)
-            })
-            .await?;
-        if env.code != 0 {
-            return Err(BiliApiError::new(env.code, env.message, path).into());
+        for attempt in 0..=self.config.max_retries {
+            let env: BiliEnvelope<ListSetData> = self
+                .send_json_with_retry(path, || {
+                    self.client
+                        .get(url.clone())
+                        .timeout(self.config.api_request_timeout)
+                        .query(&payload)
+                })
+                .await?;
+            if env.code == 0 {
+                return Ok(env.data.map(|d| d.list).unwrap_or_default());
+            }
+            let api_err = BiliApiError::new(env.code, env.message, path);
+            if api_err.is_retryable() && attempt < self.config.max_retries {
+                warn!(
+                    path,
+                    code = api_err.code,
+                    attempt = attempt + 1,
+                    "Transient Bilibili API error; backing off and retrying"
+                );
+                self.sleep_backoff(attempt).await;
+                continue;
+            }
+            return Err(api_err.into());
         }
-        Ok(env.data.map(|d| d.list).unwrap_or_default())
+        unreachable!("retry loop always returns")
     }
 
     pub async fn list_collected_sets(
@@ -691,12 +705,20 @@ impl BiliClient {
                     req = req.header(RANGE, format!("bytes={existing_len}-"));
                 }
 
-                let resp = match req.send().await {
+                let send_res = tokio::select! {
+                    biased;
+                    _ = wait_cancelled(opts.cancel.as_ref()) => {
+                        return Err(anyhow!("Download cancelled"));
+                    }
+                    res = req.send() => res,
+                };
+                let resp = match send_res {
                     Ok(r) => r,
                     Err(e) => {
                         last_err = Some(anyhow!("CDN request error ({url}): {e}"));
                         if attempt < self.config.max_retries {
-                            self.sleep_backoff(attempt).await;
+                            self.sleep_backoff_cancellable(attempt, opts.cancel.as_ref())
+                                .await?;
                             continue;
                         }
                         break;
@@ -725,7 +747,8 @@ impl BiliClient {
                 if status == StatusCode::TOO_MANY_REQUESTS || status.is_server_error() {
                     last_err = Some(anyhow!("CDN returned HTTP {} for {}", status.as_u16(), url));
                     if attempt < self.config.max_retries {
-                        self.sleep_backoff(attempt).await;
+                        self.sleep_backoff_cancellable(attempt, opts.cancel.as_ref())
+                            .await?;
                         continue;
                     }
                     break;
@@ -780,15 +803,15 @@ impl BiliClient {
 
                 let mut stream_err: Option<anyhow::Error> = None;
                 loop {
-                    if opts
-                        .cancel
-                        .as_ref()
-                        .is_some_and(CancellationToken::is_cancelled)
-                    {
-                        let _ = writer.flush().await;
-                        return Err(anyhow!("Download cancelled"));
-                    }
-                    match resp.chunk().await {
+                    let chunk_res = tokio::select! {
+                        biased;
+                        _ = wait_cancelled(opts.cancel.as_ref()) => {
+                            let _ = writer.flush().await;
+                            return Err(anyhow!("Download cancelled"));
+                        }
+                        res = resp.chunk() => res,
+                    };
+                    match chunk_res {
                         Ok(Some(chunk)) => {
                             writer.write_all(&chunk).await?;
                             let n = chunk.len() as u64;
@@ -808,7 +831,14 @@ impl BiliClient {
                                 );
                                 let actual_elapsed = session_start.elapsed();
                                 if expected_elapsed > actual_elapsed {
-                                    tokio::time::sleep(expected_elapsed - actual_elapsed).await;
+                                    tokio::select! {
+                                        biased;
+                                        _ = wait_cancelled(opts.cancel.as_ref()) => {
+                                            let _ = writer.flush().await;
+                                            return Err(anyhow!("Download cancelled"));
+                                        }
+                                        _ = tokio::time::sleep(expected_elapsed - actual_elapsed) => {}
+                                    }
                                 }
                             }
                         }
@@ -825,7 +855,8 @@ impl BiliClient {
                 if let Some(err) = stream_err {
                     last_err = Some(err);
                     if attempt < self.config.max_retries {
-                        self.sleep_backoff(attempt).await;
+                        self.sleep_backoff_cancellable(attempt, opts.cancel.as_ref())
+                            .await?;
                         continue;
                     }
                     break;
@@ -838,7 +869,8 @@ impl BiliClient {
                         "Incomplete download ({url}): received {downloaded} of {expected} bytes"
                     ));
                     if attempt < self.config.max_retries {
-                        self.sleep_backoff(attempt).await;
+                        self.sleep_backoff_cancellable(attempt, opts.cancel.as_ref())
+                            .await?;
                         continue;
                     }
                     break;
@@ -1000,6 +1032,25 @@ impl BiliClient {
         let jitter_pct = 50 + (pseudo_rand_u64() % 51);
         let delay = Duration::from_millis((raw.as_millis() as u64 * jitter_pct) / 100);
         tokio::time::sleep(delay).await;
+    }
+
+    async fn sleep_backoff_cancellable(
+        &self,
+        attempt: u32,
+        cancel: Option<&CancellationToken>,
+    ) -> Result<()> {
+        tokio::select! {
+            biased;
+            _ = wait_cancelled(cancel) => Err(anyhow!("Download cancelled")),
+            _ = self.sleep_backoff(attempt) => Ok(()),
+        }
+    }
+}
+
+async fn wait_cancelled(cancel: Option<&CancellationToken>) {
+    match cancel {
+        Some(token) => token.cancelled().await,
+        None => std::future::pending().await,
     }
 }
 
@@ -1524,5 +1575,236 @@ mod tests {
             "season_req={season_req}"
         );
         assert!(season_req.contains("w_rid="), "season_req={season_req}");
+    }
+
+    #[tokio::test]
+    async fn list_created_sets_retries_transient_799_and_handles_null_data() {
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let att_c = attempts.clone();
+
+        let base = spawn_mock_server(move |path, _req| {
+            assert!(
+                path.starts_with("/x/v3/fav/folder/created/list-all"),
+                "unexpected path: {path}"
+            );
+            let n = att_c.fetch_add(1, Ordering::SeqCst);
+            let body = match n {
+                0 => r#"{"code": -799, "message": "too fast", "data": null}"#,
+                1 => {
+                    r#"{"code": 0, "data": {"list": [{"id": 100, "title": "Default", "media_count": 5}]}}"#
+                }
+                _ => r#"{"code": 0, "data": null}"#,
+            };
+            (
+                200,
+                vec![("Content-Type".into(), "application/json".into())],
+                body.as_bytes().to_vec(),
+            )
+        })
+        .await;
+
+        let client = BiliClient::with_config("SESSDATA=ok", test_config(base)).unwrap();
+
+        let sets = client.list_created_sets(42).await.unwrap();
+        assert_eq!(sets.len(), 1);
+        assert_eq!(sets[0].id, 100);
+        assert_eq!(sets[0].title, "Default");
+        assert_eq!(sets[0].media_count, 5);
+        assert_eq!(attempts.load(Ordering::SeqCst), 2);
+
+        let empty = client.list_created_sets(42).await.unwrap();
+        assert!(empty.is_empty());
+        assert_eq!(attempts.load(Ordering::SeqCst), 3);
+    }
+
+    #[tokio::test]
+    async fn download_to_part_cancels_promptly_during_stalled_stream_request_throttle_and_backoff()
+    {
+        use tokio::sync::Notify;
+
+        let dir = TempDir::new().unwrap();
+
+        // 1. Mid-chunk cancellation on a stalled response stream (flushes partial bytes).
+        {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            let release = Arc::new(Notify::new());
+            let release_srv = release.clone();
+            tokio::spawn(async move {
+                if let Ok((mut stream, _)) = listener.accept().await {
+                    let mut buf = vec![0u8; 4096];
+                    let _ = stream.read(&mut buf).await;
+                    let _ = stream
+                        .write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 1000\r\n\r\nhello")
+                        .await;
+                    let _ = stream.flush().await;
+                    release_srv.notified().await;
+                }
+            });
+
+            let base = Url::parse(&format!("http://{addr}")).unwrap();
+            let mut cfg = test_config(base.clone());
+            cfg.read_timeout = Duration::from_secs(10);
+            let client = BiliClient::with_config("", cfg).unwrap();
+
+            let cancel = CancellationToken::new();
+            let got_chunk = Arc::new(Notify::new());
+            let got_chunk_cb = got_chunk.clone();
+            let cancel_task = cancel.clone();
+            tokio::spawn(async move {
+                got_chunk.notified().await;
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                cancel_task.cancel();
+            });
+
+            let part = dir.path().join("stalled_stream.part");
+            let opts = DownloadOptions {
+                cancel: Some(cancel),
+                ..Default::default()
+            };
+            let start = Instant::now();
+            let err = client
+                .download_to_part(&[base.join("/stalled").unwrap()], &part, &opts, |p| {
+                    if p.downloaded >= 5 {
+                        got_chunk_cb.notify_one();
+                    }
+                })
+                .await
+                .unwrap_err();
+            release.notify_one();
+
+            assert!(err.to_string().contains("Download cancelled"), "err={err}");
+            assert!(
+                start.elapsed() < Duration::from_secs(2),
+                "mid-chunk cancel took too long: {:?}",
+                start.elapsed()
+            );
+            assert_eq!(std::fs::read(&part).unwrap(), b"hello");
+        }
+
+        // 2. Mid-backoff cancellation when server returns retryable 503.
+        {
+            let base = spawn_mock_server(|_path, _req| (503, vec![], b"busy".to_vec())).await;
+            let mut cfg = test_config(base.clone());
+            cfg.max_retries = 2;
+            cfg.base_backoff = Duration::from_secs(30);
+            cfg.max_backoff = Duration::from_secs(30);
+            let client = BiliClient::with_config("", cfg).unwrap();
+
+            let cancel = CancellationToken::new();
+            let cancel_task = cancel.clone();
+            tokio::spawn(async move {
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                cancel_task.cancel();
+            });
+
+            let part = dir.path().join("backoff.part");
+            let opts = DownloadOptions {
+                cancel: Some(cancel),
+                ..Default::default()
+            };
+            let start = Instant::now();
+            let err = client
+                .download_to_part(&[base.join("/retry").unwrap()], &part, &opts, |_| {})
+                .await
+                .unwrap_err();
+            assert!(err.to_string().contains("Download cancelled"), "err={err}");
+            assert!(
+                start.elapsed() < Duration::from_secs(2),
+                "mid-backoff cancel took too long: {:?}",
+                start.elapsed()
+            );
+        }
+
+        // 3. Mid-throttle cancellation during `--limit-rate` sleep (flushes written bytes).
+        {
+            let payload = vec![b'x'; 1024];
+            let payload_c = payload.clone();
+            let base = spawn_mock_server(move |_path, _req| (200, vec![], payload_c.clone())).await;
+            let client = BiliClient::with_config("", test_config(base.clone())).unwrap();
+
+            let cancel = CancellationToken::new();
+            let got_chunk = Arc::new(Notify::new());
+            let got_chunk_cb = got_chunk.clone();
+            let cancel_task = cancel.clone();
+            tokio::spawn(async move {
+                got_chunk.notified().await;
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                cancel_task.cancel();
+            });
+
+            let part = dir.path().join("throttle.part");
+            let opts = DownloadOptions {
+                limit_rate: Some(10),
+                cancel: Some(cancel),
+                ..Default::default()
+            };
+            let start = Instant::now();
+            let err = client
+                .download_to_part(&[base.join("/throttled").unwrap()], &part, &opts, |p| {
+                    if p.downloaded > 0 {
+                        got_chunk_cb.notify_one();
+                    }
+                })
+                .await
+                .unwrap_err();
+            assert!(err.to_string().contains("Download cancelled"), "err={err}");
+            assert!(
+                start.elapsed() < Duration::from_secs(2),
+                "mid-throttle cancel took too long: {:?}",
+                start.elapsed()
+            );
+            assert_eq!(std::fs::read(&part).unwrap(), payload);
+        }
+
+        // 4. Mid-request cancellation while waiting for HTTP response headers.
+        {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            let accepted = Arc::new(Notify::new());
+            let accepted_srv = accepted.clone();
+            let release = Arc::new(Notify::new());
+            let release_srv = release.clone();
+            tokio::spawn(async move {
+                if let Ok((mut stream, _)) = listener.accept().await {
+                    let mut buf = vec![0u8; 4096];
+                    let _ = stream.read(&mut buf).await;
+                    accepted_srv.notify_one();
+                    release_srv.notified().await;
+                }
+            });
+
+            let base = Url::parse(&format!("http://{addr}")).unwrap();
+            let mut cfg = test_config(base.clone());
+            cfg.read_timeout = Duration::from_secs(10);
+            let client = BiliClient::with_config("", cfg).unwrap();
+
+            let cancel = CancellationToken::new();
+            let cancel_task = cancel.clone();
+            tokio::spawn(async move {
+                accepted.notified().await;
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                cancel_task.cancel();
+            });
+
+            let part = dir.path().join("stalled_req.part");
+            let opts = DownloadOptions {
+                cancel: Some(cancel),
+                ..Default::default()
+            };
+            let start = Instant::now();
+            let err = client
+                .download_to_part(&[base.join("/hang").unwrap()], &part, &opts, |_| {})
+                .await
+                .unwrap_err();
+            release.notify_one();
+
+            assert!(err.to_string().contains("Download cancelled"), "err={err}");
+            assert!(
+                start.elapsed() < Duration::from_secs(2),
+                "mid-request cancel took too long: {:?}",
+                start.elapsed()
+            );
+        }
     }
 }

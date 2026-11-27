@@ -280,16 +280,47 @@ impl TableOptions {
     }
 }
 
+/// If `s` starts with an ANSI SGR CSI sequence (`\x1b[...m`), return its byte length.
+fn ansi_sgr_prefix_len(s: &str) -> Option<usize> {
+    let rest = s.strip_prefix("\x1b[")?;
+    let bytes = rest.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b';') {
+        i += 1;
+    }
+    if bytes.get(i) == Some(&b'm') {
+        Some(2 + i + 1)
+    } else {
+        None
+    }
+}
+
 fn sanitize_table_cell(cell: &str) -> String {
-    if !cell.contains(['\r', '\n']) {
+    if !cell.chars().any(char::is_control) {
         return cell.to_owned();
     }
-    cell.chars()
-        .map(|c| match c {
-            '\r' | '\n' => ' ',
-            other => other,
-        })
-        .collect()
+    let mut out = String::with_capacity(cell.len());
+    let mut idx = 0;
+    while idx < cell.len() {
+        let rest = &cell[idx..];
+        if rest.starts_with('\x1b') {
+            if let Some(len) = ansi_sgr_prefix_len(rest) {
+                out.push_str(&rest[..len]);
+                idx += len;
+                continue;
+            }
+            idx += 1;
+            continue;
+        }
+        let ch = rest.chars().next().unwrap();
+        idx += ch.len_utf8();
+        match ch {
+            '\r' | '\n' | '\t' => out.push(' '),
+            c if c.is_control() => {}
+            other => out.push(other),
+        }
+    }
+    out
 }
 
 /// Truncate `s` (which may contain ANSI CSI escape sequences) to fit within `max_cols`
@@ -539,9 +570,10 @@ pub fn render_jsonl<T: Serialize>(items: &[T]) -> Result<String> {
 
 fn sanitize_tsv_cell(cell: &str) -> String {
     cell.chars()
-        .map(|c| match c {
-            '\t' | '\n' | '\r' => ' ',
-            other => other,
+        .filter_map(|c| match c {
+            '\t' | '\n' | '\r' => Some(' '),
+            c if c.is_control() => None,
+            other => Some(other),
         })
         .collect()
 }
@@ -919,5 +951,39 @@ mod tests {
         }
         // Truncated styled cell must reset ANSI before `…` so colors don't bleed.
         assert!(rendered.contains("\x1b[0m…"));
+    }
+
+    #[test]
+    fn sanitize_table_and_tsv_cells_strip_nul_and_control_chars_while_preserving_ansi_badges() {
+        assert_eq!(
+            sanitize_table_cell("你好\0世界\x07!\x08line1\r\nline2\tend\x7f\u{0085}"),
+            "你好世界!line1  line2 end"
+        );
+        // Stray ESC (not a valid SGR sequence) is stripped, while ANSI SGR badges stay intact.
+        assert_eq!(sanitize_table_cell("foo\x1bbar"), "foobar");
+        let badge = format_state_badge("Completed", true);
+        assert_eq!(sanitize_table_cell(&badge), badge);
+
+        // Full table render must never emit raw NUL or other non-ANSI control characters.
+        let rendered = table(
+            ["id", "title", "state"],
+            [[
+                "1".to_owned(),
+                "Bad\0Title\x01\x1fWith\nNewline".to_owned(),
+                format_state_badge("Active", true),
+            ]],
+        )
+        .to_string();
+        assert!(!rendered.contains('\0'));
+        assert!(!rendered.contains('\x01'));
+        assert!(!rendered.contains('\x1f'));
+        assert!(rendered.contains("BadTitleWith Newline"));
+        assert!(rendered.contains(&format_state_badge("Active", true)));
+
+        // TSV output also strips NUL and control characters.
+        let tsv = render_tsv(["id", "title"], [["1", "Bad\0Title\x07\tTab\nLine"]]);
+        assert!(!tsv.contains('\0'));
+        assert!(!tsv.contains('\x07'));
+        assert_eq!(tsv, "id\ttitle\n1\tBadTitle Tab Line");
     }
 }

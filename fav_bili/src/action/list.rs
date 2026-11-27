@@ -108,6 +108,17 @@ pub async fn render_list(
             "--active and --inactive cannot be used together"
         )));
     }
+    let has_state = opts.state.as_deref().is_some_and(|s| !s.trim().is_empty());
+    if !matches!(kind, ListKind::Media) && has_state && (opts.active_only || opts.inactive_only) {
+        let flag = if opts.active_only {
+            "--active"
+        } else {
+            "--inactive"
+        };
+        return Err(AppError::usage(anyhow!(
+            "--state cannot be combined with {flag}"
+        )));
+    }
     let table_opts = TableOptions::detect(opts.wide, ctx.runtime.color);
 
     match kind {
@@ -868,5 +879,296 @@ mod tests {
         assert_eq!(f_lines.len(), 2);
         assert_eq!(f_lines[0], "up_id\tname\tstate\tfollowed");
         assert_eq!(f_lines[1], "10\tFollowedCreator\tActive\tyes");
+
+        // --sort followed puts unfollowed (false) first, then followed (true)
+        let (sort_asc_ids, sort_asc_count) = render_list(
+            &ctx,
+            ListKind::Up,
+            &ListOptions {
+                format: OutputFormat::Ids,
+                sort: Some("followed".to_owned()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(sort_asc_count, 3);
+        assert_eq!(sort_asc_ids, "20\n30\n10");
+
+        // --sort -followed puts followed (true) first, then unfollowed (false)
+        let (sort_desc_ids, sort_desc_count) = render_list(
+            &ctx,
+            ListKind::Up,
+            &ListOptions {
+                format: OutputFormat::Ids,
+                sort: Some("-followed".to_owned()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(sort_desc_count, 3);
+        assert_eq!(sort_desc_ids, "10\n30\n20");
+    }
+
+    #[tokio::test]
+    async fn list_rejects_state_combined_with_active_or_inactive_except_media_active() {
+        use crate::{
+            entity::{account, media, media_set, set_account, up},
+            state::MediaType,
+        };
+
+        let tmp = tempfile::tempdir().unwrap();
+        let ws = Workspace::new(tmp.path().to_path_buf());
+        ws.ensure_dirs().unwrap();
+        let db = Db::open_in_memory().await.unwrap();
+
+        db.upsert_account(account::Model {
+            account_id: 1,
+            name: "ActiveUser".to_owned(),
+            cookies: "SESSDATA=a".to_owned(),
+            state: AccountState::Active.to_string(),
+            refresh_token: None,
+        })
+        .await
+        .unwrap();
+        db.upsert_account(account::Model {
+            account_id: 2,
+            name: "InactiveUser".to_owned(),
+            cookies: "SESSDATA=b".to_owned(),
+            state: AccountState::Inactive.to_string(),
+            refresh_token: None,
+        })
+        .await
+        .unwrap();
+
+        db.upsert_sets([
+            set::Model {
+                set_id: 10,
+                name: "ActiveSet".to_owned(),
+                count: 2,
+                state: SetState::Active.to_string(),
+                kind: SetKind::Created.to_string(),
+                owner_mid: Some(1),
+                sync_complete: true,
+                resume_page: None,
+            },
+            set::Model {
+                set_id: 11,
+                name: "InactiveSet".to_owned(),
+                count: 1,
+                state: SetState::Inactive.to_string(),
+                kind: SetKind::Created.to_string(),
+                owner_mid: Some(1),
+                sync_complete: true,
+                resume_page: None,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_set_accounts([
+            set_account::Model {
+                set_id: 10,
+                account_id: 1,
+            },
+            set_account::Model {
+                set_id: 11,
+                account_id: 1,
+            },
+        ])
+        .await
+        .unwrap();
+
+        db.upsert_ups([
+            up::Model {
+                up_id: 100,
+                name: "ActiveUp".to_owned(),
+                state: UpState::Active.to_string(),
+                sync_complete: false,
+                resume_page: None,
+            },
+            up::Model {
+                up_id: 101,
+                name: "InactiveUp".to_owned(),
+                state: UpState::Inactive.to_string(),
+                sync_complete: false,
+                resume_page: None,
+            },
+        ])
+        .await
+        .unwrap();
+
+        db.upsert_medias([
+            media::Model {
+                id: 1000,
+                bv_id: "BV1activePend".to_owned(),
+                title: "Active Pending".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Pending.to_string(),
+                retry_count: 0,
+                last_error: None,
+                updated_at: None,
+            },
+            media::Model {
+                id: 1001,
+                bv_id: "BV1activeDone".to_owned(),
+                title: "Active Completed".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Completed.to_string(),
+                retry_count: 0,
+                last_error: None,
+                updated_at: None,
+            },
+            media::Model {
+                id: 1002,
+                bv_id: "BV1inactPend".to_owned(),
+                title: "Inactive Pending".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Pending.to_string(),
+                retry_count: 0,
+                last_error: None,
+                updated_at: None,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_media_sets([
+            media_set::Model {
+                id: 1000,
+                set_id: 10,
+            },
+            media_set::Model {
+                id: 1001,
+                set_id: 10,
+            },
+            media_set::Model {
+                id: 1002,
+                set_id: 11,
+            },
+        ])
+        .await
+        .unwrap();
+
+        let ctx = AppContext::for_test(
+            ws,
+            Config::default(),
+            db,
+            Arc::new(MockMuxer::succeeding()),
+            BiliClientConfig::default(),
+        );
+
+        // Account, Set, Up: combining --state with --active or --inactive MUST fail with ExitKind::Usage.
+        for (kind, sample_state) in [
+            (ListKind::Account, "expired"),
+            (ListKind::Set, "unreachable"),
+            (ListKind::Up, "deactivated"),
+        ] {
+            let err_active = render_list(
+                &ctx,
+                kind,
+                &ListOptions {
+                    state: Some(sample_state.to_owned()),
+                    active_only: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(err_active.kind(), ExitKind::Usage);
+            assert!(
+                err_active.to_string().contains("--state")
+                    && err_active.to_string().contains("--active"),
+                "unexpected error for {kind:?} --state --active: {err_active}"
+            );
+
+            let err_inactive = render_list(
+                &ctx,
+                kind,
+                &ListOptions {
+                    state: Some("active".to_owned()),
+                    inactive_only: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(err_inactive.kind(), ExitKind::Usage);
+            assert!(
+                err_inactive.to_string().contains("--state")
+                    && err_inactive.to_string().contains("--inactive"),
+                "unexpected error for {kind:?} --state --inactive: {err_inactive}"
+            );
+
+            // Non-conflicting filters continue to work cleanly.
+            let (_, active_count) = render_list(
+                &ctx,
+                kind,
+                &ListOptions {
+                    format: OutputFormat::Ids,
+                    active_only: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            assert_eq!(active_count, 1, "active filter for {kind:?}");
+
+            let (_, inactive_count) = render_list(
+                &ctx,
+                kind,
+                &ListOptions {
+                    format: OutputFormat::Ids,
+                    inactive_only: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            assert_eq!(inactive_count, 1, "inactive filter for {kind:?}");
+
+            let (_, state_count) = render_list(
+                &ctx,
+                kind,
+                &ListOptions {
+                    format: OutputFormat::Ids,
+                    state: Some("active".to_owned()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            assert_eq!(state_count, 1, "state filter for {kind:?}");
+        }
+
+        // Media: --state pending --active MUST succeed and intersect MediaState with active-source scope!
+        let (ids, count) = render_list(
+            &ctx,
+            ListKind::Media,
+            &ListOptions {
+                format: OutputFormat::Ids,
+                state: Some("pending".to_owned()),
+                active_only: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(count, 1);
+        assert_eq!(ids, "1000");
+
+        // Media: --inactive remains rejected with ExitKind::Usage even alongside --state.
+        let media_inactive_err = render_list(
+            &ctx,
+            ListKind::Media,
+            &ListOptions {
+                state: Some("pending".to_owned()),
+                inactive_only: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(media_inactive_err.kind(), ExitKind::Usage);
+        assert!(media_inactive_err.to_string().contains("--inactive"));
     }
 }

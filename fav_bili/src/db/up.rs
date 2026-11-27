@@ -252,8 +252,26 @@ impl Db {
     }
 
     pub async fn activate_all_ups(&self) -> Result<u64> {
+        let active_account_ups = Query::select()
+            .column((up_account::Entity, up_account::Column::UpId))
+            .from(up_account::Entity)
+            .inner_join(
+                account::Entity,
+                Expr::col((up_account::Entity, up_account::Column::AccountId))
+                    .equals((account::Entity, account::Column::AccountId)),
+            )
+            .and_where(
+                Expr::col((account::Entity, account::Column::State))
+                    .eq(AccountState::Active.as_str()),
+            )
+            .to_owned();
         let res = up::Entity::update_many()
             .col_expr(up::Column::State, Expr::value(UpState::Active.as_str()))
+            .filter(
+                Condition::all()
+                    .add(up::Column::State.eq(UpState::Inactive))
+                    .add(up::Column::UpId.in_subquery(active_account_ups)),
+            )
             .exec(&self.conn)
             .await?;
         Ok(res.rows_affected)
@@ -285,6 +303,7 @@ impl Db {
     pub async fn deactivate_all_ups(&self) -> Result<u64> {
         let res = up::Entity::update_many()
             .col_expr(up::Column::State, Expr::value(UpState::Inactive.as_str()))
+            .filter(up::Column::State.eq(UpState::Active))
             .exec(&self.conn)
             .await?;
         Ok(res.rows_affected)

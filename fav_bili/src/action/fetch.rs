@@ -11,7 +11,6 @@ use tracing::{debug, error, info, warn};
 use crate::{
     api::{BiliApiError, BiliClient},
     context::AppContext,
-    db::MediaFilter,
     entity::{media, media_set, media_up, set, up},
     error::{AppError, AppResult},
     response::{Media as RemoteMedia, Up},
@@ -45,6 +44,11 @@ struct FetchSummary {
 
 pub async fn fetch(ctx: &AppContext, mut opts: FetchOptions) -> AppResult<()> {
     opts.prune = effective_prune(&opts, &ctx.config);
+    if opts.purge_completed && !opts.prune {
+        return Err(AppError::usage(anyhow!(
+            "--purge-completed requires --prune (or `prune = true` in config.toml)."
+        )));
+    }
     let accounts = ctx.db.active_accounts().await?;
     if accounts.is_empty() {
         return Err(AppError::usage(anyhow!(
@@ -539,13 +543,9 @@ pub async fn fetch(ctx: &AppContext, mut opts: FetchOptions) -> AppResult<()> {
 
                 let mut existing_ids: HashSet<i64> = ctx
                     .db
-                    .query_medias(&MediaFilter {
-                        up_id: Some(up_id),
-                        ..Default::default()
-                    })
+                    .get_up_feed_media_ids(up_id)
                     .await?
                     .into_iter()
-                    .map(|m| m.id)
                     .collect();
 
                 info!(
@@ -780,6 +780,7 @@ pub async fn fetch(ctx: &AppContext, mut opts: FetchOptions) -> AppResult<()> {
                     links.push(media_up::Model {
                         id: m.id,
                         up_id: info.owner.mid,
+                        from_up_feed: false,
                     });
                     if let Some(staff) = info.staff {
                         for member in staff {
@@ -787,6 +788,7 @@ pub async fn fetch(ctx: &AppContext, mut opts: FetchOptions) -> AppResult<()> {
                             links.push(media_up::Model {
                                 id: m.id,
                                 up_id: member.mid,
+                                from_up_feed: false,
                             });
                         }
                     }
@@ -1169,6 +1171,7 @@ async fn persist_set_page_batch(
             media_up_links.push(media_up::Model {
                 id: m.id,
                 up_id: upper.mid,
+                from_up_feed: false,
             });
         }
         if let Some(owner_mid) = season_owner_mid
@@ -1178,6 +1181,7 @@ async fn persist_set_page_batch(
             media_up_links.push(media_up::Model {
                 id: m.id,
                 up_id: owner_mid,
+                from_up_feed: false,
             });
         }
         media_set_links.push(media_set::Model { id: m.id, set_id });
@@ -1270,7 +1274,11 @@ async fn persist_up_page_batch(
         if invalidated {
             invalidated_ids.push(m.id);
         }
-        media_up_links.push(media_up::Model { id: m.id, up_id });
+        media_up_links.push(media_up::Model {
+            id: m.id,
+            up_id,
+            from_up_feed: true,
+        });
         media_models.push(media::Model {
             id: m.id,
             bv_id: m.bv_id,
@@ -1289,7 +1297,7 @@ async fn persist_up_page_batch(
 
     summary.medias_upserted += media_models.len();
     ctx.db.upsert_medias(media_models).await?;
-    ctx.db.upsert_media_ups(media_up_links).await?;
+    ctx.db.upsert_up_feed_media_ups(media_up_links).await?;
 
     for inv_id in invalidated_ids {
         if let Ok(existing) = ctx.db.get_media(inv_id).await
@@ -1835,9 +1843,21 @@ mod tests {
         .await
         .unwrap();
         db.upsert_media_ups([
-            media_up::Model { id: 201, up_id: 7 },
-            media_up::Model { id: 102, up_id: 7 },
-            media_up::Model { id: 999, up_id: 7 },
+            media_up::Model {
+                id: 201,
+                up_id: 7,
+                from_up_feed: false,
+            },
+            media_up::Model {
+                id: 102,
+                up_id: 7,
+                from_up_feed: false,
+            },
+            media_up::Model {
+                id: 999,
+                up_id: 7,
+                from_up_feed: false,
+            },
         ])
         .await
         .unwrap();
@@ -2540,5 +2560,288 @@ mod tests {
             active_hint.contains("Run `fav pull` to download 1 active pending media(s)"),
             "unexpected active hint: {active_hint}"
         );
+    }
+
+    #[tokio::test]
+    async fn up_incremental_cursor_ignores_phase2_favorite_set_media_up_links() {
+        let set_pages_requested = Arc::new(Mutex::new(Vec::<i64>::new()));
+        let set_pages_c = set_pages_requested.clone();
+        let up_pages_requested = Arc::new(Mutex::new(Vec::<i64>::new()));
+        let up_pages_c = up_pages_requested.clone();
+
+        let base = spawn_http(move |path| {
+            if path.starts_with("/bapis/bilibili.api.ticket.v1.Ticket/GenWebTicket") {
+                r#"{"code":0,"data":{"ticket":"t","created_at":4000000000,"ttl":86400}}"#.to_owned()
+            } else if path.starts_with("/x/web-frontend/getbuvid") {
+                r#"{"code":0,"data":{"buvid":"B1"}}"#.to_owned()
+            } else if path.starts_with("/x/web-interface/nav") {
+                r#"{"code":0,"data":{"isLogin":true,"mid":1,"uname":"Alice","wbi_img":{"img_url":"https://i0.hdslb.com/bfs/wbi/7cd084941338484aae1ad9425b84077c.png","sub_url":"https://i0.hdslb.com/bfs/wbi/4932caff0ff746eab6f01bf08b70ac45.png"}}}"#.to_owned()
+            } else if path.starts_with("/x/v3/fav/folder/created/list-all") {
+                r#"{"code":0,"data":{"list":[{"id":10,"title":"Fav","media_count":1}]}}"#.to_owned()
+            } else if path.starts_with("/x/v3/fav/folder/collected/list") {
+                r#"{"code":0,"data":{"count":0,"list":[],"has_more":false}}"#.to_owned()
+            } else if path.starts_with("/x/relation/stat") {
+                r#"{"code":0,"data":{"following":1}}"#.to_owned()
+            } else if path.starts_with("/x/relation/followings") {
+                r#"{"code":0,"data":{"list":[{"mid":77,"uname":"Up77"}],"total":1}}"#.to_owned()
+            } else if path.starts_with("/x/v3/fav/resource/list") {
+                let pn: i64 = query_param(path, "pn").unwrap_or("1").parse().unwrap();
+                set_pages_c.lock().unwrap().push(pn);
+                // User favorited V5 (aid=105) from Up77 into Active set 10.
+                r#"{"code":0,"data":{"has_more":false,"medias":[
+                    {"id":105,"bvid":"BV1up000000105","title":"V5","type":2,"attr":0,"upper":{"mid":77,"name":"Up77"}}
+                ]}}"#
+                    .to_owned()
+            } else if path.starts_with("/x/space/wbi/arc/search") {
+                let pn: i64 = query_param(path, "pn").unwrap_or("1").parse().unwrap();
+                up_pages_c.lock().unwrap().push(pn);
+                match pn {
+                    1 => {
+                        // Full 30-item page (count=60 so reached_end=false):
+                        // [V5(105), V4(104), V3(103), V2(102), V1(101), older 50..74]
+                        let mut vlist = vec![
+                            r#"{"aid":105,"bvid":"BV1up000000105","title":"V5"}"#.to_owned(),
+                            r#"{"aid":104,"bvid":"BV1up000000104","title":"V4"}"#.to_owned(),
+                            r#"{"aid":103,"bvid":"BV1up000000103","title":"V3"}"#.to_owned(),
+                            r#"{"aid":102,"bvid":"BV1up000000102","title":"V2"}"#.to_owned(),
+                            r#"{"aid":101,"bvid":"BV1up000000101","title":"V1"}"#.to_owned(),
+                        ];
+                        for aid in 50..75 {
+                            vlist.push(format!(
+                                r#"{{"aid":{aid},"bvid":"BV1old{aid:07}","title":"Older_{aid}"}}"#
+                            ));
+                        }
+                        format!(
+                            r#"{{"code":0,"data":{{"list":{{"vlist":[{}]}},"page":{{"pn":1,"ps":30,"count":60}}}}}}"#,
+                            vlist.join(",")
+                        )
+                    }
+                    _ => r#"{"code":0,"data":{"list":{"vlist":[{"aid":1,"bvid":"BV1p2000000001","title":"Page2"}]},"page":{"pn":2,"ps":30,"count":60}}}"#.to_owned(),
+                }
+            } else {
+                r#"{"code":0,"data":{}}"#.to_owned()
+            }
+        })
+        .await;
+
+        let db = Db::open_in_memory().await.unwrap();
+        db.upsert_account(account::Model {
+            account_id: 1,
+            name: "Alice".to_owned(),
+            cookies: "SESSDATA=ok; bili_jct=csrf".to_owned(),
+            state: AccountState::Active.to_string(),
+            refresh_token: None,
+        })
+        .await
+        .unwrap();
+        db.upsert_sets([set::Model {
+            set_id: 10,
+            name: "Fav".to_owned(),
+            count: 1,
+            state: SetState::Active.to_string(),
+            kind: SetKind::Created.to_string(),
+            owner_mid: Some(1),
+            sync_complete: true,
+            resume_page: None,
+        }])
+        .await
+        .unwrap();
+        db.upsert_set_accounts([set_account::Model {
+            set_id: 10,
+            account_id: 1,
+        }])
+        .await
+        .unwrap();
+        db.upsert_ups([up::Model {
+            up_id: 77,
+            name: "Up77".to_owned(),
+            state: UpState::Active.to_string(),
+            sync_complete: true,
+            resume_page: None,
+        }])
+        .await
+        .unwrap();
+        db.upsert_up_accounts([up_account::Model {
+            up_id: 77,
+            account_id: 1,
+        }])
+        .await
+        .unwrap();
+
+        // Active UP 77 already has V1 (101) and V2 (102) synced from its UP feed.
+        db.upsert_medias([
+            media::Model {
+                id: 101,
+                bv_id: "BV1up000000101".to_owned(),
+                title: "V1".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Completed.to_string(),
+                retry_count: 0,
+                last_error: None,
+                updated_at: None,
+            },
+            media::Model {
+                id: 102,
+                bv_id: "BV1up000000102".to_owned(),
+                title: "V2".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Completed.to_string(),
+                retry_count: 0,
+                last_error: None,
+                updated_at: None,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_up_feed_media_ups([
+            media_up::Model {
+                id: 101,
+                up_id: 77,
+                from_up_feed: true,
+            },
+            media_up::Model {
+                id: 102,
+                up_id: 77,
+                from_up_feed: true,
+            },
+        ])
+        .await
+        .unwrap();
+
+        let (_tmp, ctx) = test_ctx_with_cfg(base, Config::default(), db);
+
+        // Full `fav fetch`: Phase 2 discovers V5 via Active set 10 (from_up_feed = false),
+        // then Phase 3 scans Up77's feed and must NOT stop at V5!
+        fetch(&ctx, FetchOptions::default()).await.unwrap();
+
+        assert_eq!(*set_pages_requested.lock().unwrap(), vec![1]);
+        assert_eq!(
+            *up_pages_requested.lock().unwrap(),
+            vec![1],
+            "Phase 3 must stop at V2 on page 1 and never fetch page 2"
+        );
+        assert_eq!(ctx.db.get_media_ids_of_set(10).await.unwrap(), vec![105]);
+
+        // V5, V4, and V3 must all be fetched; older filler item 50 after V2 must NOT be fetched.
+        assert!(ctx.db.get_media(105).await.is_ok(), "V5 must exist");
+        assert!(ctx.db.get_media(104).await.is_ok(), "V4 must be fetched");
+        assert!(ctx.db.get_media(103).await.is_ok(), "V3 must be fetched");
+        assert!(
+            ctx.db.get_media(50).await.is_err(),
+            "Phase 3 must stop at V2 and skip older items after V2"
+        );
+
+        // V5 must be upgraded from false -> true, and V4/V3 inserted with from_up_feed = true.
+        let mut feed_ids = ctx.db.get_up_feed_media_ids(77).await.unwrap();
+        feed_ids.sort_unstable();
+        assert_eq!(feed_ids, vec![101, 102, 103, 104, 105]);
+
+        // Subsequent incremental run immediately stops at V5 on page 1.
+        set_pages_requested.lock().unwrap().clear();
+        up_pages_requested.lock().unwrap().clear();
+        fetch(&ctx, FetchOptions::default()).await.unwrap();
+        assert_eq!(*set_pages_requested.lock().unwrap(), vec![1]);
+        assert_eq!(*up_pages_requested.lock().unwrap(), vec![1]);
+        assert!(ctx.db.get_media(50).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn purge_completed_requires_effective_prune() {
+        let hits = Arc::new(Mutex::new(Vec::<String>::new()));
+        let hits_c = hits.clone();
+        let base = spawn_http(move |path| {
+            hits_c.lock().unwrap().push(path.to_owned());
+            r#"{"code":0,"data":{}}"#.to_owned()
+        })
+        .await;
+
+        let make_db_with_account = || async {
+            let db = Db::open_in_memory().await.unwrap();
+            db.upsert_account(account::Model {
+                account_id: 1,
+                name: "Alice".to_owned(),
+                cookies: "SESSDATA=ok; bili_jct=csrf".to_owned(),
+                state: AccountState::Active.to_string(),
+                refresh_token: None,
+            })
+            .await
+            .unwrap();
+            db
+        };
+
+        // 1. Neither `--prune` nor `config.prune = true` -> rejected with Usage before any HTTP calls.
+        let (_tmp1, ctx_default) = test_ctx_with_cfg(
+            base.clone(),
+            Config::default(),
+            make_db_with_account().await,
+        );
+        let err = fetch(
+            &ctx_default,
+            FetchOptions {
+                purge_completed: true,
+                dry_run: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.kind(), ExitKind::Usage);
+        assert!(err.to_string().contains("--prune"));
+        assert!(err.to_string().contains("prune = true"));
+
+        // 2. Explicit `config.prune = Some(false)` without `--prune` -> rejected with Usage.
+        let (_tmp2, ctx_false) = test_ctx_with_cfg(
+            base.clone(),
+            Config {
+                prune: Some(false),
+                ..Default::default()
+            },
+            make_db_with_account().await,
+        );
+        let err = fetch(
+            &ctx_false,
+            FetchOptions {
+                purge_completed: true,
+                dry_run: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.kind(), ExitKind::Usage);
+        assert!(hits.lock().unwrap().is_empty());
+
+        // 3. CLI `--prune` + `--purge-completed` -> accepted.
+        fetch(
+            &ctx_default,
+            FetchOptions {
+                prune: true,
+                purge_completed: true,
+                dry_run: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        // 4. `config.prune = Some(true)` + `--purge-completed` (CLI `prune = false`) -> accepted.
+        let (_tmp3, ctx_cfg_prune) = test_ctx_with_cfg(
+            base,
+            Config {
+                prune: Some(true),
+                ..Default::default()
+            },
+            make_db_with_account().await,
+        );
+        fetch(
+            &ctx_cfg_prune,
+            FetchOptions {
+                purge_completed: true,
+                dry_run: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
     }
 }
