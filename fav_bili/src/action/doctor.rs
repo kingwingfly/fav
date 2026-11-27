@@ -9,6 +9,7 @@ use crate::{
     cookies::{extract_csrf, parse_cookie_header, validate_sessdata},
     error::{AppError, AppResult},
     reconcile::reconcile_completed_medias_scoped,
+    state::AccountState,
     table::{
         OutputFormat, TableOptions, render_ids, render_json, render_jsonl, render_table,
         render_tsv, write_stdout_line,
@@ -461,6 +462,32 @@ async fn collect_doctor_checks(
         Ok(accounts) => {
             for acct in accounts {
                 let check_name = format!("account:{} ({})", acct.account_id, acct.name);
+                let acct_state = acct.state.parse::<AccountState>().ok();
+
+                if acct_state == Some(AccountState::Inactive) {
+                    checks.push(DoctorCheck {
+                        name: check_name,
+                        status: CheckStatus::Ok,
+                        detail: "inactive (skipped auth check)".into(),
+                        hint: None,
+                    });
+                    continue;
+                }
+
+                if opts.offline && acct_state == Some(AccountState::Expired) {
+                    auth_failed = true;
+                    checks.push(DoctorCheck {
+                        name: check_name,
+                        status: CheckStatus::Fail,
+                        detail: "account marked Expired in database".into(),
+                        hint: Some(
+                            "Re-authenticate with `fav auth login` or `fav auth usecookies --stdin`."
+                                .into(),
+                        ),
+                    });
+                    continue;
+                }
+
                 let cookie_map = parse_cookie_header(&acct.cookies);
                 if let Err(e) = validate_sessdata(&cookie_map) {
                     auth_failed = true;
@@ -506,20 +533,41 @@ async fn collect_doctor_checks(
                     match ctx.client_for_account(&acct.cookies) {
                         Ok(client) => match client.nav_info().await {
                             Ok(info) if info.is_login && info.mid == Some(acct.account_id) => {
-                                let status = if has_csrf {
-                                    CheckStatus::Ok
+                                if acct_state == Some(AccountState::Expired) {
+                                    let mut hint = format!(
+                                        "Run `fav activate account {}` to reactivate this account.",
+                                        acct.account_id
+                                    );
+                                    if !has_csrf {
+                                        hint.push_str(
+                                            " Import full browser cookies with `bili_jct` to enable `like` and remote `logout`.",
+                                        );
+                                    }
+                                    checks.push(DoctorCheck {
+                                        name: check_name,
+                                        status: CheckStatus::Warn,
+                                        detail: format!(
+                                            "authenticated, but DB state is Expired ({})",
+                                            notes.join(", ")
+                                        ),
+                                        hint: Some(hint),
+                                    });
                                 } else {
-                                    CheckStatus::Warn
-                                };
-                                checks.push(DoctorCheck {
-                                    name: check_name,
-                                    status,
-                                    detail: format!("authenticated ({})", notes.join(", ")),
-                                    hint: (!has_csrf).then(|| {
-                                        "Import full browser cookies with `bili_jct` to enable `like` and remote `logout`."
-                                            .into()
-                                    }),
-                                });
+                                    let status = if has_csrf {
+                                        CheckStatus::Ok
+                                    } else {
+                                        CheckStatus::Warn
+                                    };
+                                    checks.push(DoctorCheck {
+                                        name: check_name,
+                                        status,
+                                        detail: format!("authenticated ({})", notes.join(", ")),
+                                        hint: (!has_csrf).then(|| {
+                                            "Import full browser cookies with `bili_jct` to enable `like` and remote `logout`."
+                                                .into()
+                                        }),
+                                    });
+                                }
                             }
                             Ok(_) => {
                                 auth_failed = true;
@@ -767,5 +815,257 @@ ramfs /var/ramdisk ramfs rw 0 0
             "doctor must not suggest fav pull --recheck when only inactive items are missing: {:?}",
             disk_sync_ok.hint
         );
+    }
+
+    #[tokio::test]
+    async fn doctor_skips_inactive_account_without_failing_or_network_calls() {
+        use std::{sync::Arc, time::Duration};
+
+        use url::Url;
+
+        use crate::{
+            api::BiliClientConfig,
+            config::{Config, Workspace},
+            db::Db,
+            entity::account,
+            muxer::test_support::MockMuxer,
+            state::AccountState,
+        };
+
+        let tmp = tempfile::tempdir().unwrap();
+        let ws = Workspace::new(tmp.path().join("ws"));
+        ws.ensure_dirs().unwrap();
+        let out_dir = tmp.path().join("out");
+        std::fs::create_dir_all(&out_dir).unwrap();
+
+        let db = Db::open_in_memory().await.unwrap();
+        // Inactive account with completely missing cookies (would fail validate_sessdata if checked).
+        db.upsert_account(account::Model {
+            account_id: 10,
+            name: "DeactivatedEmpty".to_owned(),
+            cookies: String::new(),
+            state: AccountState::Inactive.to_string(),
+            refresh_token: None,
+        })
+        .await
+        .unwrap();
+        // Inactive account with stale cookies (would fail network call if online nav_info were called).
+        db.upsert_account(account::Model {
+            account_id: 11,
+            name: "DeactivatedStale".to_owned(),
+            cookies: "SESSDATA=expired_cookie; bili_jct=csrf".to_owned(),
+            state: AccountState::Inactive.to_string(),
+            refresh_token: None,
+        })
+        .await
+        .unwrap();
+
+        let client_cfg = BiliClientConfig {
+            api_base_url: Url::parse("http://127.0.0.1:1").unwrap(),
+            passport_base_url: Url::parse("http://127.0.0.1:1").unwrap(),
+            connect_timeout: Duration::from_millis(200),
+            read_timeout: Duration::from_millis(200),
+            api_request_timeout: Duration::from_millis(200),
+            max_retries: 0,
+            ..Default::default()
+        };
+        let ctx = AppContext::for_test(
+            ws,
+            Config::default(),
+            db,
+            Arc::new(MockMuxer::succeeding()),
+            client_cfg,
+        );
+
+        for offline in [true, false] {
+            let opts = DoctorOptions {
+                format: OutputFormat::Json,
+                offline,
+                output_dir: Some(out_dir.clone()),
+            };
+            let (checks, non_auth_failed, auth_failed) = collect_doctor_checks(&ctx, &opts).await;
+            assert!(
+                !non_auth_failed && !auth_failed,
+                "inactive accounts must not fail doctor (offline={offline}): {checks:?}"
+            );
+            for name in [
+                "account:10 (DeactivatedEmpty)",
+                "account:11 (DeactivatedStale)",
+            ] {
+                let acct_check = checks.iter().find(|c| c.name == name).unwrap();
+                assert_eq!(acct_check.status, CheckStatus::Ok);
+                assert!(
+                    acct_check.detail.contains("inactive") && acct_check.detail.contains("skipped"),
+                    "unexpected detail for {name}: {}",
+                    acct_check.detail
+                );
+                assert!(acct_check.hint.is_none());
+            }
+
+            doctor_with_options(&ctx, opts)
+                .await
+                .expect("doctor should succeed when all accounts are Inactive");
+        }
+    }
+
+    #[tokio::test]
+    async fn doctor_fails_expired_account_in_offline_mode_and_checks_nav_info_online() {
+        use std::{sync::Arc, time::Duration};
+
+        use tokio::{
+            io::{AsyncReadExt as _, AsyncWriteExt as _},
+            net::TcpListener,
+        };
+        use url::Url;
+
+        use crate::{
+            api::BiliClientConfig,
+            config::{Config, Workspace},
+            db::Db,
+            entity::account,
+            error::ExitKind,
+            muxer::test_support::MockMuxer,
+            state::AccountState,
+        };
+
+        async fn spawn_single_json_server(
+            body: &'static str,
+        ) -> (Url, tokio::task::JoinHandle<()>) {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let addr = listener.local_addr().unwrap();
+            let handle = tokio::spawn(async move {
+                if let Ok((mut stream, _)) = listener.accept().await {
+                    let mut req_buf = [0u8; 4096];
+                    let _ = stream.read(&mut req_buf).await;
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    let _ = stream.write_all(resp.as_bytes()).await;
+                    let _ = stream.shutdown().await;
+                }
+            });
+            (Url::parse(&format!("http://{addr}")).unwrap(), handle)
+        }
+
+        let tmp = tempfile::tempdir().unwrap();
+        let ws = Workspace::new(tmp.path().join("ws"));
+        ws.ensure_dirs().unwrap();
+        let out_dir = tmp.path().join("out");
+        std::fs::create_dir_all(&out_dir).unwrap();
+
+        let db = Db::open_in_memory().await.unwrap();
+        db.upsert_account(account::Model {
+            account_id: 2,
+            name: "Bob".to_owned(),
+            cookies: "SESSDATA=s; bili_jct=c".to_owned(),
+            state: AccountState::Expired.to_string(),
+            refresh_token: None,
+        })
+        .await
+        .unwrap();
+
+        // 1. Offline mode: Expired account MUST fail with auth_failed = true!
+        let offline_ctx = AppContext::for_test(
+            ws.clone(),
+            Config::default(),
+            db.clone(),
+            Arc::new(MockMuxer::succeeding()),
+            BiliClientConfig::default(),
+        );
+        let offline_opts = DoctorOptions {
+            format: OutputFormat::Json,
+            offline: true,
+            output_dir: Some(out_dir.clone()),
+        };
+        let (checks, non_auth_failed, auth_failed) =
+            collect_doctor_checks(&offline_ctx, &offline_opts).await;
+        assert!(!non_auth_failed);
+        assert!(
+            auth_failed,
+            "Expired account must set auth_failed in offline mode"
+        );
+        let acct_check = checks
+            .iter()
+            .find(|c| c.name == "account:2 (Bob)")
+            .expect("expected account:2 check");
+        assert_eq!(acct_check.status, CheckStatus::Fail);
+        assert_eq!(acct_check.detail, "account marked Expired in database");
+        let hint = acct_check.hint.as_deref().unwrap_or_default();
+        assert!(hint.contains("fav auth login"));
+        assert!(hint.contains("fav auth usecookies --stdin"));
+
+        let err = doctor_with_options(&offline_ctx, offline_opts)
+            .await
+            .expect_err("offline doctor must fail on Expired account");
+        assert_eq!(err.kind(), ExitKind::Auth);
+
+        // 2. Online mode with valid nav_info: Warn noting DB state is Expired and suggest `fav activate account`.
+        let (valid_url, valid_srv) =
+            spawn_single_json_server(r#"{"code":0,"data":{"isLogin":true,"mid":2,"uname":"Bob"}}"#)
+                .await;
+        let online_valid_ctx = AppContext::for_test(
+            ws.clone(),
+            Config::default(),
+            db.clone(),
+            Arc::new(MockMuxer::succeeding()),
+            BiliClientConfig {
+                api_base_url: valid_url.clone(),
+                passport_base_url: valid_url,
+                max_retries: 0,
+                min_request_interval: Duration::ZERO,
+                ..Default::default()
+            },
+        );
+        let online_opts = DoctorOptions {
+            format: OutputFormat::Json,
+            offline: false,
+            output_dir: Some(out_dir.clone()),
+        };
+        let (valid_checks, non_auth_failed, auth_failed) =
+            collect_doctor_checks(&online_valid_ctx, &online_opts).await;
+        valid_srv.await.unwrap();
+        assert!(!non_auth_failed && !auth_failed);
+        let valid_check = valid_checks
+            .iter()
+            .find(|c| c.name == "account:2 (Bob)")
+            .unwrap();
+        assert_eq!(valid_check.status, CheckStatus::Warn);
+        assert!(valid_check.detail.contains("Expired"));
+        assert!(
+            valid_check
+                .hint
+                .as_deref()
+                .unwrap_or_default()
+                .contains("fav activate account")
+        );
+
+        // 3. Online mode with invalid/expired nav_info: Fail with auth_failed = true as before.
+        let (invalid_url, invalid_srv) =
+            spawn_single_json_server(r#"{"code":-101,"data":{"isLogin":false}}"#).await;
+        let online_invalid_ctx = AppContext::for_test(
+            ws,
+            Config::default(),
+            db,
+            Arc::new(MockMuxer::succeeding()),
+            BiliClientConfig {
+                api_base_url: invalid_url.clone(),
+                passport_base_url: invalid_url,
+                max_retries: 0,
+                min_request_interval: Duration::ZERO,
+                ..Default::default()
+            },
+        );
+        let (invalid_checks, non_auth_failed, auth_failed) =
+            collect_doctor_checks(&online_invalid_ctx, &online_opts).await;
+        invalid_srv.await.unwrap();
+        assert!(!non_auth_failed);
+        assert!(auth_failed);
+        let invalid_check = invalid_checks
+            .iter()
+            .find(|c| c.name == "account:2 (Bob)")
+            .unwrap();
+        assert_eq!(invalid_check.status, CheckStatus::Fail);
     }
 }

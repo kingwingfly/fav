@@ -216,11 +216,47 @@ fn is_real_bvid(bv_id: &str) -> bool {
 }
 
 fn matches_page_marker(path: &Path, page_num: i32) -> bool {
-    let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+    if page_num <= 0 {
+        return false;
+    }
+    let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
         return false;
     };
-    let marker = format!("({page_num})");
-    name.contains(&marker)
+
+    let bytes = stem.as_bytes();
+    let mut last_canonical: Option<i32> = None;
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'(' {
+            let start = i + 1;
+            let mut j = start;
+            while j < bytes.len() && bytes[j].is_ascii_digit() {
+                j += 1;
+            }
+            if j > start && j < bytes.len() && bytes[j] == b')' {
+                let digits = &stem[start..j];
+                if !digits.starts_with('0')
+                    && let Ok(k) = digits.parse::<i32>()
+                    && k > 0
+                {
+                    let followed_by_boundary = j + 1 == bytes.len() || bytes[j + 1] == b'-';
+                    if followed_by_boundary {
+                        last_canonical = Some(k);
+                    }
+                }
+                i = j + 1;
+                continue;
+            }
+        }
+        i += 1;
+    }
+
+    if let Some(canonical_page) = last_canonical {
+        canonical_page == page_num
+    } else {
+        let marker = format!("({page_num})");
+        stem.contains(&marker)
+    }
 }
 
 struct PendingCheck<'a> {
@@ -931,5 +967,169 @@ mod tests {
 
         assert_eq!(scoped.inactive.verified_legacy, 1);
         assert_eq!(scoped.inactive.missing_legacy_ids, vec![20]);
+    }
+
+    #[test]
+    fn matches_page_marker_prefers_canonical_markers_and_supports_custom_renames() {
+        // Video title contains `(2)` while canonical page marker is `(1)`
+        assert!(matches_page_marker(Path::new("100-Clip (2)(1)-P1.mp4"), 1));
+        assert!(!matches_page_marker(Path::new("100-Clip (2)(1)-P1.mp4"), 2));
+        assert!(!matches_page_marker(Path::new("100-Clip (2)(1)-P1.mp4"), 3));
+
+        // No part suffix: canonical `(1)` at end of stem
+        assert!(matches_page_marker(Path::new("100-Clip (2)(1).mp4"), 1));
+        assert!(!matches_page_marker(Path::new("100-Clip (2)(1).mp4"), 2));
+
+        // Title contains `(2)-` before the real `(1)-` marker: last canonical marker wins
+        assert!(matches_page_marker(
+            Path::new("100-Season (2)-Live(1)-P1.mp4"),
+            1
+        ));
+        assert!(!matches_page_marker(
+            Path::new("100-Season (2)-Live(1)-P1.mp4"),
+            2
+        ));
+
+        // Multi-digit page numbers and nested parent directories containing `(2)`
+        assert!(matches_page_marker(
+            Path::new("season (2)/100-Clip (2)(12)-P12.mp4"),
+            12
+        ));
+        assert!(!matches_page_marker(
+            Path::new("season (2)/100-Clip (2)(12)-P12.mp4"),
+            2
+        ));
+
+        // UTF-8 CJK titles and part names
+        assert!(matches_page_marker(
+            Path::new("100-测试 (2)(1)-第一集.mp4"),
+            1
+        ));
+        assert!(!matches_page_marker(
+            Path::new("100-测试 (2)(1)-第一集.mp4"),
+            2
+        ));
+
+        // Custom renamed filename without canonical `(<k>)-` or trailing `(<k>)` falls back to substring in stem
+        assert!(matches_page_marker(Path::new("custom_(2)_final.mp4"), 2));
+        assert!(!matches_page_marker(Path::new("custom_(2)_final.mp4"), 1));
+
+        // Non-positive or missing markers never match
+        assert!(!matches_page_marker(Path::new("100-Clip (0)-P1.mp4"), 0));
+        assert!(!matches_page_marker(Path::new("100-Clip (0)-P1.mp4"), 1));
+        assert!(!matches_page_marker(Path::new("100-Clip.mp4"), 1));
+    }
+
+    #[tokio::test]
+    async fn layer3_multipage_reconcile_ignores_parenthesized_numbers_in_title() {
+        let tmp = tempfile::tempdir().unwrap();
+        let out_dir = tmp.path().join("videos");
+        let moved_dir = out_dir.join("moved");
+        std::fs::create_dir_all(&moved_dir).unwrap();
+
+        let db = Db::open_in_memory().await.unwrap();
+        seed_completed_media(&db, 100, "BV17x411w7KC", "Clip (2)").await;
+        seed_completed_media(&db, 101, "BV1Q541167Qg", "Clip (1)").await;
+        seed_completed_media(&db, 102, "BV1xx411c7mD", "Clip (2)").await;
+
+        // Media 100 ("Clip (2)"): cross-disk move (no inode). Only P1 exists on disk; P2 deleted.
+        std::fs::write(moved_dir.join("100-Clip (2)(1)-P1.mp4"), b"m100-p1").unwrap();
+        db.mark_page_completed(
+            100,
+            1001,
+            1,
+            "P1".to_owned(),
+            "old/100-Clip (2)(1)-P1.mp4".to_owned(),
+            Some(999),
+            None,
+        )
+        .await
+        .unwrap();
+        db.mark_page_completed(
+            100,
+            1002,
+            2,
+            "P2".to_owned(),
+            "old/100-Clip (2)(2)-P2.mp4".to_owned(),
+            Some(999),
+            None,
+        )
+        .await
+        .unwrap();
+
+        // Media 101 ("Clip (1)"): cross-disk move (no inode). P1 deleted, only P2 exists on disk.
+        // P1 MUST NOT falsely steal P2's file despite `(1)` appearing in the title!
+        std::fs::write(moved_dir.join("101-Clip (1)(2)-P2.mp4"), b"m101-p2").unwrap();
+        db.mark_page_completed(
+            101,
+            1101,
+            1,
+            "P1".to_owned(),
+            "old/101-Clip (1)(1)-P1.mp4".to_owned(),
+            Some(999),
+            None,
+        )
+        .await
+        .unwrap();
+        db.mark_page_completed(
+            101,
+            1102,
+            2,
+            "P2".to_owned(),
+            "old/101-Clip (1)(2)-P2.mp4".to_owned(),
+            Some(999),
+            None,
+        )
+        .await
+        .unwrap();
+
+        // Media 102 ("Clip (2)"): only P2 is Completed in DB; only P1 file (without part suffix) is on disk.
+        // P2 MUST NOT falsely match `102-Clip (2)(1).mp4` despite `(2)` in the title!
+        std::fs::write(moved_dir.join("102-Clip (2)(1).mp4"), b"m102-p1").unwrap();
+        db.mark_page_completed(
+            102,
+            1202,
+            2,
+            "P2".to_owned(),
+            "old/102-Clip (2)(2).mp4".to_owned(),
+            Some(999),
+            None,
+        )
+        .await
+        .unwrap();
+
+        let muxer = MockMuxer::succeeding();
+        let rep = reconcile_completed_medias(&db, &muxer, &out_dir, true, None)
+            .await
+            .unwrap();
+
+        // Relocated: (100, 1001) -> moved/100-Clip (2)(1)-P1.mp4, (101, 1102) -> moved/101-Clip (1)(2)-P2.mp4
+        assert_eq!(rep.relocated.len(), 2);
+        assert!(rep.relocated.iter().any(|r| {
+            r.media_id == 100 && r.cid == 1001 && r.new_local_path == "moved/100-Clip (2)(1)-P1.mp4"
+        }));
+        assert!(rep.relocated.iter().any(|r| {
+            r.media_id == 101 && r.cid == 1102 && r.new_local_path == "moved/101-Clip (1)(2)-P2.mp4"
+        }));
+
+        // Missing: (100, 1002), (101, 1101), (102, 1202)
+        let missing: HashSet<MissingPage> = rep.missing_pages.iter().copied().collect();
+        assert_eq!(
+            missing,
+            HashSet::from([
+                MissingPage {
+                    media_id: 100,
+                    cid: 1002
+                },
+                MissingPage {
+                    media_id: 101,
+                    cid: 1101
+                },
+                MissingPage {
+                    media_id: 102,
+                    cid: 1202
+                },
+            ])
+        );
     }
 }
