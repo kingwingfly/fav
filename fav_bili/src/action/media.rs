@@ -1,6 +1,7 @@
-use std::{collections::BTreeSet, path::PathBuf};
+use std::{collections::BTreeSet, io::Write as _, path::PathBuf};
 
-use anyhow::anyhow;
+use anyhow::{Context as _, anyhow};
+use console::Term;
 use tracing::info;
 
 use crate::{
@@ -26,6 +27,7 @@ pub struct MediaResetOptions {
     pub include_inactive: bool,
     pub all: bool,
     pub dry_run: bool,
+    pub yes: bool,
     pub output_dir: Option<PathBuf>,
 }
 
@@ -206,12 +208,41 @@ pub async fn reset(ctx: &AppContext, opts: MediaResetOptions) -> AppResult<()> {
         BTreeSet::new()
     };
 
+    let missing_affected_ids = missing_report
+        .as_ref()
+        .map(|rep| rep.affected_missing_media_ids())
+        .unwrap_or_default();
+
+    if (opts.all || opts.completed) && !opts.dry_run && !opts.yes {
+        let affected_count = other_reset_ids.union(&missing_affected_ids).count();
+        if affected_count > 0 {
+            let term = Term::stderr();
+            if ctx.runtime.non_interactive || !term.is_term() {
+                return Err(AppError::usage(anyhow!(
+                    "Pass --yes to reset --all / --completed medias non-interactively (or preview with --dry-run)."
+                )));
+            }
+            eprint!(
+                "Reset {affected_count} media(s) (including Completed tracking) back to Pending? [y/N] "
+            );
+            let _ = std::io::stderr().flush();
+            let answer = term
+                .read_line()
+                .context("Failed reading confirmation from terminal")?;
+            let normalized = answer.trim().to_ascii_lowercase();
+            if normalized != "y" && normalized != "yes" {
+                eprintln!("Aborted.");
+                return Ok(());
+            }
+        }
+    }
+
     let mut missing_reset_ids = BTreeSet::new();
 
     // 1. Handle `--missing` surgically: relink renamed/moved files and reset ONLY missing pages,
     // preserving intact pages of multi-part videos!
     if let Some(ref rep) = missing_report {
-        missing_reset_ids = rep.affected_missing_media_ids();
+        missing_reset_ids = missing_affected_ids;
         let applied = apply_reconciliation(&ctx.db, rep).await?;
         if applied.relinked_pages > 0 {
             info!(
@@ -683,5 +714,202 @@ mod tests {
         let mixed_msg = mixed_hint.expect("expected mixed hint");
         assert!(mixed_msg.contains("Run `fav pull` to download 1 active pending media(s)"));
         assert!(mixed_msg.contains("1 reset media(s) belong to inactive sets/UPs"));
+    }
+
+    #[tokio::test]
+    async fn reset_all_and_completed_confirmation_guard_and_exemptions() {
+        use crate::error::ExitKind;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let ws = Workspace::new(tmp.path().join("ws"));
+        ws.ensure_dirs().unwrap();
+
+        let db = Db::open_in_memory().await.unwrap();
+        seed_active_and_inactive_sets(&db).await;
+        db.upsert_medias([
+            media::Model {
+                id: 1,
+                bv_id: "BV17x411w7KC".to_owned(),
+                title: "CompletedOne".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Completed.to_string(),
+                retry_count: 0,
+                last_error: None,
+                updated_at: None,
+            },
+            media::Model {
+                id: 2,
+                bv_id: "BV1Q541167Qg".to_owned(),
+                title: "FailedOne".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Failed.to_string(),
+                retry_count: 2,
+                last_error: Some("err".to_owned()),
+                updated_at: None,
+            },
+            media::Model {
+                id: 3,
+                bv_id: "BV1xx411c7mD".to_owned(),
+                title: "SkippedOne".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Skipped.to_string(),
+                retry_count: 0,
+                last_error: None,
+                updated_at: None,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_media_sets([
+            media_set::Model { id: 1, set_id: 100 },
+            media_set::Model { id: 2, set_id: 100 },
+            media_set::Model { id: 3, set_id: 100 },
+        ])
+        .await
+        .unwrap();
+
+        let ctx = AppContext::for_test(
+            ws,
+            Config::default(),
+            db,
+            Arc::new(MockMuxer::succeeding()),
+            BiliClientConfig::default(),
+        );
+
+        // Non-interactive `--all` without `--yes` fails with Usage and mutates nothing
+        let err = reset(
+            &ctx,
+            MediaResetOptions {
+                all: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.kind(), ExitKind::Usage);
+        assert!(err.to_string().contains("Pass --yes"));
+        assert_eq!(
+            ctx.db.get_media(1).await.unwrap().state,
+            MediaState::Completed.as_str()
+        );
+
+        // Non-interactive `--completed` without `--yes` fails with Usage and mutates nothing
+        let err = reset(
+            &ctx,
+            MediaResetOptions {
+                completed: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.kind(), ExitKind::Usage);
+        assert!(err.to_string().contains("Pass --yes"));
+        assert_eq!(
+            ctx.db.get_media(1).await.unwrap().state,
+            MediaState::Completed.as_str()
+        );
+
+        // `--dry-run` works without `--yes` for both `--all` and `--completed`
+        reset(
+            &ctx,
+            MediaResetOptions {
+                all: true,
+                dry_run: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        reset(
+            &ctx,
+            MediaResetOptions {
+                completed: true,
+                dry_run: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            ctx.db.get_media(1).await.unwrap().state,
+            MediaState::Completed.as_str()
+        );
+
+        // Non-destructive selectors (`--failed`, `--skipped`, explicit IDs) never prompt
+        reset(
+            &ctx,
+            MediaResetOptions {
+                failed: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            ctx.db.get_media(2).await.unwrap().state,
+            MediaState::Pending.as_str()
+        );
+
+        reset(
+            &ctx,
+            MediaResetOptions {
+                targets: vec!["3".to_owned()],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            ctx.db.get_media(3).await.unwrap().state,
+            MediaState::Pending.as_str()
+        );
+
+        // `--completed --yes` succeeds and resets Completed media to Pending
+        reset(
+            &ctx,
+            MediaResetOptions {
+                completed: true,
+                yes: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            ctx.db.get_media(1).await.unwrap().state,
+            MediaState::Pending.as_str()
+        );
+
+        // `--completed` without `--yes` when 0 Completed medias exist is a clean no-op
+        reset(
+            &ctx,
+            MediaResetOptions {
+                completed: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        // `--all --yes` succeeds and resets all medias
+        ctx.db
+            .set_media_state(1, MediaState::Completed)
+            .await
+            .unwrap();
+        reset(
+            &ctx,
+            MediaResetOptions {
+                all: true,
+                yes: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            ctx.db.get_media(1).await.unwrap().state,
+            MediaState::Pending.as_str()
+        );
     }
 }

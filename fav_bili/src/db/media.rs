@@ -97,9 +97,11 @@ pub struct UpCounts {
 pub struct MediaCounts {
     pub total: u64,
     pub pending: u64,
+    pub active_pending: u64,
     pub downloading: u64,
     pub completed: u64,
     pub failed: u64,
+    pub active_failed: u64,
     pub expired: u64,
     pub permission_denied: u64,
     pub skipped: u64,
@@ -799,6 +801,18 @@ impl Db {
                 _ => {}
             }
         }
+
+        summary.medias.active_pending = if summary.medias.pending > 0 {
+            self.count_active_pending_medias().await?
+        } else {
+            0
+        };
+        summary.medias.active_failed = if summary.medias.failed > 0 {
+            self.count_active_medias_in_state(MediaState::Failed)
+                .await?
+        } else {
+            0
+        };
 
         if top_n > 0 {
             let top_rows = self

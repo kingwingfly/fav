@@ -583,12 +583,16 @@ pub fn build_command() -> Command {
                         .aliases(["upper", "u"])
                         .args({
                             let mut args = list_common_args();
-                            args.push(
+                            args.extend([
                                 Arg::new("account")
                                     .long("account")
                                     .help("Filter UPs followed by account ID")
                                     .value_parser(value_parser!(i64)),
-                            );
+                                Arg::new("followed")
+                                    .long("followed")
+                                    .help("Show only UPs followed by an active account")
+                                    .action(ArgAction::SetTrue),
+                            ]);
                             args
                         }),
                     Command::new("media")
@@ -952,6 +956,11 @@ pub fn build_command() -> Command {
                                 .long("dry-run")
                                 .help("Preview how many medias would be reset")
                                 .action(ArgAction::SetTrue),
+                            Arg::new("yes")
+                                .long("yes")
+                                .short('y')
+                                .help("Skip interactive confirmation when using --all or --completed")
+                                .action(ArgAction::SetTrue),
                         ]),
                     Command::new("skip")
                         .about("Mark medias as Skipped so `fav pull` ignores them")
@@ -1059,6 +1068,12 @@ fn parse_list_options(matches: &ArgMatches) -> ListOptions {
             .copied(),
         active_only: matches.get_flag("active"),
         inactive_only: matches.get_flag("inactive"),
+        followed_only: matches
+            .try_get_one::<bool>("followed")
+            .ok()
+            .flatten()
+            .copied()
+            .unwrap_or(false),
         media_type: matches
             .try_get_one::<String>("type")
             .ok()
@@ -2205,6 +2220,7 @@ async fn dispatch(cmd: &mut Command, matches: ArgMatches) -> AppResult<()> {
                             output_dir: s.get_one::<PathBuf>("output").cloned(),
                             all: s.get_flag("all"),
                             dry_run: s.get_flag("dry-run"),
+                            yes: s.get_flag("yes"),
                         },
                     )
                     .await
@@ -2427,13 +2443,38 @@ mod tests {
                 .unwrap(),
         );
         assert_eq!(list_opts.kind.as_deref(), Some("season"));
+        assert!(!list_opts.followed_only);
         assert!(
             build_command()
                 .try_get_matches_from(["fav", "ls", "set", "--kind", "invalid"])
                 .is_err()
         );
 
-        // `doctor -o` and `media reset -o`
+        // `ls up --followed`
+        let m = build_command()
+            .try_get_matches_from(["fav", "ls", "up", "--followed"])
+            .unwrap();
+        let up_opts = parse_list_options(
+            m.subcommand_matches("list")
+                .unwrap()
+                .subcommand_matches("up")
+                .unwrap(),
+        );
+        assert!(up_opts.followed_only);
+        assert!(up_opts.has_filters());
+
+        let m = build_command()
+            .try_get_matches_from(["fav", "ls", "up"])
+            .unwrap();
+        let up_opts_default = parse_list_options(
+            m.subcommand_matches("list")
+                .unwrap()
+                .subcommand_matches("up")
+                .unwrap(),
+        );
+        assert!(!up_opts_default.followed_only);
+
+        // `doctor -o` and `media reset -o` / `-y` / `--yes`
         let m = build_command()
             .try_get_matches_from(["fav", "doctor", "--offline", "-o", "/tmp/videos"])
             .unwrap();
@@ -2453,6 +2494,7 @@ mod tests {
                 "--include-inactive",
                 "-o",
                 "/tmp/videos",
+                "-y",
             ])
             .unwrap();
         let reset_m = m
@@ -2465,6 +2507,18 @@ mod tests {
             Some(&PathBuf::from("/tmp/videos"))
         );
         assert!(reset_m.get_flag("include-inactive"));
+        assert!(reset_m.get_flag("yes"));
+
+        let m = build_command()
+            .try_get_matches_from(["fav", "media", "reset", "--completed", "--yes"])
+            .unwrap();
+        let reset_yes = m
+            .subcommand_matches("media")
+            .unwrap()
+            .subcommand_matches("reset")
+            .unwrap();
+        assert!(reset_yes.get_flag("completed"));
+        assert!(reset_yes.get_flag("yes"));
 
         // `completion nushell` and alias `nu` and `powershell`
         for (arg, expected) in [

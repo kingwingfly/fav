@@ -4,7 +4,6 @@ use crate::{
     context::AppContext,
     db::StatusSummary,
     error::{AppError, AppResult},
-    state::MediaState,
     table::{
         OutputFormat, TableOptions, format_state_badge, render_ids, render_tsv, table,
         write_stdout_line,
@@ -20,30 +19,17 @@ pub struct StatusReport {
     pub summary: StatusSummary,
 }
 
-pub async fn status(ctx: &AppContext, format: OutputFormat, top: usize) -> AppResult<()> {
-    let summary = ctx.db.status_summary(top).await?;
-    let report = StatusReport {
-        workspace: ctx.workspace.root().display().to_string(),
-        db_path: ctx.workspace.db_path().display().to_string(),
-        output_dir: ctx.effective_output_dir(None).display().to_string(),
-        summary,
-    };
-
+fn format_status_report(
+    report: &StatusReport,
+    format: OutputFormat,
+    table_opts: TableOptions,
+) -> AppResult<String> {
     match format {
-        OutputFormat::Json => {
-            let json = serde_json::to_string_pretty(&report).map_err(AppError::runtime)?;
-            write_stdout_line(&json).map_err(AppError::runtime)?;
-        }
-        OutputFormat::Jsonl => {
-            let jsonl = serde_json::to_string(&report).map_err(AppError::runtime)?;
-            write_stdout_line(&jsonl).map_err(AppError::runtime)?;
-        }
-        OutputFormat::Ids => {
-            let ids = render_ids(report.summary.top_ups.iter().map(|u| u.up_id.to_string()));
-            if !ids.is_empty() {
-                write_stdout_line(&ids).map_err(AppError::runtime)?;
-            }
-        }
+        OutputFormat::Json => serde_json::to_string_pretty(report).map_err(AppError::runtime),
+        OutputFormat::Jsonl => serde_json::to_string(report).map_err(AppError::runtime),
+        OutputFormat::Ids => Ok(render_ids(
+            report.summary.top_ups.iter().map(|u| u.up_id.to_string()),
+        )),
         OutputFormat::Tsv => {
             let s = &report.summary;
             let rows = [
@@ -64,9 +50,19 @@ pub async fn status(ctx: &AppContext, format: OutputFormat, top: usize) -> AppRe
                 ["ups", "deactivated", &s.ups.deactivated.to_string()],
                 ["medias", "total", &s.medias.total.to_string()],
                 ["medias", "pending", &s.medias.pending.to_string()],
+                [
+                    "medias",
+                    "active_pending",
+                    &s.medias.active_pending.to_string(),
+                ],
                 ["medias", "downloading", &s.medias.downloading.to_string()],
                 ["medias", "completed", &s.medias.completed.to_string()],
                 ["medias", "failed", &s.medias.failed.to_string()],
+                [
+                    "medias",
+                    "active_failed",
+                    &s.medias.active_failed.to_string(),
+                ],
                 ["medias", "expired", &s.medias.expired.to_string()],
                 [
                     "medias",
@@ -75,13 +71,24 @@ pub async fn status(ctx: &AppContext, format: OutputFormat, top: usize) -> AppRe
                 ],
                 ["medias", "skipped", &s.medias.skipped.to_string()],
             ];
-            let rendered = render_tsv(["section", "metric", "value"], rows);
-            write_stdout_line(&rendered).map_err(AppError::runtime)?;
+            Ok(render_tsv(["section", "metric", "value"], rows))
         }
         OutputFormat::Table => {
-            let table_opts = TableOptions::detect(false, ctx.runtime.color);
             let c = table_opts.colored;
             let s = &report.summary;
+
+            let pending_display =
+                if s.medias.pending > 0 && s.medias.active_pending != s.medias.pending {
+                    format!("{} ({} active)", s.medias.pending, s.medias.active_pending)
+                } else {
+                    s.medias.pending.to_string()
+                };
+            let failed_display = if s.medias.failed > 0 && s.medias.active_failed != s.medias.failed
+            {
+                format!("{} ({} active)", s.medias.failed, s.medias.active_failed)
+            } else {
+                s.medias.failed.to_string()
+            };
 
             let mut overview = table(
                 ["resource", "total", "breakdown"],
@@ -131,11 +138,11 @@ pub async fn status(ctx: &AppContext, format: OutputFormat, top: usize) -> AppRe
                         format!(
                             "{}: {}, {}: {}, {}: {}, {}: {}, {}: {}, {}: {}",
                             format_state_badge("Pending", c),
-                            s.medias.pending,
+                            pending_display,
                             format_state_badge("Completed", c),
                             s.medias.completed,
                             format_state_badge("Failed", c),
-                            s.medias.failed,
+                            failed_display,
                             format_state_badge("Expired", c),
                             s.medias.expired,
                             format_state_badge("PermissionDenied", c),
@@ -177,20 +184,46 @@ pub async fn status(ctx: &AppContext, format: OutputFormat, top: usize) -> AppRe
                 out.push_str(&top_tbl.to_string());
             }
 
-            if !write_stdout_line(&out).map_err(AppError::runtime)? {
+            Ok(out)
+        }
+    }
+}
+
+pub async fn status(ctx: &AppContext, format: OutputFormat, top: usize) -> AppResult<()> {
+    let summary = ctx.db.status_summary(top).await?;
+    let report = StatusReport {
+        workspace: ctx.workspace.root().display().to_string(),
+        db_path: ctx.workspace.db_path().display().to_string(),
+        output_dir: ctx.effective_output_dir(None).display().to_string(),
+        summary,
+    };
+
+    let table_opts = TableOptions::detect(false, ctx.runtime.color);
+    let rendered = format_status_report(&report, format, table_opts)?;
+
+    match format {
+        OutputFormat::Ids => {
+            if !rendered.is_empty() {
+                write_stdout_line(&rendered).map_err(AppError::runtime)?;
+            }
+        }
+        OutputFormat::Table => {
+            if !write_stdout_line(&rendered).map_err(AppError::runtime)? {
                 return Ok(());
             }
-
-            if let Some(hint) = build_status_hint(ctx, s).await {
+            if let Some(hint) = build_status_hint(&report.summary) {
                 ctx.hint(&hint);
             }
+        }
+        OutputFormat::Json | OutputFormat::Jsonl | OutputFormat::Tsv => {
+            write_stdout_line(&rendered).map_err(AppError::runtime)?;
         }
     }
 
     Ok(())
 }
 
-async fn build_status_hint(ctx: &AppContext, s: &StatusSummary) -> Option<String> {
+fn build_status_hint(s: &StatusSummary) -> Option<String> {
     if s.accounts.total == 0 {
         return Some(
             "Run `fav auth login` or `fav auth usecookies --stdin` to sign in.".to_owned(),
@@ -207,20 +240,16 @@ async fn build_status_hint(ctx: &AppContext, s: &StatusSummary) -> Option<String
                 .to_owned(),
         );
     }
-    let active_pending = ctx.db.count_active_pending_medias().await.unwrap_or(0);
-    if active_pending > 0 {
+    if s.medias.active_pending > 0 {
         return Some(format!(
-            "Run `fav pull` (or `fav sync`) to download {active_pending} active pending media(s)."
+            "Run `fav pull` (or `fav sync`) to download {} active pending media(s).",
+            s.medias.active_pending
         ));
     }
-    let active_failed = ctx
-        .db
-        .count_active_medias_in_state(MediaState::Failed)
-        .await
-        .unwrap_or(0);
-    if active_failed > 0 {
+    if s.medias.active_failed > 0 {
         return Some(format!(
-            "{active_failed} active media(s) failed. Run `fav pull --retry-failed` or `fav media reset --failed`."
+            "{} active media(s) failed. Run `fav pull --retry-failed` or `fav media reset --failed`.",
+            s.medias.active_failed
         ));
     }
     if s.medias.pending > 0 {
@@ -249,7 +278,7 @@ mod tests {
         db::Db,
         entity::{account, media, media_set, set, set_account},
         muxer::test_support::MockMuxer,
-        state::{AccountState, MediaType, SetKind, SetState},
+        state::{AccountState, MediaState, MediaType, SetKind, SetState},
     };
 
     #[tokio::test]
@@ -345,14 +374,18 @@ mod tests {
 
         // Only inactive pending -> must NOT tell user to run `fav pull`!
         let summary = ctx.db.status_summary(0).await.unwrap();
-        let hint = build_status_hint(&ctx, &summary).await.unwrap();
+        assert_eq!(summary.medias.pending, 1);
+        assert_eq!(summary.medias.active_pending, 0);
+        let hint = build_status_hint(&summary).unwrap();
         assert!(!hint.contains("fav pull"), "unexpected hint: {hint}");
         assert!(hint.contains("1 pending media(s) belong to inactive sets/UPs"));
 
         // Mark inactive media as Failed -> must NOT tell user to run `fav pull --retry-failed`!
         ctx.db.set_media_state(2, MediaState::Failed).await.unwrap();
         let summary_failed = ctx.db.status_summary(0).await.unwrap();
-        let hint_failed = build_status_hint(&ctx, &summary_failed).await.unwrap();
+        assert_eq!(summary_failed.medias.failed, 1);
+        assert_eq!(summary_failed.medias.active_failed, 0);
+        let hint_failed = build_status_hint(&summary_failed).unwrap();
         assert!(
             !hint_failed.contains("fav pull"),
             "unexpected failed hint: {hint_failed}"
@@ -362,9 +395,8 @@ mod tests {
         // Activate set 20 -> active failed -> suggests `fav pull --retry-failed`!
         ctx.db.activate_set(20).await.unwrap();
         let summary_active_failed = ctx.db.status_summary(0).await.unwrap();
-        let hint_active_failed = build_status_hint(&ctx, &summary_active_failed)
-            .await
-            .unwrap();
+        assert_eq!(summary_active_failed.medias.active_failed, 1);
+        let hint_active_failed = build_status_hint(&summary_active_failed).unwrap();
         assert!(hint_active_failed.contains("1 active media(s) failed"));
         assert!(hint_active_failed.contains("fav pull --retry-failed"));
 
@@ -374,12 +406,195 @@ mod tests {
             .await
             .unwrap();
         let summary_active_pending = ctx.db.status_summary(0).await.unwrap();
-        let hint_active_pending = build_status_hint(&ctx, &summary_active_pending)
-            .await
-            .unwrap();
+        assert_eq!(summary_active_pending.medias.active_pending, 1);
+        let hint_active_pending = build_status_hint(&summary_active_pending).unwrap();
         assert!(
             hint_active_pending
                 .contains("Run `fav pull` (or `fav sync`) to download 1 active pending media(s)")
         );
+    }
+
+    #[tokio::test]
+    async fn status_output_surfaces_active_vs_inactive_pending_and_failed_counts() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ws = Workspace::new(tmp.path().join("ws"));
+        ws.ensure_dirs().unwrap();
+        let db = Db::open_in_memory().await.unwrap();
+
+        db.upsert_account(account::Model {
+            account_id: 1,
+            name: "Alice".to_owned(),
+            cookies: "SESSDATA=s".to_owned(),
+            state: AccountState::Active.to_string(),
+            refresh_token: None,
+        })
+        .await
+        .unwrap();
+        db.upsert_sets([
+            set::Model {
+                set_id: 10,
+                name: "ActiveSet".to_owned(),
+                count: 2,
+                state: SetState::Active.to_string(),
+                kind: SetKind::Created.to_string(),
+                owner_mid: Some(1),
+                sync_complete: true,
+                resume_page: None,
+            },
+            set::Model {
+                set_id: 20,
+                name: "InactiveSet".to_owned(),
+                count: 2,
+                state: SetState::Inactive.to_string(),
+                kind: SetKind::Created.to_string(),
+                owner_mid: Some(1),
+                sync_complete: true,
+                resume_page: None,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_set_accounts([
+            set_account::Model {
+                set_id: 10,
+                account_id: 1,
+            },
+            set_account::Model {
+                set_id: 20,
+                account_id: 1,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_medias([
+            media::Model {
+                id: 1,
+                bv_id: "BV1active0001".to_owned(),
+                title: "ActivePending".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Pending.to_string(),
+                retry_count: 0,
+                last_error: None,
+                updated_at: None,
+            },
+            media::Model {
+                id: 2,
+                bv_id: "BV1active0002".to_owned(),
+                title: "ActiveFailed".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Failed.to_string(),
+                retry_count: 1,
+                last_error: Some("err".to_owned()),
+                updated_at: None,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_media_sets([
+            media_set::Model { id: 1, set_id: 10 },
+            media_set::Model { id: 2, set_id: 10 },
+        ])
+        .await
+        .unwrap();
+
+        let plain_opts = TableOptions::detect(true, crate::table::ColorChoice::Never);
+
+        // Case 1: All pending & failed are active -> clean `Pending: 1`, `Failed: 1` with no noise
+        let all_active_report = StatusReport {
+            workspace: ws.root().display().to_string(),
+            db_path: ws.db_path().display().to_string(),
+            output_dir: ws.root().display().to_string(),
+            summary: db.status_summary(0).await.unwrap(),
+        };
+        let table_all_active =
+            format_status_report(&all_active_report, OutputFormat::Table, plain_opts).unwrap();
+        assert!(
+            table_all_active.contains("Pending: 1,"),
+            "unexpected all-active table:\n{table_all_active}"
+        );
+        assert!(
+            table_all_active.contains("Failed: 1,"),
+            "unexpected all-active table:\n{table_all_active}"
+        );
+        assert!(
+            !table_all_active.contains(" active)"),
+            "all-active table must not add active parenthetical noise:\n{table_all_active}"
+        );
+
+        let tsv_all_active =
+            format_status_report(&all_active_report, OutputFormat::Tsv, plain_opts).unwrap();
+        assert!(tsv_all_active.contains("medias\tpending\t1"));
+        assert!(tsv_all_active.contains("medias\tactive_pending\t1"));
+        assert!(tsv_all_active.contains("medias\tfailed\t1"));
+        assert!(tsv_all_active.contains("medias\tactive_failed\t1"));
+
+        // Case 2: Add inactive Pending and inactive Failed -> mixed active/inactive display
+        db.upsert_medias([
+            media::Model {
+                id: 3,
+                bv_id: "BV1inact00003".to_owned(),
+                title: "InactivePending".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Pending.to_string(),
+                retry_count: 0,
+                last_error: None,
+                updated_at: None,
+            },
+            media::Model {
+                id: 4,
+                bv_id: "BV1inact00004".to_owned(),
+                title: "InactiveFailed".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Failed.to_string(),
+                retry_count: 1,
+                last_error: Some("err".to_owned()),
+                updated_at: None,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_media_sets([
+            media_set::Model { id: 3, set_id: 20 },
+            media_set::Model { id: 4, set_id: 20 },
+        ])
+        .await
+        .unwrap();
+
+        let mixed_report = StatusReport {
+            workspace: ws.root().display().to_string(),
+            db_path: ws.db_path().display().to_string(),
+            output_dir: ws.root().display().to_string(),
+            summary: db.status_summary(0).await.unwrap(),
+        };
+        let table_mixed =
+            format_status_report(&mixed_report, OutputFormat::Table, plain_opts).unwrap();
+        assert!(
+            table_mixed.contains("Pending: 2 (1 active)"),
+            "expected mixed Pending display:\n{table_mixed}"
+        );
+        assert!(
+            table_mixed.contains("Failed: 2 (1 active)"),
+            "expected mixed Failed display:\n{table_mixed}"
+        );
+
+        let tsv_mixed = format_status_report(&mixed_report, OutputFormat::Tsv, plain_opts).unwrap();
+        assert!(tsv_mixed.contains("medias\tpending\t2"));
+        assert!(tsv_mixed.contains("medias\tactive_pending\t1"));
+        assert!(tsv_mixed.contains("medias\tfailed\t2"));
+        assert!(tsv_mixed.contains("medias\tactive_failed\t1"));
+
+        let json_mixed =
+            format_status_report(&mixed_report, OutputFormat::Json, plain_opts).unwrap();
+        let json_val: serde_json::Value = serde_json::from_str(&json_mixed).unwrap();
+        assert_eq!(json_val["medias"]["pending"], 2);
+        assert_eq!(json_val["medias"]["active_pending"], 1);
+        assert_eq!(json_val["medias"]["failed"], 2);
+        assert_eq!(json_val["medias"]["active_failed"], 1);
+
+        let jsonl_mixed =
+            format_status_report(&mixed_report, OutputFormat::Jsonl, plain_opts).unwrap();
+        let jsonl_val: serde_json::Value = serde_json::from_str(&jsonl_mixed).unwrap();
+        assert_eq!(jsonl_val["medias"]["active_pending"], 1);
+        assert_eq!(jsonl_val["medias"]["active_failed"], 1);
     }
 }
