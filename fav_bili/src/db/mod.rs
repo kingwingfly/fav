@@ -1181,4 +1181,302 @@ mod tests {
         assert_eq!(m2_pages[0].state, MediaPageState::Completed.as_str());
         assert_eq!(m2_pages[0].file_inode, Some(333));
     }
+
+    #[tokio::test]
+    async fn safe_bulk_activate_and_deactivate_state_transitions() {
+        let db = Db::open_in_memory().await.unwrap();
+
+        // Accounts: Active (1), Inactive (2), Expired (3)
+        db.upsert_account(sample_account(1, AccountState::Active))
+            .await
+            .unwrap();
+        db.upsert_account(sample_account(2, AccountState::Inactive))
+            .await
+            .unwrap();
+        db.upsert_account(sample_account(3, AccountState::Expired))
+            .await
+            .unwrap();
+
+        // Sets:
+        // 10: Inactive, owned by Active acct 1 -> should activate
+        // 11: Active, owned by Active acct 1 -> already Active (unchanged, not recounted)
+        // 12: Unreachable, owned by Active acct 1 -> MUST stay Unreachable
+        // 13: Inactive, owned only by Inactive acct 2 -> MUST stay Inactive until acct 2 is active
+        // 14: Inactive, owned only by Expired acct 3 -> MUST stay Inactive
+        // 15: Inactive, shared by Inactive acct 2 and Active acct 1 -> should activate
+        // 16: Inactive, orphan (no set_account link) -> MUST stay Inactive
+        // 17: Active, owned only by Inactive acct 2 -> stays Active on activate_all, deactivates on deactivate_all
+        db.upsert_sets([
+            sample_set(10, "InactiveActiveAcct", 1, SetState::Inactive),
+            sample_set(11, "ActiveActiveAcct", 1, SetState::Active),
+            sample_set(12, "UnreachableActiveAcct", 1, SetState::Unreachable),
+            sample_set(13, "InactiveInactiveAcct", 1, SetState::Inactive),
+            sample_set(14, "InactiveExpiredAcct", 1, SetState::Inactive),
+            sample_set(15, "InactiveShared", 1, SetState::Inactive),
+            sample_set(16, "InactiveOrphan", 1, SetState::Inactive),
+            sample_set(17, "ActiveInactiveAcct", 1, SetState::Active),
+        ])
+        .await
+        .unwrap();
+        db.upsert_set_accounts([
+            set_account::Model {
+                set_id: 10,
+                account_id: 1,
+            },
+            set_account::Model {
+                set_id: 11,
+                account_id: 1,
+            },
+            set_account::Model {
+                set_id: 12,
+                account_id: 1,
+            },
+            set_account::Model {
+                set_id: 13,
+                account_id: 2,
+            },
+            set_account::Model {
+                set_id: 14,
+                account_id: 3,
+            },
+            set_account::Model {
+                set_id: 15,
+                account_id: 2,
+            },
+            set_account::Model {
+                set_id: 15,
+                account_id: 1,
+            },
+            set_account::Model {
+                set_id: 17,
+                account_id: 2,
+            },
+        ])
+        .await
+        .unwrap();
+
+        // UPs:
+        // 100: Inactive, followed by Active acct 1 -> should activate
+        // 101: Active, followed by Active acct 1 -> already Active (unchanged)
+        // 102: Deactivated, followed by Active acct 1 -> MUST stay Deactivated
+        // 103: Inactive, followed only by Inactive acct 2 -> MUST stay Inactive
+        // 104: Inactive, followed only by Expired acct 3 -> MUST stay Inactive
+        // 105: Inactive, unfollowed (discovered via favorite set) -> MUST stay Inactive
+        // 106: Inactive, shared by Inactive acct 2 and Active acct 1 -> should activate
+        // 107: Active, unfollowed -> stays Active on activate_all, deactivates on deactivate_all
+        db.upsert_ups([
+            sample_up(100, "InactiveFollowedActive", UpState::Inactive),
+            sample_up(101, "ActiveFollowedActive", UpState::Active),
+            sample_up(102, "DeactivatedFollowedActive", UpState::Deactivated),
+            sample_up(103, "InactiveFollowedInactive", UpState::Inactive),
+            sample_up(104, "InactiveFollowedExpired", UpState::Inactive),
+            sample_up(105, "InactiveUnfollowed", UpState::Inactive),
+            sample_up(106, "InactiveShared", UpState::Inactive),
+            sample_up(107, "ActiveUnfollowed", UpState::Active),
+        ])
+        .await
+        .unwrap();
+        db.upsert_up_accounts([
+            up_account::Model {
+                up_id: 100,
+                account_id: 1,
+            },
+            up_account::Model {
+                up_id: 101,
+                account_id: 1,
+            },
+            up_account::Model {
+                up_id: 102,
+                account_id: 1,
+            },
+            up_account::Model {
+                up_id: 103,
+                account_id: 2,
+            },
+            up_account::Model {
+                up_id: 104,
+                account_id: 3,
+            },
+            up_account::Model {
+                up_id: 106,
+                account_id: 2,
+            },
+            up_account::Model {
+                up_id: 106,
+                account_id: 1,
+            },
+        ])
+        .await
+        .unwrap();
+
+        // 1. activate_all_sets only activates Inactive sets owned by Active accounts (10 and 15).
+        assert_eq!(db.activate_all_sets().await.unwrap(), 2);
+        assert_eq!(
+            db.get_set(10).await.unwrap().state,
+            SetState::Active.as_str()
+        );
+        assert_eq!(
+            db.get_set(11).await.unwrap().state,
+            SetState::Active.as_str()
+        );
+        assert_eq!(
+            db.get_set(12).await.unwrap().state,
+            SetState::Unreachable.as_str()
+        );
+        assert_eq!(
+            db.get_set(13).await.unwrap().state,
+            SetState::Inactive.as_str()
+        );
+        assert_eq!(
+            db.get_set(14).await.unwrap().state,
+            SetState::Inactive.as_str()
+        );
+        assert_eq!(
+            db.get_set(15).await.unwrap().state,
+            SetState::Active.as_str()
+        );
+        assert_eq!(
+            db.get_set(16).await.unwrap().state,
+            SetState::Inactive.as_str()
+        );
+        assert_eq!(
+            db.get_set(17).await.unwrap().state,
+            SetState::Active.as_str()
+        );
+        // Second call is idempotent (0 newly activated).
+        assert_eq!(db.activate_all_sets().await.unwrap(), 0);
+
+        // 2. activate_all_ups only activates Inactive UPs followed by Active accounts (100 and 106).
+        assert_eq!(db.activate_all_ups().await.unwrap(), 2);
+        assert_eq!(
+            db.get_up(100).await.unwrap().state,
+            UpState::Active.as_str()
+        );
+        assert_eq!(
+            db.get_up(101).await.unwrap().state,
+            UpState::Active.as_str()
+        );
+        assert_eq!(
+            db.get_up(102).await.unwrap().state,
+            UpState::Deactivated.as_str()
+        );
+        assert_eq!(
+            db.get_up(103).await.unwrap().state,
+            UpState::Inactive.as_str()
+        );
+        assert_eq!(
+            db.get_up(104).await.unwrap().state,
+            UpState::Inactive.as_str()
+        );
+        assert_eq!(
+            db.get_up(105).await.unwrap().state,
+            UpState::Inactive.as_str()
+        );
+        assert_eq!(
+            db.get_up(106).await.unwrap().state,
+            UpState::Active.as_str()
+        );
+        assert_eq!(
+            db.get_up(107).await.unwrap().state,
+            UpState::Active.as_str()
+        );
+        assert_eq!(db.activate_all_ups().await.unwrap(), 0);
+
+        // 3. activate_all_accounts transitions Inactive (2) -> Active, preserving Expired (3).
+        assert_eq!(db.activate_all_accounts().await.unwrap(), 1);
+        assert_eq!(
+            db.get_account(1).await.unwrap().state,
+            AccountState::Active.as_str()
+        );
+        assert_eq!(
+            db.get_account(2).await.unwrap().state,
+            AccountState::Active.as_str()
+        );
+        assert_eq!(
+            db.get_account(3).await.unwrap().state,
+            AccountState::Expired.as_str()
+        );
+        assert_eq!(db.activate_all_accounts().await.unwrap(), 0);
+
+        // Now that acct 2 is Active, set 13 and UP 103 become eligible; Expired acct 3's set 14 / UP 104
+        // and orphan set 16 / unfollowed UP 105 remain Inactive.
+        assert_eq!(db.activate_all_sets().await.unwrap(), 1);
+        assert_eq!(
+            db.get_set(13).await.unwrap().state,
+            SetState::Active.as_str()
+        );
+        assert_eq!(
+            db.get_set(14).await.unwrap().state,
+            SetState::Inactive.as_str()
+        );
+        assert_eq!(
+            db.get_set(16).await.unwrap().state,
+            SetState::Inactive.as_str()
+        );
+
+        assert_eq!(db.activate_all_ups().await.unwrap(), 1);
+        assert_eq!(
+            db.get_up(103).await.unwrap().state,
+            UpState::Active.as_str()
+        );
+        assert_eq!(
+            db.get_up(104).await.unwrap().state,
+            UpState::Inactive.as_str()
+        );
+        assert_eq!(
+            db.get_up(105).await.unwrap().state,
+            UpState::Inactive.as_str()
+        );
+
+        // 4. deactivate_all_* transitions ONLY Active -> Inactive, preserving Expired/Unreachable/Deactivated.
+        // Active sets: 10, 11, 13, 15, 17 (5 total)
+        assert_eq!(db.deactivate_all_sets().await.unwrap(), 5);
+        for id in [10, 11, 13, 14, 15, 16, 17] {
+            assert_eq!(
+                db.get_set(id).await.unwrap().state,
+                SetState::Inactive.as_str(),
+                "set {id} should be Inactive"
+            );
+        }
+        assert_eq!(
+            db.get_set(12).await.unwrap().state,
+            SetState::Unreachable.as_str()
+        );
+        assert_eq!(db.deactivate_all_sets().await.unwrap(), 0);
+
+        // Active UPs: 100, 101, 103, 106, 107 (5 total, including Active unfollowed UP 107)
+        assert_eq!(db.deactivate_all_ups().await.unwrap(), 5);
+        for id in [100, 101, 103, 104, 105, 106, 107] {
+            assert_eq!(
+                db.get_up(id).await.unwrap().state,
+                UpState::Inactive.as_str(),
+                "UP {id} should be Inactive"
+            );
+        }
+        assert_eq!(
+            db.get_up(102).await.unwrap().state,
+            UpState::Deactivated.as_str()
+        );
+        assert_eq!(db.deactivate_all_ups().await.unwrap(), 0);
+
+        // Active accounts: 1, 2 (2 total); Expired account 3 MUST remain Expired.
+        assert_eq!(db.deactivate_all_accounts().await.unwrap(), 2);
+        assert_eq!(
+            db.get_account(1).await.unwrap().state,
+            AccountState::Inactive.as_str()
+        );
+        assert_eq!(
+            db.get_account(2).await.unwrap().state,
+            AccountState::Inactive.as_str()
+        );
+        assert_eq!(
+            db.get_account(3).await.unwrap().state,
+            AccountState::Expired.as_str()
+        );
+        assert_eq!(db.deactivate_all_accounts().await.unwrap(), 0);
+
+        // With 0 active accounts, activate_all_sets and activate_all_ups must activate 0 rows.
+        assert_eq!(db.activate_all_sets().await.unwrap(), 0);
+        assert_eq!(db.activate_all_ups().await.unwrap(), 0);
+    }
 }
