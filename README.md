@@ -130,8 +130,9 @@ Commands:
   activate    Activate accounts, favorite sets, or UPs for syncing [alias: active, a]
   deactivate  Deactivate accounts, favorite sets, or UPs [alias: d]
   fetch       Fetch metadata of followed UPs, favorite sets, and medias [alias: f]
-  pull        Download and mux pending medias [alias: p]
+  pull        Download and mux pending medias from activated sets/UPs (use `fav download` for untracked videos) [alias: p]
   sync        Fetch metadata and pull pending medias in one command [alias: s]
+  download    Download arbitrary Bilibili videos/audio without modifying the workspace DB [alias: dl]
   like        Like (or unlike) Bilibili medias by BVID/AID/URL, set, or stdin
   status      Show workspace summary, media counts, and top UPs
   doctor      Diagnose workspace DB, permissions, ffmpeg, disk sync, and account cookies
@@ -198,15 +199,38 @@ FAV_DIR=/data/bilibili fav sync
 fav activate set
 fav deactivate up
 
-# Sync with pruning (safe: preserves already-Completed medias) or dry-run
-fav sync --prune
-fav fetch --prune --dry-run
+# Inspect created folders, collected folders, and video collections/seasons
+fav ls set --kind created
+fav ls set --kind collected
+fav ls set --kind season
 
-# Targeted pull by BVID, AID, URL, set, or UP, with concurrency & bandwidth controls
+# Incremental cursor fetch (stops at first already-fetched item; resumes interrupted initial scans)
+fav fetch
+fav sync --prune
+# Explicit full scan to refresh expired/unfavorited status across all pages
+fav fetch --full
+fav fetch --refresh-status --prune --dry-run
+
+# Targeted pull of tracked & active medias (for untracked videos, use `fav download`)
 fav pull BV17x411w7KC
-fav pull https://www.bilibili.com/video/BV17x411w7KC
-fav pull --set 123456789 --jobs 4 --limit-rate 5M
+fav pull --set 123456789 --jobs 4 --limit-rate 5M --clarity 1080p --codec hevc
+fav pull --sound-only --audio-format mp3
 fav pull --retry-failed --dry-run
+
+# Archive-safe default vs rename-safe deleted-file recovery (relinks renamed/moved files, re-downloads only missing pages)
+fav pull --recheck
+fav sync --recheck
+fav doctor -o ./videos
+fav media reset --missing -o ./videos
+
+# Untracked one-off downloads (`fav download` / `fav dl`) — zero SQLite writes and zero workspace lock
+fav download BV1Q541167Qg
+fav dl "https://www.bilibili.com/video/BV1Q541167Qg/?p=2"        # downloads only P2
+fav dl "https://www.bilibili.com/video/BV1Q541167Qg/?p=2" --all-pages
+fav dl BV1Q541167Qg --page 1,3-5 -o ./downloads --clarity 720p --codec avc
+fav dl BV1Q541167Qg --sound-only --audio-format flac
+fav dl BV1Q541167Qg --anonymous                                   # skip workspace cookies (uses try_look=1)
+printf '%s\n' BV17x411w7KC BV1Q541167Qg | fav dl -
 
 # Inspect and filter lists in table, JSON, JSONL, TSV, or plain IDs
 fav ls media --state pending --format table
@@ -216,7 +240,7 @@ fav ls set --sort count --format tsv
 
 # Recover or skip stuck media items without touching SQLite manually
 fav media reset --failed
-fav media reset --missing
+fav media reset --missing                     # active sets/UPs only (pass --include-inactive to include inactive ones)
 fav media skip 170001
 
 # Like (or unlike) medias directly by set, BVID/URL, or piped IDs
@@ -240,8 +264,14 @@ Persistent defaults are loaded by merging `~/.config/fav/config.toml` and `<work
 ```toml
 # .fav/config.toml
 output_dir = "./videos"
+tmp_dir = "./.fav/tmp"     # On-disk staging directory (never uses /tmp; avoids tmpfs OOM)
 jobs = 4
 limit_rate = "10M"
+clarity = "1080p"          # Alias: quality (best, 8k, dolby, hdr, 4k, 1080p60, 1080p+, ai, 1080p, 720p60, 720p, 480p, 360p, 240p, worst, or numeric qn)
+codec = "hevc"             # Preferred DASH codec: avc (h264), hevc (h265), av1
+sound_only = false         # Download audio stream only by default
+audio_format = "copy"      # copy, m4a, mp3, flac, opus
+recheck = false            # Recheck disk for missing/renamed Completed files on pull/sync
 prune = false
 no_progress = false
 color = "auto"
@@ -251,7 +281,7 @@ api_concurrency = 4
 
 ### Shell Completions
 
-`fav completion <shell>` generates shell completion scripts with built-in dynamic workspace DB completions powered by the hidden `fav __complete` helper (completing set IDs, UP IDs, account IDs, and medias directly from your workspace DB). Pass `--static` to emit static completions only, or `--bin-name <NAME>` if installed under another binary name:
+`fav completion <shell>` generates shell completion scripts with built-in dynamic workspace DB completions powered by the hidden `fav __complete` helper (completing set IDs, UP IDs, account IDs, and medias directly from your workspace DB, and forwarding `-C`/`--dir` in Bash, Zsh, Fish, and PowerShell). Pass `--static` to emit static completions only, or `--bin-name <NAME>` if installed under another binary name:
 
 ```sh
 # Bash
@@ -263,8 +293,13 @@ fav completion zsh > ~/.zfunc/_fav
 # Fish
 fav completion fish > ~/.config/fish/completions/fav.fish
 
-# PowerShell (Windows)
+# PowerShell (dynamic Register-ArgumentCompleter with static fallback)
 fav completion powershell | Out-String | Invoke-Expression
+
+# Nushell (save and source from config.nu; `nu` alias also accepted)
+fav completion nushell | save -f ~/.config/nushell/fav.nu
+# Add to ~/.config/nushell/config.nu:
+#   source ~/.config/nushell/fav.nu
 
 # Static-only completions (without dynamic DB hooks)
 fav completion bash --static > ~/.local/share/bash-completion/completions/fav

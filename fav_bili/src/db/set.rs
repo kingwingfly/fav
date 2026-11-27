@@ -10,8 +10,8 @@ use sea_orm::{
 
 use super::{CHUNK_SIZE, Db};
 use crate::{
-    entity::{set, set_account},
-    state::SetState,
+    entity::{account, set, set_account},
+    state::{AccountState, SetKind, SetState},
 };
 
 #[derive(Debug, Clone, Default)]
@@ -19,6 +19,7 @@ pub struct SetFilter {
     pub states: Vec<SetState>,
     pub active_only: bool,
     pub account_id: Option<i64>,
+    pub kind: Option<SetKind>,
     pub search: Option<String>,
     pub limit: Option<u64>,
 }
@@ -34,7 +35,12 @@ impl Db {
             set::Entity::insert_many(chunk.iter().cloned().map(|s| s.into_active_model()))
                 .on_conflict(
                     OnConflict::column(set::Column::SetId)
-                        .update_columns([set::Column::Name, set::Column::Count])
+                        .update_columns([
+                            set::Column::Name,
+                            set::Column::Count,
+                            set::Column::Kind,
+                            set::Column::OwnerMid,
+                        ])
                         .to_owned(),
                 )
                 .exec_without_returning(&txn)
@@ -44,12 +50,15 @@ impl Db {
         Ok(())
     }
 
-    /// Atomically upsert an account's sets, link `set_account`, and remove stale `set_account` rows.
+    /// Atomically upsert an account's sets, link `set_account`, and optionally remove stale
+    /// `set_account` rows when `unlink_stale` is `true` (all catalog pages succeeded).
+    /// Preserves existing `state`, `sync_complete`, and `resume_page`.
     /// Returns the list of unlinked `set_id`s.
     pub async fn sync_account_sets(
         &self,
         account_id: i64,
         sets: Vec<set::Model>,
+        unlink_stale: bool,
     ) -> Result<Vec<i64>> {
         let txn = self.conn.begin().await?;
         if !sets.is_empty() {
@@ -57,7 +66,12 @@ impl Db {
                 set::Entity::insert_many(chunk.iter().cloned().map(|s| s.into_active_model()))
                     .on_conflict(
                         OnConflict::column(set::Column::SetId)
-                            .update_columns([set::Column::Name, set::Column::Count])
+                            .update_columns([
+                                set::Column::Name,
+                                set::Column::Count,
+                                set::Column::Kind,
+                                set::Column::OwnerMid,
+                            ])
                             .to_owned(),
                     )
                     .exec_without_returning(&txn)
@@ -80,30 +94,81 @@ impl Db {
             }
         }
 
-        let current_ids: HashSet<i64> = sets.iter().map(|s| s.set_id).collect();
-        let existing_ids: Vec<i64> = set_account::Entity::find()
-            .filter(set_account::Column::AccountId.eq(account_id))
-            .all(&txn)
-            .await?
-            .into_iter()
-            .map(|m| m.set_id)
-            .collect();
-        let stale: Vec<i64> = existing_ids
-            .into_iter()
-            .filter(|id| !current_ids.contains(id))
-            .collect();
-        for chunk in stale.chunks(CHUNK_SIZE) {
-            set_account::Entity::delete_many()
-                .filter(
-                    Condition::all()
-                        .add(set_account::Column::AccountId.eq(account_id))
-                        .add(set_account::Column::SetId.is_in(chunk.iter().copied())),
-                )
-                .exec(&txn)
-                .await?;
+        let mut stale = Vec::new();
+        if unlink_stale {
+            let current_ids: HashSet<i64> = sets.iter().map(|s| s.set_id).collect();
+            let existing_ids: Vec<i64> = set_account::Entity::find()
+                .filter(set_account::Column::AccountId.eq(account_id))
+                .all(&txn)
+                .await?
+                .into_iter()
+                .map(|m| m.set_id)
+                .collect();
+            stale = existing_ids
+                .into_iter()
+                .filter(|id| !current_ids.contains(id))
+                .collect();
+            for chunk in stale.chunks(CHUNK_SIZE) {
+                set_account::Entity::delete_many()
+                    .filter(
+                        Condition::all()
+                            .add(set_account::Column::AccountId.eq(account_id))
+                            .add(set_account::Column::SetId.is_in(chunk.iter().copied())),
+                    )
+                    .exec(&txn)
+                    .await?;
+            }
         }
         txn.commit().await?;
         Ok(stale)
+    }
+
+    pub async fn set_set_sync_progress(
+        &self,
+        set_id: i64,
+        sync_complete: bool,
+        resume_page: Option<i32>,
+    ) -> Result<()> {
+        let res = set::Entity::update_many()
+            .col_expr(set::Column::SyncComplete, Expr::value(sync_complete))
+            .col_expr(set::Column::ResumePage, Expr::value(resume_page))
+            .filter(set::Column::SetId.eq(set_id))
+            .exec(&self.conn)
+            .await?;
+        if res.rows_affected == 0 {
+            return Err(anyhow!("Unknown set<{set_id}>"));
+        }
+        Ok(())
+    }
+
+    pub async fn is_set_owned_by_active_account(&self, set_id: i64) -> Result<bool> {
+        let active_accounts = Query::select()
+            .column(account::Column::AccountId)
+            .from(account::Entity)
+            .and_where(Expr::col(account::Column::State).eq(AccountState::Active.as_str()))
+            .to_owned();
+        let found = set_account::Entity::find()
+            .filter(
+                Condition::all()
+                    .add(set_account::Column::SetId.eq(set_id))
+                    .add(set_account::Column::AccountId.in_subquery(active_accounts)),
+            )
+            .one(&self.conn)
+            .await?;
+        Ok(found.is_some())
+    }
+
+    pub async fn active_account_set_ids(&self) -> Result<HashSet<i64>> {
+        let active_accounts = Query::select()
+            .column(account::Column::AccountId)
+            .from(account::Entity)
+            .and_where(Expr::col(account::Column::State).eq(AccountState::Active.as_str()))
+            .to_owned();
+        let rows = set_account::Entity::find()
+            .filter(set_account::Column::AccountId.in_subquery(active_accounts))
+            .all(&self.conn)
+            .await?;
+        Ok(rows.into_iter().map(|r| r.set_id).collect())
     }
 
     pub async fn get_set(&self, set_id: i64) -> Result<set::Model> {
@@ -136,6 +201,9 @@ impl Db {
                 .and_where(Expr::col(set_account::Column::AccountId).eq(account_id))
                 .to_owned();
             query = query.filter(set::Column::SetId.in_subquery(sub));
+        }
+        if let Some(kind) = filter.kind {
+            query = query.filter(set::Column::Kind.eq(kind));
         }
         if let Some(search) = &filter.search
             && !search.trim().is_empty()

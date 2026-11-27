@@ -1,5 +1,5 @@
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     path::{Path, PathBuf},
     str::FromStr as _,
     sync::Arc,
@@ -7,28 +7,29 @@ use std::{
 
 use anyhow::{Context as _, Result, anyhow};
 use futures::StreamExt as _;
-use indicatif::{ProgressBar, ProgressStyle};
-use sanitize_filename::{Options as SanitizeOptions, sanitize_with_options};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
+pub use crate::downloader::build_safe_filename;
 use crate::{
-    api::{BiliApiError, BiliClient, DownloadOptions, DownloadProgress},
+    api::{BiliApiError, BiliClient},
     context::AppContext,
     db::PullFilter,
-    entity::{media, media_page, media_up, up},
+    downloader::{
+        PageTarget, StreamDownloadParams, download_and_mux_page, fetch_page_playurl,
+        preview_extension, resolve_recorded_path,
+    },
+    entity::{media, media_page},
     error::{AppError, AppResult},
-    id_parse::parse_media_idents,
-    muxer::MuxRequest,
-    response::{Page, select_best_audio, select_best_video},
-    state::{AccountState, MediaPageState, MediaState, MediaType, UpState},
-    table::{head, write_stdout_line},
+    id_parse::parse_media_ident,
+    reconcile::{ReconcileReport, apply_reconciliation, reconcile_completed_medias},
+    response::Page,
+    state::{
+        AccountState, AudioFormat, MediaPageState, MediaState, MediaType, SetState, UpState,
+        VideoClarity, VideoCodec,
+    },
+    table::write_stdout_line,
 };
-
-const BAR_TEMPLATE: &str = "{msg} {spinner:.green} [{elapsed_precise}] [{wide_bar:.cyan/blue}] {bytes}/{total_bytes} ({bytes_per_sec}, {eta})";
-const SPINNER_TEMPLATE: &str =
-    "{msg} {spinner:.green} [{elapsed_precise}] {bytes} ({bytes_per_sec})";
-const MAX_FILENAME_BYTES: usize = 240;
 
 #[derive(Debug, Clone, Default)]
 pub struct PullOptions {
@@ -43,6 +44,11 @@ pub struct PullOptions {
     pub force: bool,
     pub dry_run: bool,
     pub ignore_errors: bool,
+    pub sound_only: bool,
+    pub audio_format: Option<AudioFormat>,
+    pub clarity: Option<VideoClarity>,
+    pub codec: Option<VideoCodec>,
+    pub recheck: bool,
 }
 
 enum MediaOutcome {
@@ -54,11 +60,49 @@ enum MediaOutcome {
 }
 
 pub async fn pull(ctx: &AppContext, opts: PullOptions) -> AppResult<()> {
-    let target_aids = resolve_target_aids(&opts.targets)?;
+    let target_entries = resolve_target_entries(&opts.targets)?;
+    validate_pull_scope(ctx, &opts, &target_entries).await?;
+    let target_aids: Vec<i64> = target_entries.iter().map(|(_, aid)| *aid).collect();
+
     let output_dir = ctx.effective_output_dir(opts.output_dir.as_deref());
+    let sound_only = ctx.effective_sound_only(opts.sound_only);
+    let audio_format = ctx.effective_audio_format(opts.audio_format);
+    let clarity = ctx.effective_clarity(opts.clarity);
+    let codec = ctx.effective_codec(opts.codec);
+    let limit_rate = ctx.effective_limit_rate(opts.limit_rate);
+
+    let should_recheck = should_run_recheck(ctx, &opts, &target_aids).await?;
+    let recheck_scope = if should_recheck {
+        compute_recheck_scope(ctx, &opts, &target_aids).await?
+    } else {
+        None
+    };
 
     if opts.dry_run {
-        return run_pull_dry_run(ctx, &opts, &target_aids, &output_dir).await;
+        let recheck_report = if should_recheck {
+            Some(
+                reconcile_completed_medias(
+                    &ctx.db,
+                    ctx.muxer.as_ref(),
+                    &output_dir,
+                    true,
+                    recheck_scope.as_ref(),
+                )
+                .await?,
+            )
+        } else {
+            None
+        };
+        return run_pull_dry_run(
+            ctx,
+            &opts,
+            &target_aids,
+            &output_dir,
+            sound_only,
+            audio_format,
+            recheck_report.as_ref(),
+        )
+        .await;
     }
 
     // Fail fast if `ffmpeg` is missing or broken before downloading a single byte.
@@ -84,19 +128,51 @@ pub async fn pull(ctx: &AppContext, opts: PullOptions) -> AppResult<()> {
                 output_dir.display()
             )
         })?;
-    let tmp_dir = ctx.workspace.tmp_dir();
+    let tmp_dir = ctx.effective_tmp_dir();
     tokio::fs::create_dir_all(&tmp_dir)
         .await
         .with_context(|| format!("Failed to create temp directory '{}'", tmp_dir.display()))?;
 
-    // If the user explicitly targeted BVID/AIDs not yet in DB, fetch metadata on demand.
-    if !target_aids.is_empty() {
-        let first_client = ctx.client_for_account(&accounts[0].cookies)?;
-        ensure_targets_in_db(ctx, &first_client, &target_aids).await?;
+    if should_recheck {
+        let report = reconcile_completed_medias(
+            &ctx.db,
+            ctx.muxer.as_ref(),
+            &output_dir,
+            true,
+            recheck_scope.as_ref(),
+        )
+        .await?;
+        let applied = apply_reconciliation(&ctx.db, &report).await?;
+        if applied.relinked_pages > 0 {
+            info!(
+                "Recheck relinked {} relocated/renamed file(s) in DB.",
+                applied.relinked_pages
+            );
+        }
+        if applied.reset_medias > 0 {
+            info!(
+                "Recheck queued {} media(s) ({} missing page(s), {} missing legacy media(s)) for re-download.",
+                applied.reset_medias,
+                report.missing_pages.len(),
+                report.missing_legacy_ids.len(),
+            );
+        } else {
+            info!(
+                "Recheck verified {} active completed item(s) on disk; 0 missing.",
+                report.total_verified()
+            );
+        }
     }
 
     let jobs = ctx.effective_jobs(opts.jobs);
-    let limit_rate = ctx.effective_limit_rate(opts.limit_rate);
+    let stream_params = Arc::new(StreamDownloadParams {
+        sound_only,
+        audio_format,
+        clarity,
+        codec,
+        limit_rate,
+        try_look: false,
+    });
     let global_cancel = CancellationToken::new();
 
     let mut downloaded_total = 0usize;
@@ -157,6 +233,7 @@ pub async fn pull(ctx: &AppContext, opts: PullOptions) -> AppResult<()> {
                 let token = account_cancel.clone();
                 let output_dir = output_dir_arc.clone();
                 let tmp_dir = tmp_dir_arc.clone();
+                let params = stream_params.clone();
                 let force = opts.force;
                 async move {
                     if token.is_cancelled() {
@@ -168,7 +245,7 @@ pub async fn pull(ctx: &AppContext, opts: PullOptions) -> AppResult<()> {
                         &media_row,
                         &output_dir,
                         &tmp_dir,
-                        limit_rate,
+                        &params,
                         force,
                         token,
                     )
@@ -225,6 +302,25 @@ pub async fn pull(ctx: &AppContext, opts: PullOptions) -> AppResult<()> {
         }
     }
 
+    if downloaded_total == 0
+        && failed_total == 0
+        && skipped_total == 0
+        && expired_accounts == 0
+        && !interrupted
+        && target_aids.is_empty()
+        && opts.set_ids.is_empty()
+        && opts.up_ids.is_empty()
+        && let Ok(summary) = ctx.db.status_summary(0).await
+        && let Ok(active_pending) = ctx.db.count_active_pending_medias().await
+    {
+        let inactive_pending = summary.medias.pending.saturating_sub(active_pending);
+        if inactive_pending > 0 {
+            info!(
+                "No active pending medias to pull ({inactive_pending} pending media(s) belong to inactive sets/UPs)."
+            );
+        }
+    }
+
     info!(
         "Pull finished: Downloaded {downloaded_total}, Failed {failed_total}, Skipped {skipped_total}."
     );
@@ -255,6 +351,113 @@ pub async fn pull(ctx: &AppContext, opts: PullOptions) -> AppResult<()> {
     Ok(())
 }
 
+async fn validate_pull_scope(
+    ctx: &AppContext,
+    opts: &PullOptions,
+    target_entries: &[(String, i64)],
+) -> AppResult<()> {
+    for &set_id in &opts.set_ids {
+        let set_row = ctx.db.get_set(set_id).await.map_err(AppError::usage)?;
+        if set_row.state != SetState::Active.as_str() {
+            return Err(AppError::usage(anyhow!(
+                "Set<{set_id} {}> is {} (not Active). Run `fav activate set {set_id}` first.",
+                set_row.name,
+                set_row.state
+            )));
+        }
+        if !ctx.db.is_set_owned_by_active_account(set_id).await? {
+            return Err(AppError::usage(anyhow!(
+                "Set<{set_id} {}> is not owned by any Active account. Run `fav activate account` first.",
+                set_row.name
+            )));
+        }
+    }
+
+    for &up_id in &opts.up_ids {
+        let up_row = ctx.db.get_up(up_id).await.map_err(AppError::usage)?;
+        if up_row.state != UpState::Active.as_str() {
+            return Err(AppError::usage(anyhow!(
+                "UP<{up_id} {}> is {} (not Active). Run `fav activate up {up_id}` first.",
+                up_row.name,
+                up_row.state
+            )));
+        }
+        if !ctx.db.is_up_followed_by_active_account(up_id).await? {
+            return Err(AppError::usage(anyhow!(
+                "UP<{up_id} {}> is not followed by any Active account. Run `fav activate account` first.",
+                up_row.name
+            )));
+        }
+    }
+
+    for (raw, aid) in target_entries {
+        let media_row = ctx.db.get_media(*aid).await.map_err(|_| {
+            AppError::usage(anyhow!(
+                "Target '{raw}' (av{aid}) is not tracked in this workspace. Run `fav activate ... && fav fetch`, or use `fav download {raw}` for one-off downloads."
+            ))
+        })?;
+        if !ctx.db.is_media_active(*aid).await? {
+            return Err(AppError::usage(anyhow!(
+                "Target '{}' (av{aid}) does not belong to any Active set or Active UP under an Active account. Run `fav activate ... && fav fetch`, or use `fav download {raw}` for one-off downloads.",
+                media_row.bv_id
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+async fn should_run_recheck(
+    ctx: &AppContext,
+    opts: &PullOptions,
+    target_aids: &[i64],
+) -> Result<bool> {
+    if ctx.effective_recheck(opts.recheck) {
+        return Ok(true);
+    }
+    if target_aids.is_empty() {
+        return Ok(false);
+    }
+    for &aid in target_aids {
+        if ctx
+            .db
+            .get_media(aid)
+            .await
+            .is_ok_and(|m| m.state == MediaState::Completed.as_str())
+        {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+async fn compute_recheck_scope(
+    ctx: &AppContext,
+    opts: &PullOptions,
+    target_aids: &[i64],
+) -> Result<Option<HashSet<i64>>> {
+    if !target_aids.is_empty() {
+        return Ok(Some(target_aids.iter().copied().collect()));
+    }
+    if opts.set_ids.is_empty() && opts.up_ids.is_empty() {
+        return Ok(None);
+    }
+    let scope_opts = PullOptions {
+        set_ids: opts.set_ids.clone(),
+        up_ids: opts.up_ids.clone(),
+        force: true,
+        limit: None,
+        ..Default::default()
+    };
+    let rows = query_pull_candidates(ctx, &scope_opts, &[]).await?;
+    let ids: HashSet<i64> = rows
+        .into_iter()
+        .filter(|m| m.state == MediaState::Completed.as_str())
+        .map(|m| m.id)
+        .collect();
+    Ok(Some(ids))
+}
+
 #[allow(clippy::too_many_arguments)]
 async fn download_media(
     ctx: &AppContext,
@@ -262,7 +465,7 @@ async fn download_media(
     media_row: &media::Model,
     output_dir: &Path,
     tmp_dir: &Path,
-    limit_rate: Option<u64>,
+    stream_params: &StreamDownloadParams,
     force: bool,
     cancel: CancellationToken,
 ) -> MediaOutcome {
@@ -327,6 +530,12 @@ async fn download_media(
         media_row.title.as_str()
     };
 
+    let mp = if ctx.progress_enabled() {
+        ctx.multi_progress.as_ref()
+    } else {
+        None
+    };
+
     for Page {
         cid, page, part, ..
     } in info.pages
@@ -360,7 +569,7 @@ async fn download_media(
             }
         }
 
-        let dash_data = match client.dash_playurl(media_row.id, cid).await {
+        let dash_data = match fetch_page_playurl(client, media_row.id, cid, stream_params).await {
             Ok(d) => d,
             Err(e) => {
                 let _ = ctx
@@ -371,37 +580,44 @@ async fn download_media(
             }
         };
 
-        let label = if only1p {
-            media_title.to_string()
-        } else if part.trim().is_empty() {
-            format!("{media_title} (P{page})")
-        } else {
-            format!("{media_title} (P{page}: {part})")
+        let target = PageTarget {
+            aid: media_row.id,
+            bv_id: &media_row.bv_id,
+            title: media_title,
+            cid,
+            page,
+            part: &part,
+            only_one_page: only1p,
         };
 
         let page_res = download_and_mux_page(
-            ctx,
             client,
-            media_row,
-            media_title,
-            cid,
-            page,
-            &part,
-            only1p,
-            &label,
+            ctx.muxer.as_ref(),
+            &target,
             dash_data,
             output_dir,
             tmp_dir,
-            limit_rate,
+            stream_params,
+            mp,
             cancel.clone(),
         )
         .await;
 
         match page_res {
-            Ok(saved_name) => {
+            Ok(page_info) => {
+                let file_size = i64::try_from(page_info.file_size).ok();
+                let file_inode = page_info.file_inode.and_then(|ino| i64::try_from(ino).ok());
                 if let Err(e) = ctx
                     .db
-                    .mark_page_completed(media_row.id, cid, page as i32, part, saved_name)
+                    .mark_page_completed(
+                        media_row.id,
+                        cid,
+                        page as i32,
+                        part,
+                        page_info.file_name,
+                        file_size,
+                        file_inode,
+                    )
                     .await
                 {
                     warn!(
@@ -447,179 +663,6 @@ async fn download_media(
     MediaOutcome::Downloaded
 }
 
-#[allow(clippy::too_many_arguments)]
-async fn download_and_mux_page(
-    ctx: &AppContext,
-    client: &BiliClient,
-    media_row: &media::Model,
-    media_title: &str,
-    cid: i64,
-    page: i64,
-    part: &str,
-    only1p: bool,
-    label: &str,
-    dash_data: crate::response::DashData,
-    output_dir: &Path,
-    tmp_dir: &Path,
-    limit_rate: Option<u64>,
-    cancel: CancellationToken,
-) -> Result<String> {
-    let referer = format!("https://www.bilibili.com/video/{}/", media_row.bv_id);
-    let dl_opts = DownloadOptions {
-        limit_rate,
-        referer: Some(referer),
-        cancel: Some(cancel),
-    };
-
-    if let Some(dash) = dash_data.dash {
-        let best_video = select_best_video(&dash.video, None, None).cloned();
-        let best_audio = select_best_audio(&dash).cloned();
-
-        if best_video.is_none() && best_audio.is_none() {
-            return Err(anyhow!(
-                "DASH response contained neither video nor audio streams"
-            ));
-        }
-
-        let ext = if best_video.is_some() {
-            "mp4"
-        } else {
-            best_audio
-                .as_ref()
-                .map(|a| a.preferred_audio_extension())
-                .unwrap_or("m4a")
-        };
-
-        let v_part = best_video
-            .as_ref()
-            .map(|v| tmp_dir.join(format!("{}_{}_v_{}.part", media_row.id, cid, v.id)));
-        let a_part = best_audio
-            .as_ref()
-            .map(|a| tmp_dir.join(format!("{}_{}_a_{}.part", media_row.id, cid, a.id)));
-
-        let pb = make_progress_bar(ctx, label);
-
-        // Download video and audio streams cleanly; NEVER drop audio if `best_audio` is present.
-        match (
-            best_video.as_ref(),
-            v_part.as_ref(),
-            best_audio.as_ref(),
-            a_part.as_ref(),
-        ) {
-            (Some(v), Some(vp), Some(a), Some(ap)) => {
-                let v_urls = v.all_urls();
-                let a_urls = a.all_urls();
-                let pb_v = pb.clone();
-                let pb_a = pb.clone();
-                let v_total = Arc::new(std::sync::atomic::AtomicU64::new(0));
-                let a_total = Arc::new(std::sync::atomic::AtomicU64::new(0));
-                let v_done = Arc::new(std::sync::atomic::AtomicU64::new(0));
-                let a_done = Arc::new(std::sync::atomic::AtomicU64::new(0));
-
-                let vt1 = v_total.clone();
-                let at1 = a_total.clone();
-                let vd1 = v_done.clone();
-                let ad1 = a_done.clone();
-                let v_fut = client.download_to_part(&v_urls, vp, &dl_opts, move |p| {
-                    vd1.store(p.downloaded, std::sync::atomic::Ordering::Relaxed);
-                    if let Some(t) = p.total {
-                        vt1.store(t, std::sync::atomic::Ordering::Relaxed);
-                    }
-                    update_combined_pb(&pb_v, &vt1, &at1, &vd1, &ad1);
-                });
-
-                let vt2 = v_total.clone();
-                let at2 = a_total.clone();
-                let vd2 = v_done.clone();
-                let ad2 = a_done.clone();
-                let a_fut = client.download_to_part(&a_urls, ap, &dl_opts, move |p| {
-                    ad2.store(p.downloaded, std::sync::atomic::Ordering::Relaxed);
-                    if let Some(t) = p.total {
-                        at2.store(t, std::sync::atomic::Ordering::Relaxed);
-                    }
-                    update_combined_pb(&pb_a, &vt2, &at2, &vd2, &ad2);
-                });
-
-                let res = tokio::try_join!(v_fut, a_fut);
-                finish_pb(pb);
-                res?;
-            }
-            (Some(v), Some(vp), None, None) => {
-                let pb_c = pb.clone();
-                let res = client
-                    .download_to_part(&v.all_urls(), vp, &dl_opts, move |p| {
-                        update_single_pb(&pb_c, p);
-                    })
-                    .await;
-                finish_pb(pb);
-                res?;
-            }
-            (None, None, Some(a), Some(ap)) => {
-                let pb_c = pb.clone();
-                let res = client
-                    .download_to_part(&a.all_urls(), ap, &dl_opts, move |p| {
-                        update_single_pb(&pb_c, p);
-                    })
-                    .await;
-                finish_pb(pb);
-                res?;
-            }
-            _ => unreachable!("stream and part path options are constructed together"),
-        }
-
-        let file_name = build_safe_filename(media_row.id, media_title, page, part, only1p, ext);
-        let output_path = output_dir.join(&file_name);
-
-        ctx.muxer
-            .mux(MuxRequest {
-                video: v_part.clone(),
-                audio: a_part.clone(),
-                output: output_path,
-            })
-            .await?;
-
-        // Clean up staging stream `.part` files only after atomic mux succeeds.
-        if let Some(vp) = v_part {
-            let _ = tokio::fs::remove_file(vp).await;
-        }
-        if let Some(ap) = a_part {
-            let _ = tokio::fs::remove_file(ap).await;
-        }
-
-        return Ok(file_name);
-    }
-
-    // Legacy non-DASH `durl` fallback.
-    if let Some(durl) = dash_data.durl.first() {
-        let part_path = tmp_dir.join(format!("{}_{}_durl.part", media_row.id, cid));
-        let pb = make_progress_bar(ctx, label);
-        let pb_c = pb.clone();
-        let res = client
-            .download_to_part(&durl.all_urls(), &part_path, &dl_opts, move |p| {
-                update_single_pb(&pb_c, p);
-            })
-            .await;
-        finish_pb(pb);
-        res?;
-
-        let file_name = build_safe_filename(media_row.id, media_title, page, part, only1p, "mp4");
-        let output_path = output_dir.join(&file_name);
-        ctx.muxer
-            .mux(MuxRequest {
-                video: Some(part_path.clone()),
-                audio: None,
-                output: output_path,
-            })
-            .await?;
-        let _ = tokio::fs::remove_file(part_path).await;
-        return Ok(file_name);
-    }
-
-    Err(anyhow!(
-        "Playurl response contained neither DASH nor durl streams"
-    ))
-}
-
 async fn handle_media_api_error(
     ctx: &AppContext,
     media_row: &media::Model,
@@ -663,61 +706,6 @@ async fn handle_media_api_error(
     );
     let _ = ctx.db.record_media_failure(media_row.id, &msg).await;
     MediaOutcome::Failed(msg)
-}
-
-async fn ensure_targets_in_db(
-    ctx: &AppContext,
-    client: &BiliClient,
-    target_aids: &[i64],
-) -> AppResult<()> {
-    for &aid in target_aids {
-        if ctx.db.get_media(aid).await.is_ok() {
-            continue;
-        }
-        info!("Fetching metadata on demand for targeted media<{aid}>");
-        let info = client
-            .media_info(aid)
-            .await
-            .with_context(|| format!("Failed to fetch metadata for targeted media<{aid}>"))?;
-        let bv_id = if info.bvid.trim().is_empty() {
-            format!("av{aid}")
-        } else {
-            info.bvid.clone()
-        };
-        let title = if info.title.trim().is_empty() {
-            bv_id.clone()
-        } else {
-            info.title.clone()
-        };
-        ctx.db
-            .upsert_medias([media::Model {
-                id: aid,
-                bv_id,
-                title,
-                r#type: MediaType::Video.to_string(),
-                state: MediaState::Pending.to_string(),
-                retry_count: 0,
-                last_error: None,
-                updated_at: None,
-            }])
-            .await?;
-        if info.owner.mid > 0 {
-            ctx.db
-                .upsert_ups([up::Model {
-                    up_id: info.owner.mid,
-                    name: info.owner.name.clone(),
-                    state: UpState::Inactive.to_string(),
-                }])
-                .await?;
-            ctx.db
-                .upsert_media_ups([media_up::Model {
-                    id: aid,
-                    up_id: info.owner.mid,
-                }])
-                .await?;
-        }
-    }
-    Ok(())
 }
 
 async fn query_pull_candidates(
@@ -788,17 +776,42 @@ async fn run_pull_dry_run(
     opts: &PullOptions,
     target_aids: &[i64],
     output_dir: &Path,
+    sound_only: bool,
+    audio_format: AudioFormat,
+    recheck_report: Option<&ReconcileReport>,
 ) -> AppResult<()> {
-    let candidates = query_pull_candidates(ctx, opts, target_aids).await?;
-    let mut known_ids: HashSet<i64> = HashSet::new();
+    let mut candidates = query_pull_candidates(ctx, opts, target_aids).await?;
+    let mut existing_ids: BTreeSet<i64> = candidates.iter().map(|m| m.id).collect();
+
+    if let Some(rep) = recheck_report {
+        eprintln!(
+            "[dry-run] Recheck: {} relocated file(s) (would relink), {} missing page(s) and {} missing legacy media(s) across {} media(s) (would reset & re-download)",
+            rep.relocated.len(),
+            rep.missing_pages.len(),
+            rep.missing_legacy_ids.len(),
+            rep.affected_missing_media_ids().len(),
+        );
+        for missing_id in rep.affected_missing_media_ids() {
+            if existing_ids.insert(missing_id)
+                && let Ok(row) = ctx.db.get_media(missing_id).await
+            {
+                candidates.push(row);
+            }
+        }
+        candidates.sort_by_key(|m| m.id);
+        if let Some(limit) = opts.limit {
+            candidates.truncate(limit);
+        }
+    }
+
+    let ext = preview_extension(sound_only, audio_format);
     eprintln!(
         "[dry-run] Output directory: {} ({} tracked candidate(s))",
         output_dir.display(),
         candidates.len()
     );
     for m in &candidates {
-        known_ids.insert(m.id);
-        let preview = build_safe_filename(m.id, &m.title, 1, "", true, "mp4");
+        let preview = build_safe_filename(m.id, &m.title, 1, "", true, ext);
         if !write_stdout_line(&format!(
             "{}\t{}\t{}\t{}",
             m.id,
@@ -811,251 +824,310 @@ async fn run_pull_dry_run(
             return Ok(());
         }
     }
-    for &aid in target_aids {
-        if !known_ids.contains(&aid)
-            && !write_stdout_line(&format!(
-                "{aid}\t(unfetched)\tPending\t{}",
-                output_dir.display()
-            ))
-            .map_err(AppError::runtime)?
-        {
-            return Ok(());
-        }
-    }
     Ok(())
 }
 
-fn resolve_target_aids(targets: &[String]) -> AppResult<Vec<i64>> {
+fn resolve_target_entries(targets: &[String]) -> AppResult<Vec<(String, i64)>> {
     if targets.is_empty() {
         return Ok(Vec::new());
     }
-    let idents = parse_media_idents(targets).map_err(AppError::usage)?;
-    let mut aids = Vec::with_capacity(idents.len());
+    let mut entries = Vec::with_capacity(targets.len());
     let mut seen = HashSet::new();
-    for ident in idents {
+    for raw in targets {
+        let ident = parse_media_ident(raw).map_err(AppError::usage)?;
         let aid = ident.to_aid().ok_or_else(|| {
             AppError::usage(anyhow!("Cannot convert identifier '{ident}' to AID"))
         })?;
         if seen.insert(aid) {
-            aids.push(aid);
+            entries.push((raw.clone(), aid));
         }
     }
-    Ok(aids)
-}
-
-fn resolve_recorded_path(output_dir: &Path, recorded: &str) -> PathBuf {
-    let p = Path::new(recorded);
-    if p.is_absolute() {
-        p.to_path_buf()
-    } else {
-        output_dir.join(p)
-    }
-}
-
-/// Build a cross-OS-safe filename strictly `<= 240` UTF-8 bytes that NEVER truncates away the
-/// media `id`, multi-page `({page})` index, or container `.{ext}` extension.
-pub fn build_safe_filename(
-    media_id: i64,
-    title: &str,
-    page: i64,
-    part: &str,
-    only_one_page: bool,
-    ext: &str,
-) -> String {
-    let sanitize_opts = SanitizeOptions {
-        windows: true,
-        truncate: false,
-        replacement: "_",
-    };
-
-    let clean_ext = sanitize_with_options(ext, sanitize_opts.clone())
-        .trim_matches(|c| c == '.' || c == ' ')
-        .to_string();
-    let clean_ext = if clean_ext.is_empty() {
-        "mp4".to_string()
-    } else {
-        clean_ext
-    };
-
-    let clean_title = sanitize_component(title, &sanitize_opts);
-    let clean_part = sanitize_component(part, &sanitize_opts);
-
-    let prefix = format!("{media_id}-");
-    let suffix = format!(".{clean_ext}");
-
-    if only_one_page {
-        let fixed_len = prefix.len() + suffix.len();
-        let budget = MAX_FILENAME_BYTES.saturating_sub(fixed_len);
-        let trunc_title = truncate_utf8_bytes(&clean_title, budget);
-        let stem = if trunc_title.is_empty() {
-            format!("{media_id}")
-        } else {
-            format!("{prefix}{trunc_title}")
-        };
-        let stem = stem.trim_end_matches(['.', ' ']);
-        return format!("{stem}{suffix}");
-    }
-
-    let page_marker = format!("({page})");
-    if clean_part.is_empty() {
-        let fixed_len = prefix.len() + page_marker.len() + suffix.len();
-        let budget = MAX_FILENAME_BYTES.saturating_sub(fixed_len);
-        let trunc_title = truncate_utf8_bytes(&clean_title, budget);
-        let stem = format!("{prefix}{trunc_title}{page_marker}");
-        let stem = stem.trim_end_matches(['.', ' ']);
-        return format!("{stem}{suffix}");
-    }
-
-    // Multi-page with part title: preserve `{id}-`, `({page})-`, and `.{ext}`, splitting remaining
-    // UTF-8 byte budget proportionally between `title` and `part`.
-    let fixed_len = prefix.len() + page_marker.len() + 1 + suffix.len(); // +1 for '-'
-    let budget = MAX_FILENAME_BYTES.saturating_sub(fixed_len);
-
-    let (title_budget, part_budget) = if clean_title.len() + clean_part.len() <= budget {
-        (clean_title.len(), clean_part.len())
-    } else {
-        let half = budget / 2;
-        if clean_title.len() <= half {
-            (clean_title.len(), budget.saturating_sub(clean_title.len()))
-        } else if clean_part.len() <= half {
-            (budget.saturating_sub(clean_part.len()), clean_part.len())
-        } else {
-            (half, budget.saturating_sub(half))
-        }
-    };
-
-    let trunc_title = truncate_utf8_bytes(&clean_title, title_budget);
-    let trunc_part = truncate_utf8_bytes(&clean_part, part_budget);
-    let stem = if trunc_part.is_empty() {
-        format!("{prefix}{trunc_title}{page_marker}")
-    } else {
-        format!("{prefix}{trunc_title}{page_marker}-{trunc_part}")
-    };
-    let stem = stem.trim_end_matches(['.', ' ']);
-    format!("{stem}{suffix}")
-}
-
-fn sanitize_component(raw: &str, opts: &SanitizeOptions<'_>) -> String {
-    let cleaned = sanitize_with_options(raw.trim(), opts.clone());
-    cleaned.trim().trim_end_matches(['.', ' ']).to_string()
-}
-
-fn truncate_utf8_bytes(s: &str, max_bytes: usize) -> &str {
-    if s.len() <= max_bytes {
-        return s;
-    }
-    let mut end = max_bytes;
-    while end > 0 && !s.is_char_boundary(end) {
-        end -= 1;
-    }
-    s[..end].trim_end_matches(['.', ' '])
-}
-
-fn make_progress_bar(ctx: &AppContext, label: &str) -> Option<ProgressBar> {
-    if !ctx.progress_enabled() {
-        return None;
-    }
-    let mp = ctx.multi_progress.as_ref()?;
-    let pb = mp.add(ProgressBar::new_spinner());
-    pb.set_message(head(label, 24));
-    if let Ok(style) = ProgressStyle::with_template(SPINNER_TEMPLATE) {
-        pb.set_style(style);
-    }
-    Some(pb)
-}
-
-fn update_single_pb(pb: &Option<ProgressBar>, p: DownloadProgress) {
-    let Some(pb) = pb else {
-        return;
-    };
-    if let Some(total) = p.total
-        && pb.length() != Some(total)
-    {
-        pb.set_length(total);
-        if let Ok(style) = ProgressStyle::with_template(BAR_TEMPLATE) {
-            pb.set_style(style.progress_chars("#>-"));
-        }
-    }
-    pb.set_position(p.downloaded);
-}
-
-fn update_combined_pb(
-    pb: &Option<ProgressBar>,
-    v_total: &std::sync::atomic::AtomicU64,
-    a_total: &std::sync::atomic::AtomicU64,
-    v_done: &std::sync::atomic::AtomicU64,
-    a_done: &std::sync::atomic::AtomicU64,
-) {
-    let Some(pb) = pb else {
-        return;
-    };
-    let vt = v_total.load(std::sync::atomic::Ordering::Relaxed);
-    let at = a_total.load(std::sync::atomic::Ordering::Relaxed);
-    if vt > 0 && at > 0 {
-        let total = vt + at;
-        if pb.length() != Some(total) {
-            pb.set_length(total);
-            if let Ok(style) = ProgressStyle::with_template(BAR_TEMPLATE) {
-                pb.set_style(style.progress_chars("#>-"));
-            }
-        }
-    }
-    let pos = v_done.load(std::sync::atomic::Ordering::Relaxed)
-        + a_done.load(std::sync::atomic::Ordering::Relaxed);
-    pb.set_position(pos);
-}
-
-fn finish_pb(pb: Option<ProgressBar>) {
-    if let Some(pb) = pb {
-        pb.finish_and_clear();
-    }
+    Ok(entries)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::{
+        api::BiliClientConfig,
+        config::{Config, Workspace},
+        db::Db,
+        entity::{account, media_set, set, set_account, up, up_account},
+        error::ExitKind,
+        muxer::test_support::MockMuxer,
+        state::SetKind,
+    };
 
-    #[test]
-    fn long_cjk_multipage_filenames_stay_under_240_bytes_and_never_collide() {
-        let long_title = "这是一个非常非常长的中文视频标题用来测试文件名字节长度截断以及多P视频分集编号绝对不会被截断导致互相覆盖的情况".repeat(3);
-        let long_part = "分集名称也非常长包含各种说明文字和课程章节信息".repeat(4);
-
-        let p1 = build_safe_filename(123456789, &long_title, 1, &long_part, false, "mp4");
-        let p2 = build_safe_filename(123456789, &long_title, 2, &long_part, false, "mp4");
-
-        assert!(
-            p1.len() <= MAX_FILENAME_BYTES,
-            "p1 byte len {} > {MAX_FILENAME_BYTES}: {p1}",
-            p1.len()
+    async fn make_ctx() -> (tempfile::TempDir, AppContext) {
+        let tmp = tempfile::tempdir().unwrap();
+        let ws = Workspace::new(tmp.path().to_path_buf());
+        ws.ensure_dirs().unwrap();
+        let db = Db::open_in_memory().await.unwrap();
+        let ctx = AppContext::for_test(
+            ws,
+            Config::default(),
+            db,
+            Arc::new(MockMuxer::succeeding()),
+            BiliClientConfig::default(),
         );
-        assert!(
-            p2.len() <= MAX_FILENAME_BYTES,
-            "p2 byte len {} > {MAX_FILENAME_BYTES}: {p2}",
-            p2.len()
-        );
-        assert!(p1.starts_with("123456789-"));
-        assert!(p1.contains("(1)"));
-        assert!(p2.contains("(2)"));
-        assert!(p1.ends_with(".mp4"));
-        assert!(p2.ends_with(".mp4"));
-        assert_ne!(
-            p1, p2,
-            "different pages must never collide after truncation"
-        );
+        (tmp, ctx)
     }
 
-    #[test]
-    fn windows_unsafe_chars_and_trailing_dots_are_sanitized_on_all_platforms() {
-        let name = build_safe_filename(42, "A/B:C*D?\"<E>|... ", 1, "", true, "m4a");
-        assert!(!name.contains('/'));
-        assert!(!name.contains(':'));
-        assert!(!name.contains('*'));
-        assert!(!name.contains('?'));
-        assert!(!name.contains('<'));
-        assert!(!name.contains('>'));
-        assert!(!name.contains('|'));
-        assert!(name.ends_with(".m4a"));
-        assert!(!name.ends_with("..m4a"));
-        assert!(name.len() <= MAX_FILENAME_BYTES);
+    #[tokio::test]
+    async fn pull_strictly_rejects_untracked_and_inactive_targets_sets_and_ups() {
+        let (_tmp, ctx) = make_ctx().await;
+
+        ctx.db
+            .upsert_account(account::Model {
+                account_id: 1,
+                name: "Alice".to_owned(),
+                cookies: "SESSDATA=s".to_owned(),
+                state: AccountState::Active.to_string(),
+                refresh_token: None,
+            })
+            .await
+            .unwrap();
+        ctx.db
+            .upsert_account(account::Model {
+                account_id: 2,
+                name: "Bob".to_owned(),
+                cookies: "SESSDATA=b".to_owned(),
+                state: AccountState::Inactive.to_string(),
+                refresh_token: None,
+            })
+            .await
+            .unwrap();
+        ctx.db
+            .upsert_sets([
+                set::Model {
+                    set_id: 10,
+                    name: "InactiveSet".to_owned(),
+                    count: 1,
+                    state: SetState::Inactive.to_string(),
+                    kind: SetKind::Created.to_string(),
+                    owner_mid: Some(1),
+                    sync_complete: false,
+                    resume_page: None,
+                },
+                set::Model {
+                    set_id: 20,
+                    name: "BobActiveSet".to_owned(),
+                    count: 1,
+                    state: SetState::Active.to_string(),
+                    kind: SetKind::Created.to_string(),
+                    owner_mid: Some(2),
+                    sync_complete: false,
+                    resume_page: None,
+                },
+            ])
+            .await
+            .unwrap();
+        ctx.db
+            .upsert_set_accounts([
+                set_account::Model {
+                    set_id: 10,
+                    account_id: 1,
+                },
+                set_account::Model {
+                    set_id: 20,
+                    account_id: 2,
+                },
+            ])
+            .await
+            .unwrap();
+        ctx.db
+            .upsert_ups([up::Model {
+                up_id: 30,
+                name: "InactiveUp".to_owned(),
+                state: UpState::Inactive.to_string(),
+                sync_complete: false,
+                resume_page: None,
+            }])
+            .await
+            .unwrap();
+        ctx.db
+            .upsert_up_accounts([up_account::Model {
+                up_id: 30,
+                account_id: 1,
+            }])
+            .await
+            .unwrap();
+        ctx.db
+            .upsert_medias([media::Model {
+                id: 170_001,
+                bv_id: "BV17x411w7KC".to_owned(),
+                title: "In Inactive Set".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Pending.to_string(),
+                retry_count: 0,
+                last_error: None,
+                updated_at: None,
+            }])
+            .await
+            .unwrap();
+        ctx.db
+            .upsert_media_sets([media_set::Model {
+                id: 170_001,
+                set_id: 10,
+            }])
+            .await
+            .unwrap();
+
+        // Untracked target rejected with Usage + `fav download` hint, 0 rows inserted!
+        let err = pull(
+            &ctx,
+            PullOptions {
+                targets: vec!["BV1Q541167Qg".to_owned()],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.kind(), ExitKind::Usage);
+        assert!(err.to_string().contains("fav download"));
+        assert!(ctx.db.get_media(455_017_605).await.is_err());
+
+        // Tracked but inactive target rejected with Usage + `fav download` hint
+        let err = pull(
+            &ctx,
+            PullOptions {
+                targets: vec!["BV17x411w7KC".to_owned()],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.kind(), ExitKind::Usage);
+        assert!(err.to_string().contains("fav download"));
+
+        // Inactive --set rejected
+        let err = pull(
+            &ctx,
+            PullOptions {
+                set_ids: vec![10],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.kind(), ExitKind::Usage);
+
+        // Active --set owned only by Inactive account rejected
+        let err = pull(
+            &ctx,
+            PullOptions {
+                set_ids: vec![20],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.kind(), ExitKind::Usage);
+
+        // Inactive --up rejected
+        let err = pull(
+            &ctx,
+            PullOptions {
+                up_ids: vec![30],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.kind(), ExitKind::Usage);
+    }
+
+    #[tokio::test]
+    async fn pull_recheck_dry_run_previews_without_mutating_db() {
+        let (tmp, ctx) = make_ctx().await;
+        let out_dir = tmp.path().join("out");
+        std::fs::create_dir_all(&out_dir).unwrap();
+
+        ctx.db
+            .upsert_account(account::Model {
+                account_id: 1,
+                name: "Alice".to_owned(),
+                cookies: "SESSDATA=s".to_owned(),
+                state: AccountState::Active.to_string(),
+                refresh_token: None,
+            })
+            .await
+            .unwrap();
+        ctx.db
+            .upsert_sets([set::Model {
+                set_id: 10,
+                name: "ActiveSet".to_owned(),
+                count: 1,
+                state: SetState::Active.to_string(),
+                kind: SetKind::Created.to_string(),
+                owner_mid: Some(1),
+                sync_complete: true,
+                resume_page: None,
+            }])
+            .await
+            .unwrap();
+        ctx.db
+            .upsert_set_accounts([set_account::Model {
+                set_id: 10,
+                account_id: 1,
+            }])
+            .await
+            .unwrap();
+        ctx.db
+            .upsert_medias([media::Model {
+                id: 170_001,
+                bv_id: "BV17x411w7KC".to_owned(),
+                title: "Deleted On Disk".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Completed.to_string(),
+                retry_count: 0,
+                last_error: None,
+                updated_at: None,
+            }])
+            .await
+            .unwrap();
+        ctx.db
+            .upsert_media_sets([media_set::Model {
+                id: 170_001,
+                set_id: 10,
+            }])
+            .await
+            .unwrap();
+        ctx.db
+            .mark_page_completed(
+                170_001,
+                279_786,
+                1,
+                "P1".to_owned(),
+                "170001-Deleted On Disk.mp4".to_owned(),
+                Some(123),
+                None,
+            )
+            .await
+            .unwrap();
+
+        // Dry run with --recheck + --sound-only must NOT mutate Completed state in DB.
+        pull(
+            &ctx,
+            PullOptions {
+                recheck: true,
+                dry_run: true,
+                sound_only: true,
+                audio_format: Some(AudioFormat::Mp3),
+                output_dir: Some(out_dir),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(
+            ctx.db.get_media(170_001).await.unwrap().state,
+            MediaState::Completed.as_str()
+        );
+        assert_eq!(
+            ctx.db.pages_for_media(170_001).await.unwrap()[0].state,
+            MediaPageState::Completed.as_str()
+        );
     }
 }

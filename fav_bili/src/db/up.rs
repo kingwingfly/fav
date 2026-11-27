@@ -10,8 +10,8 @@ use sea_orm::{
 
 use super::{CHUNK_SIZE, Db};
 use crate::{
-    entity::{up, up_account},
-    state::UpState,
+    entity::{account, up, up_account},
+    state::{AccountState, UpState},
 };
 
 #[derive(Debug, Clone, Default)]
@@ -109,6 +109,54 @@ impl Db {
         }
         txn.commit().await?;
         Ok(stale)
+    }
+
+    pub async fn set_up_sync_progress(
+        &self,
+        up_id: i64,
+        sync_complete: bool,
+        resume_page: Option<i32>,
+    ) -> Result<()> {
+        let res = up::Entity::update_many()
+            .col_expr(up::Column::SyncComplete, Expr::value(sync_complete))
+            .col_expr(up::Column::ResumePage, Expr::value(resume_page))
+            .filter(up::Column::UpId.eq(up_id))
+            .exec(&self.conn)
+            .await?;
+        if res.rows_affected == 0 {
+            return Err(anyhow!("Unknown up<{up_id}>"));
+        }
+        Ok(())
+    }
+
+    pub async fn is_up_followed_by_active_account(&self, up_id: i64) -> Result<bool> {
+        let active_accounts = Query::select()
+            .column(account::Column::AccountId)
+            .from(account::Entity)
+            .and_where(Expr::col(account::Column::State).eq(AccountState::Active.as_str()))
+            .to_owned();
+        let found = up_account::Entity::find()
+            .filter(
+                Condition::all()
+                    .add(up_account::Column::UpId.eq(up_id))
+                    .add(up_account::Column::AccountId.in_subquery(active_accounts)),
+            )
+            .one(&self.conn)
+            .await?;
+        Ok(found.is_some())
+    }
+
+    pub async fn active_account_up_ids(&self) -> Result<HashSet<i64>> {
+        let active_accounts = Query::select()
+            .column(account::Column::AccountId)
+            .from(account::Entity)
+            .and_where(Expr::col(account::Column::State).eq(AccountState::Active.as_str()))
+            .to_owned();
+        let rows = up_account::Entity::find()
+            .filter(up_account::Column::AccountId.in_subquery(active_accounts))
+            .all(&self.conn)
+            .await?;
+        Ok(rows.into_iter().map(|r| r.up_id).collect())
     }
 
     pub async fn get_up(&self, up_id: i64) -> Result<up::Model> {

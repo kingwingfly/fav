@@ -2,6 +2,7 @@ pub mod activate;
 pub mod auth;
 pub mod deactivate;
 pub mod doctor;
+pub mod download;
 pub mod fetch;
 pub mod like;
 pub mod list;

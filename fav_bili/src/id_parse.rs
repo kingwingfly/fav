@@ -1,3 +1,4 @@
+use std::collections::BTreeSet;
 use std::fmt;
 use std::str::FromStr;
 
@@ -174,8 +175,16 @@ fn is_bilibili_host(host: &str) -> bool {
     lower == "bilibili.com" || lower.ends_with(".bilibili.com")
 }
 
-/// Parse a BVID (`BV1...`), `av<id>`, raw numeric `<id>`, or Bilibili video URL.
-pub fn parse_media_ident(input: &str) -> Result<MediaIdent> {
+/// Parsed video target with an optional 1-based page number extracted from `?p=N` in URLs.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ParsedMediaTarget {
+    pub ident: MediaIdent,
+    pub page: Option<i64>,
+}
+
+/// Parse a BVID (`BV1...`), `av<id>`, raw numeric `<id>`, or Bilibili video URL,
+/// additionally extracting a positive `?p=N` page query parameter if present.
+pub fn parse_media_target(input: &str) -> Result<ParsedMediaTarget> {
     let trimmed = input.trim();
     if trimmed.is_empty() {
         bail!("empty media identifier");
@@ -183,7 +192,7 @@ pub fn parse_media_ident(input: &str) -> Result<MediaIdent> {
 
     // Fast path: direct BVID / avID / numeric AID
     if let Some(ident) = parse_token(trimmed) {
-        return Ok(ident);
+        return Ok(ParsedMediaTarget { ident, page: None });
     }
 
     // URL path (with or without explicit scheme)
@@ -205,6 +214,13 @@ pub fn parse_media_ident(input: &str) -> Result<MediaIdent> {
         if !is_bilibili_host(&host) {
             bail!("unsupported URL host '{host}' in '{trimmed}' (expected bilibili.com)");
         }
+        let page = url.query_pairs().find_map(|(k, v)| {
+            if k == "p" {
+                v.trim().parse::<i64>().ok().filter(|&p| p >= 1)
+            } else {
+                None
+            }
+        });
         if let Some(segments) = url.path_segments() {
             for seg in segments {
                 let seg = seg.trim();
@@ -212,13 +228,19 @@ pub fn parse_media_ident(input: &str) -> Result<MediaIdent> {
                     continue;
                 }
                 if let Some(norm) = normalize_bvid(seg) {
-                    return Ok(MediaIdent::Bvid(norm));
+                    return Ok(ParsedMediaTarget {
+                        ident: MediaIdent::Bvid(norm),
+                        page,
+                    });
                 }
                 if seg.len() > 2
                     && seg[..2].eq_ignore_ascii_case("av")
                     && let Some(aid) = parse_positive_aid(&seg[2..])
                 {
-                    return Ok(MediaIdent::Aid(aid));
+                    return Ok(ParsedMediaTarget {
+                        ident: MediaIdent::Aid(aid),
+                        page,
+                    });
                 }
             }
         }
@@ -232,9 +254,64 @@ pub fn parse_media_ident(input: &str) -> Result<MediaIdent> {
     ))
 }
 
+/// Parse a BVID (`BV1...`), `av<id>`, raw numeric `<id>`, or Bilibili video URL.
+pub fn parse_media_ident(input: &str) -> Result<MediaIdent> {
+    parse_media_target(input).map(|t| t.ident)
+}
+
 /// Parse multiple media identifiers, returning the first error encountered.
 pub fn parse_media_idents(inputs: &[String]) -> Result<Vec<MediaIdent>> {
     inputs.iter().map(|s| parse_media_ident(s)).collect()
+}
+
+const MAX_PAGE_RANGE_SPAN: i64 = 10_000;
+
+fn parse_positive_page(raw: &str, full_spec: &str) -> Result<i64> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() || !trimmed.bytes().all(|b| b.is_ascii_digit()) {
+        bail!("invalid page number '{trimmed}' in page spec '{full_spec}'");
+    }
+    let page = trimmed
+        .parse::<i64>()
+        .map_err(|_| anyhow!("invalid page number '{trimmed}' in page spec '{full_spec}'"))?;
+    if page < 1 {
+        bail!("page number must be >= 1 in page spec '{full_spec}' (got {page})");
+    }
+    Ok(page)
+}
+
+/// Parse a 1-based page selection spec such as `"1"`, `"2-4"`, or `"1,3,5-7"`.
+pub fn parse_page_spec(spec: &str) -> Result<BTreeSet<i64>> {
+    let trimmed = spec.trim();
+    if trimmed.is_empty() {
+        bail!("page spec must not be empty");
+    }
+    let mut pages = BTreeSet::new();
+    for part in trimmed.split(',') {
+        let token = part.trim();
+        if token.is_empty() {
+            bail!("empty entry in page spec '{spec}'");
+        }
+        if let Some((start_raw, end_raw)) = token.split_once('-') {
+            let start = parse_positive_page(start_raw, spec)?;
+            let end = parse_positive_page(end_raw, spec)?;
+            if start > end {
+                bail!("inverted page range '{token}' in page spec '{spec}' (start > end)");
+            }
+            if end - start > MAX_PAGE_RANGE_SPAN {
+                bail!(
+                    "page range '{token}' exceeds maximum span of {MAX_PAGE_RANGE_SPAN} in page spec '{spec}'"
+                );
+            }
+            for p in start..=end {
+                pages.insert(p);
+            }
+        } else {
+            let p = parse_positive_page(token, spec)?;
+            pages.insert(p);
+        }
+    }
+    Ok(pages)
 }
 
 #[cfg(test)]
@@ -325,6 +402,85 @@ mod tests {
             assert!(
                 parse_media_ident(bad).is_err(),
                 "expected '{bad}' to be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_media_target_extracts_positive_page_query_param() {
+        let bare = parse_media_target("BV1Q541167Qg").unwrap();
+        assert_eq!(
+            bare,
+            ParsedMediaTarget {
+                ident: MediaIdent::Bvid("BV1Q541167Qg".into()),
+                page: None,
+            }
+        );
+
+        let with_p = parse_media_target(
+            "https://www.bilibili.com/video/BV1Q541167Qg/?spm_id_from=333.999&p=3#reply",
+        )
+        .unwrap();
+        assert_eq!(
+            with_p,
+            ParsedMediaTarget {
+                ident: MediaIdent::Bvid("BV1Q541167Qg".into()),
+                page: Some(3),
+            }
+        );
+
+        let av_with_p =
+            parse_media_target("http://m.bilibili.com/video/av170001?p=1&vd_source=abc").unwrap();
+        assert_eq!(
+            av_with_p,
+            ParsedMediaTarget {
+                ident: MediaIdent::Aid(170_001),
+                page: Some(1),
+            }
+        );
+
+        let schemeless_p = parse_media_target("bilibili.com/video/BV17x411w7KC?p=12").unwrap();
+        assert_eq!(
+            schemeless_p,
+            ParsedMediaTarget {
+                ident: MediaIdent::Bvid("BV17x411w7KC".into()),
+                page: Some(12),
+            }
+        );
+
+        // Non-positive or non-numeric ?p= is ignored (page: None)
+        let zero_p =
+            parse_media_target("https://www.bilibili.com/video/BV1Q541167Qg/?p=0").unwrap();
+        assert_eq!(zero_p.page, None);
+        let neg_p =
+            parse_media_target("https://www.bilibili.com/video/BV1Q541167Qg/?p=-2").unwrap();
+        assert_eq!(neg_p.page, None);
+        let bad_p =
+            parse_media_target("https://www.bilibili.com/video/BV1Q541167Qg/?p=abc").unwrap();
+        assert_eq!(bad_p.page, None);
+    }
+
+    #[test]
+    fn parse_page_spec_handles_single_ranges_lists_and_rejects_invalid() {
+        assert_eq!(parse_page_spec("1").unwrap(), BTreeSet::from([1]));
+        assert_eq!(parse_page_spec("2-4").unwrap(), BTreeSet::from([2, 3, 4]));
+        assert_eq!(parse_page_spec("3-3").unwrap(), BTreeSet::from([3]));
+        assert_eq!(
+            parse_page_spec("1,3,5-7").unwrap(),
+            BTreeSet::from([1, 3, 5, 6, 7])
+        );
+        assert_eq!(
+            parse_page_spec(" 5 - 7 , 1 , 3 , 6 ").unwrap(),
+            BTreeSet::from([1, 3, 5, 6, 7])
+        );
+
+        for bad in [
+            "", "   ", "0", "-1", "-2-4", "0-3", "5-3", "4-2", "1,,2", ",1", "1,", "1-", "-3",
+            "1-2-3", "abc", "1,abc", "1-100000",
+        ] {
+            assert!(
+                parse_page_spec(bad).is_err(),
+                "expected page spec '{bad}' to be rejected"
             );
         }
     }

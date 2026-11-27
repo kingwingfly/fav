@@ -1,8 +1,10 @@
+use std::collections::HashSet;
+
 use anyhow::{Context as _, Result, anyhow};
 use sea_orm::{
     ColumnTrait as _, Condition, ConnectionTrait as _, DatabaseBackend, EntityTrait as _,
-    IntoActiveModel as _, QueryFilter as _, QueryOrder as _, QuerySelect as _, Statement,
-    TransactionTrait as _,
+    IntoActiveModel as _, PaginatorTrait as _, QueryFilter as _, QueryOrder as _, QuerySelect as _,
+    Statement, TransactionTrait as _,
     sea_query::{Expr, OnConflict, Query},
 };
 use serde::Serialize;
@@ -120,6 +122,23 @@ pub struct StatusSummary {
 }
 
 fn active_media_condition() -> Condition {
+    let active_up_account = Query::select()
+        .expr(Expr::val(1))
+        .from(up_account::Entity)
+        .inner_join(
+            account::Entity,
+            Expr::col((up_account::Entity, up_account::Column::AccountId))
+                .equals((account::Entity, account::Column::AccountId)),
+        )
+        .and_where(
+            Expr::col((up_account::Entity, up_account::Column::UpId))
+                .equals((up::Entity, up::Column::UpId)),
+        )
+        .and_where(
+            Expr::col((account::Entity, account::Column::State)).eq(AccountState::Active.as_str()),
+        )
+        .to_owned();
+
     let active_up_sub = Query::select()
         .expr(Expr::val(1))
         .from(media_up::Entity)
@@ -133,6 +152,24 @@ fn active_media_condition() -> Condition {
                 .equals((media::Entity, media::Column::Id)),
         )
         .and_where(Expr::col((up::Entity, up::Column::State)).eq(UpState::Active.as_str()))
+        .and_where(Expr::exists(active_up_account))
+        .to_owned();
+
+    let active_set_account = Query::select()
+        .expr(Expr::val(1))
+        .from(set_account::Entity)
+        .inner_join(
+            account::Entity,
+            Expr::col((set_account::Entity, set_account::Column::AccountId))
+                .equals((account::Entity, account::Column::AccountId)),
+        )
+        .and_where(
+            Expr::col((set_account::Entity, set_account::Column::SetId))
+                .equals((set::Entity, set::Column::SetId)),
+        )
+        .and_where(
+            Expr::col((account::Entity, account::Column::State)).eq(AccountState::Active.as_str()),
+        )
         .to_owned();
 
     let active_set_sub = Query::select()
@@ -148,6 +185,7 @@ fn active_media_condition() -> Condition {
                 .equals((media::Entity, media::Column::Id)),
         )
         .and_where(Expr::col((set::Entity, set::Column::State)).eq(SetState::Active.as_str()))
+        .and_where(Expr::exists(active_set_account))
         .to_owned();
 
     Condition::any()
@@ -457,6 +495,80 @@ impl Db {
             .map_err(Into::into)
     }
 
+    pub async fn count_active_medias_in_state(&self, state: MediaState) -> Result<u64> {
+        media::Entity::find()
+            .filter(
+                Condition::all()
+                    .add(media::Column::State.eq(state))
+                    .add(active_media_condition()),
+            )
+            .count(&self.conn)
+            .await
+            .map_err(Into::into)
+    }
+
+    pub async fn count_active_pending_medias(&self) -> Result<u64> {
+        self.count_active_medias_in_state(MediaState::Pending).await
+    }
+
+    pub async fn active_media_ids(&self) -> Result<HashSet<i64>> {
+        let ids: Vec<i64> = media::Entity::find()
+            .select_only()
+            .column(media::Column::Id)
+            .filter(active_media_condition())
+            .into_tuple()
+            .all(&self.conn)
+            .await?;
+        Ok(ids.into_iter().collect())
+    }
+
+    pub async fn count_active_media_ids(&self, ids: &[i64]) -> Result<usize> {
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        let unique: Vec<i64> = ids
+            .iter()
+            .copied()
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+        let mut total = 0usize;
+        for chunk in unique.chunks(CHUNK_SIZE) {
+            let cnt = media::Entity::find()
+                .filter(
+                    Condition::all()
+                        .add(media::Column::Id.is_in(chunk.iter().copied()))
+                        .add(active_media_condition()),
+                )
+                .count(&self.conn)
+                .await?;
+            total += cnt as usize;
+        }
+        Ok(total)
+    }
+
+    pub async fn is_media_active(&self, id: i64) -> Result<bool> {
+        let found = media::Entity::find()
+            .filter(
+                Condition::all()
+                    .add(media::Column::Id.eq(id))
+                    .add(active_media_condition()),
+            )
+            .one(&self.conn)
+            .await?;
+        Ok(found.is_some())
+    }
+
+    pub async fn completed_medias(&self, active_only: bool) -> Result<Vec<media::Model>> {
+        let mut query = media::Entity::find()
+            .filter(media::Column::State.eq(MediaState::Completed))
+            .order_by_asc(media::Column::Id);
+        if active_only {
+            query = query.filter(active_media_condition());
+        }
+        query.all(&self.conn).await.map_err(Into::into)
+    }
+
     pub async fn query_medias(&self, filter: &MediaFilter) -> Result<Vec<media::Model>> {
         let mut query = media::Entity::find();
         if !filter.states.is_empty() {
@@ -522,15 +634,16 @@ impl Db {
     }
 
     /// Query media rows eligible for `fav pull` with optional target filters.
+    /// Always enforces [`active_media_condition`] (active account + active set/UP) regardless of
+    /// whether `ids`, `set_id`, or `up_id` filters are supplied.
     pub async fn pull_candidates(&self, filter: &PullFilter) -> Result<Vec<media::Model>> {
-        let mut query = media::Entity::find().order_by_asc(media::Column::Id);
+        let mut query = media::Entity::find()
+            .filter(active_media_condition())
+            .order_by_asc(media::Column::Id);
 
         if !filter.ids.is_empty() {
             query = query.filter(media::Column::Id.is_in(filter.ids.iter().copied()));
         } else {
-            if filter.set_id.is_none() && filter.up_id.is_none() {
-                query = query.filter(active_media_condition());
-            }
             if let Some(set_id) = filter.set_id {
                 let sub = Query::select()
                     .column(media_set::Column::Id)

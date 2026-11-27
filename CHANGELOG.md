@@ -9,6 +9,17 @@ Note: In this file, do not use the hard wrap in the middle of a sentence for com
 -->
 
 ## [Unreleased]
+
+- add `fav download` (alias `dl`) for untracked one-off video/audio downloads with zero database writes or workspace lock, URL `?p=N` single-page detection, `--page`/`--all-pages`, read-only active-account cookie lookup with anonymous (`try_look=1`) fallback, and `<output_dir>/.fav-tmp/` staging
+- add `--sound-only` (alias `--audio-only`) and `--audio-format <copy|m4a|mp3|flac|opus>` across `fav download`, `fav pull`, and `fav sync`, skipping video stream downloads completely for DASH
+- add `--clarity` (alias `--quality`) and `--codec` (`avc`/`hevc`/`av1`) stream selection flags and `config.toml` defaults, with closest-lower fallback when all streams exceed the requested clarity cap (#19)
+- add collected favorite folders and video collections/seasons (`ls set --kind <created|collected|season>`) to catalog sync as `Inactive` by default (`Unreachable` when remotely invalidated) (#135)
+- add cursor-based incremental scanning with resumable `resume_page` / `sync_complete` progress so `fav fetch` and `fav fetch --prune` stop at the first already-fetched media instead of performing accidental full scans, reserving full status/unfavorite scans for explicit `--full` / `--refresh-status`
+- strictly enforce active-account and active-set/UP scoping across `fav fetch`, `fav pull`, `fav sync`, and `fav like`, rejecting untracked or inactive targets in `fav pull` with a hint to activate or use `fav download`
+- add 4-layer rename-safe disk reconciliation (`reconcile.rs`) with embedded `fav:aid=...;cid=...` container metadata tags, surgical per-page resets, `--recheck` on `fav pull`/`fav sync`, and `-o/--output` on `fav media reset` and `fav doctor`
+- eliminate `/tmp` staging usage by adding configurable `tmp_dir` in `config.toml` and a Linux `tmpfs`/`ramfs` staging check in `fav doctor` (#153)
+- enhance shell completions with Nushell (`fav completion nushell`/`nu`), genuine PowerShell dynamic `Register-ArgumentCompleter`, `-C`/`--dir` forwarding across Bash/Zsh/Fish/PowerShell, and a fix for `fav __complete medias` hiding matches past index 200 (#1)
+
 ## [1.3.0] - 2026-08-17
 
 - bump `avmux` to 0.3, which is built on `ffmpeg-next` instead of `rsmpeg`, so FFmpeg 9 can be used

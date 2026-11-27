@@ -120,7 +120,7 @@ pub async fn activate(ctx: &AppContext, kind: TargetKind, opts: ActivateOptions)
                     .map(|s| PickerItem {
                         id: s.set_id,
                         label: s.name.clone(),
-                        meta: format!("{} medias, {}", s.count, s.state),
+                        meta: format!("{} medias, {}, {}", s.count, s.kind, s.state),
                         selected: false,
                     })
                     .collect();
@@ -168,6 +168,19 @@ pub async fn activate(ctx: &AppContext, kind: TargetKind, opts: ActivateOptions)
                     warn!("No UPs found. Run `fav fetch` first.");
                 } else {
                     info!("Activated {n} UP(s).");
+                    let followed = ctx.db.active_account_up_ids().await?;
+                    let unfollowed_count = ctx
+                        .db
+                        .all_ups()
+                        .await?
+                        .iter()
+                        .filter(|u| !followed.contains(&u.up_id))
+                        .count();
+                    if unfollowed_count > 0 {
+                        warn!(
+                            "{unfollowed_count} activated UP(s) are not followed by any active account and will be skipped until an active account follows them."
+                        );
+                    }
                 }
                 None
             } else {
@@ -200,6 +213,14 @@ pub async fn activate(ctx: &AppContext, kind: TargetKind, opts: ActivateOptions)
                 }
                 ctx.db.activate_ups(&ids).await.map_err(AppError::usage)?;
                 info!("Activated {} UP(s): {:?}", ids.len(), ids);
+                let followed = ctx.db.active_account_up_ids().await?;
+                for &up_id in &ids {
+                    if !followed.contains(&up_id) {
+                        warn!(
+                            "UP<{up_id}> is not followed by any active account; it will not be synced until an active account follows it."
+                        );
+                    }
+                }
                 Some(ids)
             };
 

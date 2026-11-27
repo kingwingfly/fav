@@ -15,6 +15,7 @@ use crate::{
     db::Db,
     error::AppResult,
     muxer::{FfmpegMuxer, Muxer},
+    state::{AudioFormat, VideoClarity, VideoCodec},
     table::ColorChoice,
 };
 
@@ -179,6 +180,41 @@ impl AppContext {
         override_rate.or_else(|| self.config.parsed_limit_rate().ok().flatten())
     }
 
+    /// Effective video clarity cap (`--clarity` -> config `clarity`/`quality` -> `Best`).
+    pub fn effective_clarity(&self, override_clarity: Option<VideoClarity>) -> VideoClarity {
+        override_clarity
+            .or_else(|| self.config.parsed_clarity().ok().flatten())
+            .unwrap_or_default()
+    }
+
+    /// Effective preferred video codec (`--codec` -> config `codec`).
+    pub fn effective_codec(&self, override_codec: Option<VideoCodec>) -> Option<VideoCodec> {
+        override_codec.or_else(|| self.config.parsed_codec().ok().flatten())
+    }
+
+    /// Effective audio-only extraction mode (`--sound-only` || config `sound_only`).
+    pub fn effective_sound_only(&self, override_sound_only: bool) -> bool {
+        override_sound_only || self.config.sound_only.unwrap_or(false)
+    }
+
+    /// Effective audio format for `--sound-only` (`--audio-format` -> config `audio_format` -> `Copy`).
+    pub fn effective_audio_format(&self, override_format: Option<AudioFormat>) -> AudioFormat {
+        override_format
+            .or_else(|| self.config.parsed_audio_format().ok().flatten())
+            .unwrap_or_default()
+    }
+
+    /// Effective disk recheck flag for `fav pull` / `fav sync` (`--recheck` || config `recheck`).
+    pub fn effective_recheck(&self, override_recheck: bool) -> bool {
+        override_recheck || self.config.recheck.unwrap_or(false)
+    }
+
+    /// Effective on-disk staging temp directory (`config.tmp_dir` resolved relative to workspace
+    /// root if relative, else `workspace.tmp_dir()`).
+    pub fn effective_tmp_dir(&self) -> PathBuf {
+        self.config.resolved_tmp_dir(&self.workspace)
+    }
+
     /// Whether interactive progress bars should render to stderr.
     pub fn progress_enabled(&self) -> bool {
         !self.runtime.quiet && !self.runtime.no_progress && Term::stderr().is_term()
@@ -193,8 +229,11 @@ impl AppContext {
 }
 
 fn apply_config_defaults(runtime: &mut RuntimeOptions, config: &Config) -> AppResult<()> {
-    // Validate config rate limit eagerly so malformed TOML values fail fast with ExitKind::Usage.
+    // Validate parsed config options eagerly so malformed TOML values fail fast with ExitKind::Usage.
     let _ = config.parsed_limit_rate()?;
+    let _ = config.parsed_clarity()?;
+    let _ = config.parsed_codec()?;
+    let _ = config.parsed_audio_format()?;
 
     if config.no_progress == Some(true) {
         runtime.no_progress = true;
@@ -265,6 +304,12 @@ mod tests {
             jobs: Some(2),
             limit_rate: Some("2M".to_owned()),
             api_concurrency: Some(6),
+            clarity: Some("720p".to_owned()),
+            codec: Some("h265".to_owned()),
+            sound_only: Some(true),
+            audio_format: Some("opus".to_owned()),
+            recheck: Some(true),
+            tmp_dir: Some(PathBuf::from("custom_tmp")),
             ..Default::default()
         };
         let db = Db::open_in_memory().await.unwrap();
@@ -281,8 +326,81 @@ mod tests {
         );
         assert_eq!(ctx.effective_limit_rate(None), Some(2 * 1024 * 1024));
         assert_eq!(ctx.effective_limit_rate(Some(500)), Some(500));
+        assert_eq!(ctx.effective_clarity(None), VideoClarity::P720);
+        assert_eq!(
+            ctx.effective_clarity(Some(VideoClarity::FourK)),
+            VideoClarity::FourK
+        );
+        assert_eq!(ctx.effective_codec(None), Some(VideoCodec::Hevc));
+        assert_eq!(
+            ctx.effective_codec(Some(VideoCodec::Av1)),
+            Some(VideoCodec::Av1)
+        );
+        assert!(ctx.effective_sound_only(false));
+        assert!(ctx.effective_sound_only(true));
+        assert_eq!(ctx.effective_audio_format(None), AudioFormat::Opus);
+        assert_eq!(
+            ctx.effective_audio_format(Some(AudioFormat::Flac)),
+            AudioFormat::Flac
+        );
+        assert!(ctx.effective_recheck(false));
+        assert!(ctx.effective_recheck(true));
+        assert_eq!(ctx.effective_tmp_dir(), tmp.path().join("custom_tmp"));
         assert!(!ctx.progress_enabled());
         assert!(ctx.client_for_account("SESSDATA=abc").is_ok());
         assert!(ctx.anonymous_client().is_ok());
+
+        // Default config falls back to Best / None / false / Copy / false / workspace.tmp_dir().
+        let ws2 = Workspace::new(tmp.path().join("default_ws"));
+        let expected_tmp = ws2.tmp_dir();
+        let ctx_default = AppContext::for_test(
+            ws2,
+            Config::default(),
+            Db::open_in_memory().await.unwrap(),
+            Arc::new(MockMuxer::succeeding()),
+            BiliClientConfig::default(),
+        );
+        assert_eq!(ctx_default.effective_clarity(None), VideoClarity::Best);
+        assert_eq!(ctx_default.effective_codec(None), None);
+        assert!(!ctx_default.effective_sound_only(false));
+        assert!(ctx_default.effective_sound_only(true));
+        assert_eq!(ctx_default.effective_audio_format(None), AudioFormat::Copy);
+        assert!(!ctx_default.effective_recheck(false));
+        assert!(ctx_default.effective_recheck(true));
+        assert_eq!(ctx_default.effective_tmp_dir(), expected_tmp);
+    }
+
+    #[test]
+    fn apply_config_defaults_validates_new_config_keys_eagerly() {
+        use crate::error::ExitKind;
+
+        for (label, cfg) in [
+            (
+                "clarity",
+                Config {
+                    clarity: Some("superhd".to_owned()),
+                    ..Default::default()
+                },
+            ),
+            (
+                "codec",
+                Config {
+                    codec: Some("vp9".to_owned()),
+                    ..Default::default()
+                },
+            ),
+            (
+                "audio_format",
+                Config {
+                    audio_format: Some("wav".to_owned()),
+                    ..Default::default()
+                },
+            ),
+        ] {
+            let mut rt = RuntimeOptions::default();
+            let err = apply_config_defaults(&mut rt, &cfg)
+                .expect_err(&format!("invalid {label} should fail"));
+            assert_eq!(err.kind(), ExitKind::Usage, "invalid {label} exit kind");
+        }
     }
 }

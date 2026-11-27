@@ -1,6 +1,7 @@
 use std::{
     io::{self, Write as _},
     path::PathBuf,
+    str::FromStr as _,
     sync::{Arc, OnceLock, RwLock},
 };
 
@@ -20,7 +21,8 @@ use crate::{
             use_cookies,
         },
         deactivate::{DeactivateOptions, deactivate},
-        doctor::doctor,
+        doctor::{DoctorOptions, doctor_with_options},
+        download::{DownloadOptions, download},
         fetch::{FetchOptions, fetch},
         like::{LikeOptions, like},
         list::{ListKind, ListOptions, list},
@@ -32,7 +34,9 @@ use crate::{
     },
     config::{Workspace, parse_rate_limit},
     context::{AppContext, RuntimeOptions},
+    db::Db,
     error::{AppError, AppResult},
+    state::{AudioFormat, VideoClarity, VideoCodec},
     table::{ColorChoice, OutputFormat, should_color, write_stdout_all, write_stdout_line},
     version::VERSION,
 };
@@ -42,7 +46,59 @@ Examples:
   bash:       fav completion bash > ~/.local/share/bash-completion/completions/fav
   zsh:        fav completion zsh > ~/.zfunc/_fav
   fish:       fav completion fish > ~/.config/fish/completions/fav.fish
-  powershell: fav completion powershell | Out-String | Invoke-Expression";
+  powershell: fav completion powershell | Out-String | Invoke-Expression
+  nushell:    fav completion nushell | save -f ~/.config/nushell/fav.nu  # then `source ~/.config/nushell/fav.nu` in config.nu";
+
+/// Target shell for `fav completion <shell>`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum CompletionShell {
+    Bash,
+    Zsh,
+    Fish,
+    #[value(name = "powershell", alias = "pwsh")]
+    PowerShell,
+    Elvish,
+    #[value(name = "nushell", alias = "nu")]
+    Nushell,
+}
+
+/// Custom clap value parser for [`VideoClarity`] that advertises all canonical tier names for
+/// static shell completions while still accepting numeric `qn` codes (`80`, `120`, ...) and aliases.
+#[derive(Clone)]
+struct VideoClarityParser;
+
+impl clap::builder::TypedValueParser for VideoClarityParser {
+    type Value = VideoClarity;
+
+    fn parse_ref(
+        &self,
+        cmd: &Command,
+        _arg: Option<&Arg>,
+        value: &std::ffi::OsStr,
+    ) -> Result<Self::Value, clap::Error> {
+        let raw = value.to_str().ok_or_else(|| {
+            let mut c = cmd.clone();
+            c.error(
+                clap::error::ErrorKind::InvalidUtf8,
+                "Invalid UTF-8 for video clarity",
+            )
+        })?;
+        VideoClarity::from_str(raw).map_err(|msg| {
+            let mut c = cmd.clone();
+            c.error(clap::error::ErrorKind::InvalidValue, msg)
+        })
+    }
+
+    fn possible_values(
+        &self,
+    ) -> Option<Box<dyn Iterator<Item = clap::builder::PossibleValue> + '_>> {
+        Some(Box::new(
+            VideoClarity::ALL_NAMES
+                .iter()
+                .map(|name| clap::builder::PossibleValue::new(*name)),
+        ))
+    }
+}
 
 static ACTIVE_PROGRESS: OnceLock<Arc<RwLock<Option<MultiProgress>>>> = OnceLock::new();
 
@@ -235,7 +291,8 @@ fn fetch_flags() -> Vec<Arg> {
             .action(ArgAction::Append),
         Arg::new("full")
             .long("full")
-            .help("Disable incremental early-stop and scan all pages")
+            .alias("refresh-status")
+            .help("Disable incremental cursor early-stop, scan all pages, and refresh expired/unfavorited status")
             .action(ArgAction::SetTrue),
         Arg::new("prune")
             .long("prune")
@@ -306,6 +363,32 @@ fn pull_flags(include_shared_scope: bool) -> Vec<Arg> {
         Arg::new("force")
             .long("force")
             .help("Re-download medias even if already Completed")
+            .action(ArgAction::SetTrue),
+        Arg::new("sound-only")
+            .long("sound-only")
+            .alias("audio-only")
+            .help("Download audio stream only (skip video stream)")
+            .action(ArgAction::SetTrue),
+        Arg::new("audio-format")
+            .long("audio-format")
+            .value_name("FMT")
+            .help("Audio output format when using --sound-only")
+            .value_parser(value_parser!(AudioFormat))
+            .requires("sound-only"),
+        Arg::new("clarity")
+            .long("clarity")
+            .alias("quality")
+            .value_name("QUALITY")
+            .help("Maximum video clarity/quality (e.g. best, 4k, 1080p60, 1080p, 720p, worst, or numeric qn)")
+            .value_parser(VideoClarityParser),
+        Arg::new("codec")
+            .long("codec")
+            .value_name("CODEC")
+            .help("Preferred DASH video codec")
+            .value_parser(value_parser!(VideoCodec)),
+        Arg::new("recheck")
+            .long("recheck")
+            .help("Recheck disk for missing/renamed Completed files and re-download missing ones")
             .action(ArgAction::SetTrue),
     ]);
     args
@@ -481,12 +564,18 @@ pub fn build_command() -> Command {
                         .aliases(["list", "collection", "s", "l", "c"])
                         .args({
                             let mut args = list_common_args();
-                            args.push(
+                            args.extend([
                                 Arg::new("account")
                                     .long("account")
                                     .help("Filter sets belonging to account ID")
                                     .value_parser(value_parser!(i64)),
-                            );
+                                Arg::new("kind")
+                                    .long("kind")
+                                    .value_name("KIND")
+                                    .help("Filter sets by kind (created, collected, season)")
+                                    .value_parser(["created", "collected", "season"])
+                                    .ignore_case(true),
+                            ]);
                             args
                         }),
                     Command::new("up")
@@ -647,12 +736,12 @@ pub fn build_command() -> Command {
                 .aliases(["f"])
                 .args(fetch_flags()),
             Command::new("pull")
-                .about("Download and mux pending medias [alias: p]")
+                .about("Download and mux pending medias from activated sets/UPs (use `fav download` for untracked videos) [alias: p]")
                 .aliases(["p"])
                 .args({
                     let mut args = vec![
                         Arg::new("targets")
-                            .help("Specific BVID(s), avID(s), numeric AID(s), or Bilibili video URL(s) to pull")
+                            .help("Specific tracked & active BVID(s), avID(s), numeric AID(s), or URL(s) to pull (use `fav download` for untracked videos)")
                             .action(ArgAction::Append),
                     ];
                     args.extend(pull_flags(true));
@@ -666,6 +755,82 @@ pub fn build_command() -> Command {
                     args.extend(pull_flags(false));
                     args
                 }),
+            Command::new("download")
+                .about("Download arbitrary Bilibili videos/audio without modifying the workspace DB [alias: dl]")
+                .aliases(["dl"])
+                .arg_required_else_help(true)
+                .args([
+                    Arg::new("targets")
+                        .help("BVID(s), avID(s), numeric AID(s), Bilibili video URL(s), or '-' to read from stdin")
+                        .action(ArgAction::Append),
+                    Arg::new("stdin")
+                        .long("stdin")
+                        .help("Read target IDs/URLs from standard input (one per line)")
+                        .action(ArgAction::SetTrue),
+                    Arg::new("page")
+                        .long("page")
+                        .value_name("SPEC")
+                        .help("Download specific page(s) of multi-part videos (e.g. 1, 2-4, 1,3)")
+                        .conflicts_with("all-pages"),
+                    Arg::new("all-pages")
+                        .long("all-pages")
+                        .help("Download all pages even if the target URL specifies ?p=N")
+                        .action(ArgAction::SetTrue),
+                    Arg::new("sound-only")
+                        .long("sound-only")
+                        .alias("audio-only")
+                        .help("Download audio stream only (skip video stream)")
+                        .action(ArgAction::SetTrue),
+                    Arg::new("audio-format")
+                        .long("audio-format")
+                        .value_name("FMT")
+                        .help("Audio output format when using --sound-only")
+                        .value_parser(value_parser!(AudioFormat))
+                        .requires("sound-only"),
+                    Arg::new("clarity")
+                        .long("clarity")
+                        .alias("quality")
+                        .value_name("QUALITY")
+                        .help("Maximum video clarity/quality (e.g. best, 4k, 1080p60, 1080p, 720p, worst, or numeric qn)")
+                        .value_parser(VideoClarityParser),
+                    Arg::new("codec")
+                        .long("codec")
+                        .value_name("CODEC")
+                        .help("Preferred DASH video codec")
+                        .value_parser(value_parser!(VideoCodec)),
+                    Arg::new("output")
+                        .long("output")
+                        .short('o')
+                        .value_name("DIR")
+                        .help("Output directory (defaults to current working directory)")
+                        .value_parser(value_parser!(PathBuf)),
+                    Arg::new("jobs")
+                        .long("jobs")
+                        .short('j')
+                        .value_name("N")
+                        .help("Maximum concurrent downloads (default: 4)")
+                        .value_parser(value_parser!(usize)),
+                    Arg::new("limit-rate")
+                        .long("limit-rate")
+                        .value_name("RATE")
+                        .help("Per-stream bandwidth limit (e.g. 5M, 500K)"),
+                    Arg::new("force")
+                        .long("force")
+                        .help("Overwrite existing output files")
+                        .action(ArgAction::SetTrue),
+                    Arg::new("anonymous")
+                        .long("anonymous")
+                        .help("Download anonymously without reading workspace account cookies")
+                        .action(ArgAction::SetTrue),
+                    Arg::new("dry-run")
+                        .long("dry-run")
+                        .help("Preview planned downloads without downloading files")
+                        .action(ArgAction::SetTrue),
+                    Arg::new("ignore-errors")
+                        .long("ignore-errors")
+                        .help("Exit 0 even if some downloads fail")
+                        .action(ArgAction::SetTrue),
+                ]),
             Command::new("like")
                 .about("Like (or unlike) Bilibili medias by BVID/AID/URL, set, or stdin")
                 .args([
@@ -720,12 +885,18 @@ pub fn build_command() -> Command {
                 .about("Diagnose workspace DB, permissions, ffmpeg, disk sync, and account cookies")
                 .args({
                     let mut args = format_args().to_vec();
-                    args.push(
+                    args.extend([
                         Arg::new("offline")
                             .long("offline")
                             .help("Skip live network authentication checks")
                             .action(ArgAction::SetTrue),
-                    );
+                        Arg::new("output")
+                            .long("output")
+                            .short('o')
+                            .value_name("DIR")
+                            .help("Output directory to inspect for disk sync checks")
+                            .value_parser(value_parser!(PathBuf)),
+                    ]);
                     args
                 }),
             Command::new("media")
@@ -760,8 +931,18 @@ pub fn build_command() -> Command {
                                 .action(ArgAction::SetTrue),
                             Arg::new("missing")
                                 .long("missing")
-                                .help("Reset Completed medias whose downloaded files are missing on disk")
+                                .help("Reset active Completed medias whose downloaded files are missing on disk")
                                 .action(ArgAction::SetTrue),
+                            Arg::new("include-inactive")
+                                .long("include-inactive")
+                                .help("Include medias in inactive sets/UPs when scanning with --missing")
+                                .action(ArgAction::SetTrue),
+                            Arg::new("output")
+                                .long("output")
+                                .short('o')
+                                .value_name("DIR")
+                                .help("Output directory to inspect when using --missing")
+                                .value_parser(value_parser!(PathBuf)),
                             Arg::new("all")
                                 .long("all")
                                 .short('a')
@@ -809,7 +990,7 @@ pub fn build_command() -> Command {
                     Arg::new("shell")
                         .help("Target shell")
                         .required(true)
-                        .value_parser(value_parser!(Shell)),
+                        .value_parser(value_parser!(CompletionShell)),
                     Arg::new("bin-name")
                         .long("bin-name")
                         .help("Binary name to bind completions to")
@@ -864,6 +1045,11 @@ fn parse_list_options(matches: &ArgMatches) -> ListOptions {
         format: resolve_format(matches),
         wide: matches.get_flag("wide"),
         state: matches.get_one::<String>("state").cloned(),
+        kind: matches
+            .try_get_one::<String>("kind")
+            .ok()
+            .flatten()
+            .cloned(),
         set_id: matches.try_get_one::<i64>("set").ok().flatten().copied(),
         up_id: matches.try_get_one::<i64>("up").ok().flatten().copied(),
         account_id: matches
@@ -917,6 +1103,45 @@ fn parse_pull_options(matches: &ArgMatches, include_targets: bool) -> AppResult<
         limit_rate,
         retry_failed: matches.get_flag("retry-failed"),
         force: matches.get_flag("force"),
+        sound_only: matches.get_flag("sound-only"),
+        audio_format: matches.get_one::<AudioFormat>("audio-format").copied(),
+        clarity: matches.get_one::<VideoClarity>("clarity").copied(),
+        codec: matches.get_one::<VideoCodec>("codec").copied(),
+        recheck: matches.get_flag("recheck"),
+        dry_run: matches.get_flag("dry-run"),
+        ignore_errors: matches.get_flag("ignore-errors"),
+    })
+}
+
+fn parse_download_options(matches: &ArgMatches) -> AppResult<DownloadOptions> {
+    let limit_rate = match matches.get_one::<String>("limit-rate") {
+        Some(raw) => Some(parse_rate_limit(raw)?),
+        None => None,
+    };
+    let raw_targets = collect_strings(matches, "targets");
+    let mut read_stdin = matches.get_flag("stdin");
+    let mut targets = Vec::with_capacity(raw_targets.len());
+    for t in raw_targets {
+        if t == "-" {
+            read_stdin = true;
+        } else {
+            targets.push(t);
+        }
+    }
+    Ok(DownloadOptions {
+        targets,
+        read_stdin,
+        pages: matches.get_one::<String>("page").cloned(),
+        all_pages: matches.get_flag("all-pages"),
+        output_dir: matches.get_one::<PathBuf>("output").cloned(),
+        jobs: matches.get_one::<usize>("jobs").copied(),
+        limit_rate,
+        sound_only: matches.get_flag("sound-only"),
+        audio_format: matches.get_one::<AudioFormat>("audio-format").copied(),
+        clarity: matches.get_one::<VideoClarity>("clarity").copied(),
+        codec: matches.get_one::<VideoCodec>("codec").copied(),
+        force: matches.get_flag("force"),
+        anonymous: matches.get_flag("anonymous"),
         dry_run: matches.get_flag("dry-run"),
         ignore_errors: matches.get_flag("ignore-errors"),
     })
@@ -939,26 +1164,65 @@ fn sanitize_shell_fn_ident(bin_name: &str) -> String {
     out
 }
 
-fn dynamic_completion_snippet(shell: Shell, bin_name: &str) -> String {
+const VALUE_TAKING_FLAGS_SH: &str = "-C|--dir|--color|--format|--state|--search|--sort|--limit|--type|--kind|--set|--up|--account|-j|--jobs|-o|--output|--limit-rate|--clarity|--quality|--codec|--audio-format|--page|--top|--target|--interval|--bin|--bin-name|--file";
+
+const VALUE_TAKING_FLAGS_FISH: &str = "-C --dir --color --format --state --search --sort --limit --type --kind --set --up --account -j --jobs -o --output --limit-rate --clarity --quality --codec --audio-format --page --top --target --interval --bin --bin-name --file";
+
+fn dynamic_completion_snippet(shell: CompletionShell, bin_name: &str) -> String {
     let fn_ident = sanitize_shell_fn_ident(bin_name);
     match shell {
-        Shell::Fish => format!(
+        CompletionShell::Fish => format!(
             "\n# Dynamic workspace DB completions via `{bin_name} __complete`\n\
-             complete -c {bin_name} -n '__fish_seen_subcommand_from activate active a deactivate deactive d; and __fish_seen_subcommand_from set s list collection l c' -f -a '({bin_name} __complete sets (commandline -ct) 2>/dev/null)'\n\
-             complete -c {bin_name} -n '__fish_seen_subcommand_from activate active a deactivate deactive d; and __fish_seen_subcommand_from up upper u' -f -a '({bin_name} __complete ups (commandline -ct) 2>/dev/null)'\n\
-             complete -c {bin_name} -n '__fish_seen_subcommand_from activate active a deactivate deactive d; and __fish_seen_subcommand_from account a' -f -a '({bin_name} __complete accounts (commandline -ct) 2>/dev/null)'\n\
-             complete -c {bin_name} -n '__fish_seen_subcommand_from auth; and __fish_seen_subcommand_from logout check' -f -a '({bin_name} __complete accounts (commandline -ct) 2>/dev/null)'\n\
-             complete -c {bin_name} -n '__fish_seen_subcommand_from pull p like' -f -a '({bin_name} __complete medias (commandline -ct) 2>/dev/null)'\n\
-             complete -c {bin_name} -n '__fish_seen_subcommand_from media; and __fish_seen_subcommand_from reset skip' -f -a '({bin_name} __complete medias (commandline -ct) 2>/dev/null)'\n\
-             complete -c {bin_name} -l set -r -f -a '({bin_name} __complete sets (commandline -ct) 2>/dev/null)'\n\
-             complete -c {bin_name} -l up -r -f -a '({bin_name} __complete ups (commandline -ct) 2>/dev/null)'\n\
-             complete -c {bin_name} -l account -r -f -a '({bin_name} __complete accounts (commandline -ct) 2>/dev/null)'\n"
+             function __fish_{fn_ident}_complete\n\
+                 set -l kind $argv[1]\n\
+                 set -l tokens (commandline -opc)\n\
+                 set -l dir_args\n\
+                 set -l i 2\n\
+                 set -l n (count $tokens)\n\
+                 while test $i -le $n\n\
+                     switch $tokens[$i]\n\
+                         case -C --dir\n\
+                             if test (math $i + 1) -le $n\n\
+                                 set dir_args -C $tokens[(math $i + 1)]\n\
+                             end\n\
+                             set i (math $i + 2)\n\
+                             continue\n\
+                         case '--dir=*'\n\
+                             set dir_args -C (string replace -r '^--dir=' '' -- $tokens[$i])\n\
+                     end\n\
+                     set i (math $i + 1)\n\
+                 end\n\
+                 {bin_name} $dir_args __complete $kind (commandline -ct) 2>/dev/null\n\
+             end\n\
+             \n\
+             function __fish_{fn_ident}_not_expecting_opt_val\n\
+                 set -l tokens (commandline -opc)\n\
+                 if test (count $tokens) -lt 2\n\
+                     return 0\n\
+                 end\n\
+                 switch $tokens[-1]\n\
+                     case {VALUE_TAKING_FLAGS_FISH}\n\
+                         return 1\n\
+                 end\n\
+                 return 0\n\
+             end\n\
+             \n\
+             complete -c {bin_name} -n '__fish_seen_subcommand_from activate active a deactivate deactive d; and __fish_seen_subcommand_from set s list collection l c; and __fish_{fn_ident}_not_expecting_opt_val' -f -a '(__fish_{fn_ident}_complete sets)'\n\
+             complete -c {bin_name} -n '__fish_seen_subcommand_from activate active a deactivate deactive d; and __fish_seen_subcommand_from up upper u; and __fish_{fn_ident}_not_expecting_opt_val' -f -a '(__fish_{fn_ident}_complete ups)'\n\
+             complete -c {bin_name} -n '__fish_seen_subcommand_from activate active a deactivate deactive d; and __fish_seen_subcommand_from account a; and __fish_{fn_ident}_not_expecting_opt_val' -f -a '(__fish_{fn_ident}_complete accounts)'\n\
+             complete -c {bin_name} -n '__fish_seen_subcommand_from auth; and __fish_seen_subcommand_from logout check; and __fish_{fn_ident}_not_expecting_opt_val' -f -a '(__fish_{fn_ident}_complete accounts)'\n\
+             complete -c {bin_name} -n '__fish_seen_subcommand_from pull p like; and __fish_{fn_ident}_not_expecting_opt_val' -f -a '(__fish_{fn_ident}_complete medias)'\n\
+             complete -c {bin_name} -n '__fish_seen_subcommand_from media; and __fish_seen_subcommand_from reset skip; and __fish_{fn_ident}_not_expecting_opt_val' -f -a '(__fish_{fn_ident}_complete medias)'\n\
+             complete -c {bin_name} -l set -r -f -a '(__fish_{fn_ident}_complete sets)'\n\
+             complete -c {bin_name} -l up -r -f -a '(__fish_{fn_ident}_complete ups)'\n\
+             complete -c {bin_name} -l account -r -f -a '(__fish_{fn_ident}_complete accounts)'\n"
         ),
-        Shell::Bash => format!(
+        CompletionShell::Bash => format!(
             "\n# Dynamic workspace DB completions via `{bin_name} __complete`\n\
              _{fn_ident}_dynamic_candidates() {{\n\
                  local kind=\"$1\" cur=\"$2\"\n\
-                 COMPREPLY=( $(compgen -W \"$({bin_name} __complete \"$kind\" \"$cur\" 2>/dev/null | cut -f1)\" -- \"$cur\") )\n\
+                 shift 2\n\
+                 COMPREPLY=( $(compgen -W \"$({bin_name} \"$@\" __complete \"$kind\" \"$cur\" 2>/dev/null | cut -f1)\" -- \"$cur\") )\n\
              }}\n\
              \n\
              _{fn_ident}_with_dynamic() {{\n\
@@ -969,25 +1233,49 @@ fn dynamic_completion_snippet(shell: Shell, bin_name: &str) -> String {
                      _{fn_ident} \"$@\"\n\
                      return $?\n\
                  fi\n\
+                 local -a dir_args=()\n\
+                 local k=1 kw\n\
+                 while [[ $k -lt ${{#COMP_WORDS[@]}} ]]; do\n\
+                     kw=\"${{COMP_WORDS[$k]}}\"\n\
+                     if [[ $k -ne $COMP_CWORD ]]; then\n\
+                         case \"$kw\" in\n\
+                             -C|--dir)\n\
+                                 if (( k + 1 < ${{#COMP_WORDS[@]}} )) && [[ $((k + 1)) -ne $COMP_CWORD ]]; then\n\
+                                     dir_args=(-C \"${{COMP_WORDS[$((k + 1))]}}\")\n\
+                                 fi\n\
+                                 ((k += 2))\n\
+                                 continue\n\
+                                 ;;\n\
+                             --dir=*)\n\
+                                 dir_args=(-C \"${{kw#--dir=}}\")\n\
+                                 ;;\n\
+                         esac\n\
+                     fi\n\
+                     ((k += 1))\n\
+                 done\n\
                  case \"${{prev}}\" in\n\
                      --set)\n\
-                         _{fn_ident}_dynamic_candidates sets \"${{cur}}\"\n\
+                         _{fn_ident}_dynamic_candidates sets \"${{cur}}\" ${{dir_args[@]+\"${{dir_args[@]}}\"}}\n\
                          return 0\n\
                          ;;\n\
                      --up)\n\
-                         _{fn_ident}_dynamic_candidates ups \"${{cur}}\"\n\
+                         _{fn_ident}_dynamic_candidates ups \"${{cur}}\" ${{dir_args[@]+\"${{dir_args[@]}}\"}}\n\
                          return 0\n\
                          ;;\n\
                      --account)\n\
-                         _{fn_ident}_dynamic_candidates accounts \"${{cur}}\"\n\
+                         _{fn_ident}_dynamic_candidates accounts \"${{cur}}\" ${{dir_args[@]+\"${{dir_args[@]}}\"}}\n\
                          return 0\n\
+                         ;;\n\
+                     {VALUE_TAKING_FLAGS_SH})\n\
+                         _{fn_ident} \"$@\"\n\
+                         return $?\n\
                          ;;\n\
                  esac\n\
                  local sub1=\"\" sub2=\"\" i=1 w\n\
                  while [[ $i -lt $COMP_CWORD ]]; do\n\
                      w=\"${{COMP_WORDS[$i]}}\"\n\
                      case \"$w\" in\n\
-                         -C|--dir|--color|--format|--state|--search|--sort|--limit|--type|--set|--up|--account|-j|--jobs|-o|--output|--limit-rate|--top|--target|--interval|--bin|--bin-name|--file)\n\
+                         {VALUE_TAKING_FLAGS_SH})\n\
                              ((i += 2))\n\
                              continue\n\
                              ;;\n\
@@ -1010,22 +1298,22 @@ fn dynamic_completion_snippet(shell: Shell, bin_name: &str) -> String {
                      deactivate:set|deactivate:s|deactivate:list|deactivate:collection|deactivate:l|deactivate:c|\\\n\
                      deactive:set|deactive:s|deactive:list|deactive:collection|deactive:l|deactive:c|\\\n\
                      d:set|d:s|d:list|d:collection|d:l|d:c)\n\
-                         _{fn_ident}_dynamic_candidates sets \"${{cur}}\"\n\
+                         _{fn_ident}_dynamic_candidates sets \"${{cur}}\" ${{dir_args[@]+\"${{dir_args[@]}}\"}}\n\
                          return 0\n\
                          ;;\n\
                      activate:up|activate:upper|activate:u|active:up|active:upper|active:u|a:up|a:upper|a:u|\\\n\
                      deactivate:up|deactivate:upper|deactivate:u|deactive:up|deactive:upper|deactive:u|d:up|d:upper|d:u)\n\
-                         _{fn_ident}_dynamic_candidates ups \"${{cur}}\"\n\
+                         _{fn_ident}_dynamic_candidates ups \"${{cur}}\" ${{dir_args[@]+\"${{dir_args[@]}}\"}}\n\
                          return 0\n\
                          ;;\n\
                      activate:account|activate:a|active:account|active:a|a:account|a:a|\\\n\
                      deactivate:account|deactivate:a|deactive:account|deactive:a|d:account|d:a|\\\n\
                      auth:logout|auth:check)\n\
-                         _{fn_ident}_dynamic_candidates accounts \"${{cur}}\"\n\
+                         _{fn_ident}_dynamic_candidates accounts \"${{cur}}\" ${{dir_args[@]+\"${{dir_args[@]}}\"}}\n\
                          return 0\n\
                          ;;\n\
                      pull:*|p:*|like:*|media:reset|media:skip)\n\
-                         _{fn_ident}_dynamic_candidates medias \"${{cur}}\"\n\
+                         _{fn_ident}_dynamic_candidates medias \"${{cur}}\" ${{dir_args[@]+\"${{dir_args[@]}}\"}}\n\
                          return 0\n\
                          ;;\n\
                  esac\n\
@@ -1038,17 +1326,18 @@ fn dynamic_completion_snippet(shell: Shell, bin_name: &str) -> String {
                  complete -F _{fn_ident}_with_dynamic -o bashdefault -o default {bin_name}\n\
              fi\n"
         ),
-        Shell::Zsh => format!(
+        CompletionShell::Zsh => format!(
             "\n# Dynamic workspace DB completions via `{bin_name} __complete`\n\
              _{fn_ident}_complete_db() {{\n\
                  local kind=\"$1\" prefix=\"$2\"\n\
+                 shift 2\n\
                  local -a entries\n\
                  local line id desc\n\
                  while IFS=$'\\t' read -r id desc; do\n\
                      [[ -n \"$id\" ]] || continue\n\
                      desc=\"${{desc//:/\\\\:}}\"\n\
                      entries+=(\"${{id}}:${{desc}}\")\n\
-                 done < <({bin_name} __complete \"$kind\" \"$prefix\" 2>/dev/null)\n\
+                 done < <({bin_name} \"$@\" __complete \"$kind\" \"$prefix\" 2>/dev/null)\n\
                  (( ${{#entries[@]}} )) && _describe -t \"$kind\" \"$kind\" entries\n\
              }}\n\
              \n\
@@ -1062,17 +1351,42 @@ fn dynamic_completion_snippet(shell: Shell, bin_name: &str) -> String {
                      _{fn_ident} \"$@\"\n\
                      return $?\n\
                  fi\n\
+                 local -a dir_args\n\
+                 dir_args=()\n\
+                 local k=2 kw\n\
+                 while (( k <= ${{#words[@]}} )); do\n\
+                     kw=\"${{words[k]}}\"\n\
+                     if (( k != CURRENT )); then\n\
+                         case \"$kw\" in\n\
+                             -C|--dir)\n\
+                                 if (( k + 1 <= ${{#words[@]}} && k + 1 != CURRENT )); then\n\
+                                     dir_args=(-C \"${{words[k+1]}}\")\n\
+                                 fi\n\
+                                 (( k += 2 ))\n\
+                                 continue\n\
+                                 ;;\n\
+                             --dir=*)\n\
+                                 dir_args=(-C \"${{kw#--dir=}}\")\n\
+                                 ;;\n\
+                         esac\n\
+                     fi\n\
+                     (( k += 1 ))\n\
+                 done\n\
                  case \"$prev\" in\n\
                      --set)\n\
-                         _{fn_ident}_complete_db sets \"$cur\"\n\
+                         _{fn_ident}_complete_db sets \"$cur\" \"${{dir_args[@]}}\"\n\
                          return $?\n\
                          ;;\n\
                      --up)\n\
-                         _{fn_ident}_complete_db ups \"$cur\"\n\
+                         _{fn_ident}_complete_db ups \"$cur\" \"${{dir_args[@]}}\"\n\
                          return $?\n\
                          ;;\n\
                      --account)\n\
-                         _{fn_ident}_complete_db accounts \"$cur\"\n\
+                         _{fn_ident}_complete_db accounts \"$cur\" \"${{dir_args[@]}}\"\n\
+                         return $?\n\
+                         ;;\n\
+                     {VALUE_TAKING_FLAGS_SH})\n\
+                         _{fn_ident} \"$@\"\n\
                          return $?\n\
                          ;;\n\
                  esac\n\
@@ -1080,7 +1394,7 @@ fn dynamic_completion_snippet(shell: Shell, bin_name: &str) -> String {
                  while (( i < CURRENT )); do\n\
                      w=\"${{words[i]}}\"\n\
                      case \"$w\" in\n\
-                         -C|--dir|--color|--format|--state|--search|--sort|--limit|--type|--set|--up|--account|-j|--jobs|-o|--output|--limit-rate|--top|--target|--interval|--bin|--bin-name|--file)\n\
+                         {VALUE_TAKING_FLAGS_SH})\n\
                              (( i += 2 ))\n\
                              continue\n\
                              ;;\n\
@@ -1103,22 +1417,22 @@ fn dynamic_completion_snippet(shell: Shell, bin_name: &str) -> String {
                      deactivate:set|deactivate:s|deactivate:list|deactivate:collection|deactivate:l|deactivate:c|\\\n\
                      deactive:set|deactive:s|deactive:list|deactive:collection|deactive:l|deactive:c|\\\n\
                      d:set|d:s|d:list|d:collection|d:l|d:c)\n\
-                         _{fn_ident}_complete_db sets \"$cur\"\n\
+                         _{fn_ident}_complete_db sets \"$cur\" \"${{dir_args[@]}}\"\n\
                          return $?\n\
                          ;;\n\
                      activate:up|activate:upper|activate:u|active:up|active:upper|active:u|a:up|a:upper|a:u|\\\n\
                      deactivate:up|deactivate:upper|deactivate:u|deactive:up|deactive:upper|deactive:u|d:up|d:upper|d:u)\n\
-                         _{fn_ident}_complete_db ups \"$cur\"\n\
+                         _{fn_ident}_complete_db ups \"$cur\" \"${{dir_args[@]}}\"\n\
                          return $?\n\
                          ;;\n\
                      activate:account|activate:a|active:account|active:a|a:account|a:a|\\\n\
                      deactivate:account|deactivate:a|deactive:account|deactive:a|d:account|d:a|\\\n\
                      auth:logout|auth:check)\n\
-                         _{fn_ident}_complete_db accounts \"$cur\"\n\
+                         _{fn_ident}_complete_db accounts \"$cur\" \"${{dir_args[@]}}\"\n\
                          return $?\n\
                          ;;\n\
                      pull:*|p:*|like:*|media:reset|media:skip)\n\
-                         _{fn_ident}_complete_db medias \"$cur\"\n\
+                         _{fn_ident}_complete_db medias \"$cur\" \"${{dir_args[@]}}\"\n\
                          return $?\n\
                          ;;\n\
                  esac\n\
@@ -1132,44 +1446,330 @@ fn dynamic_completion_snippet(shell: Shell, bin_name: &str) -> String {
                  compdef _{fn_ident}_with_dynamic {bin_name}\n\
              fi\n"
         ),
-        Shell::PowerShell => format!(
-            "\n# Dynamic workspace DB helper: `{bin_name} __complete <sets|ups|accounts|medias> [prefix]`\n"
-        ),
-        _ => String::new(),
+        CompletionShell::PowerShell | CompletionShell::Nushell | CompletionShell::Elvish => {
+            String::new()
+        }
     }
 }
 
-fn generate_completion_script(
+fn wire_powershell_dynamic_completer(script: &str, bin_name: &str) -> String {
+    let fn_ident = sanitize_shell_fn_ident(bin_name);
+    let ps_bin = bin_name.replace('\'', "''");
+    let static_var = format!("$__fav_static_{fn_ident}");
+    let quoted_header =
+        format!("Register-ArgumentCompleter -Native -CommandName '{ps_bin}' -ScriptBlock {{");
+    let unquoted_header =
+        format!("Register-ArgumentCompleter -Native -CommandName {bin_name} -ScriptBlock {{");
+    let replacement = format!("{static_var} = {{");
+
+    let (base_script, has_static) = if script.contains(&quoted_header) {
+        (script.replacen(&quoted_header, &replacement, 1), true)
+    } else if script.contains(&unquoted_header) {
+        (script.replacen(&unquoted_header, &replacement, 1), true)
+    } else {
+        (script.to_owned(), false)
+    };
+
+    let fallback_call = if has_static {
+        format!("& {static_var} $wordToComplete $commandAst $cursorPosition")
+    } else {
+        "$null".to_owned()
+    };
+
+    let dynamic_block = r#"
+# Dynamic workspace DB completions via `__RAW_BIN__ __complete`
+Register-ArgumentCompleter -Native -CommandName '__PS_BIN__' -ScriptBlock ({
+    param($wordToComplete, $commandAst, $cursorPosition)
+
+    if ($wordToComplete -like '-*') {
+        return (__FALLBACK_CALL__)
+    }
+
+    $tokens = @()
+    for ($idx = 1; $idx -lt $commandAst.CommandElements.Count; $idx++) {
+        $el = $commandAst.CommandElements[$idx]
+        if ($el.Extent.StartOffset -lt $cursorPosition -and ($wordToComplete -eq '' -or $el.Extent.EndOffset -lt $cursorPosition)) {
+            $tokens += $el.Extent.Text.Trim('"', "'")
+        }
+    }
+
+    $dirArgs = @()
+    for ($k = 0; $k -lt $tokens.Count; $k++) {
+        $tok = $tokens[$k]
+        if ($tok -eq '-C' -or $tok -eq '--dir') {
+            if ($k + 1 -lt $tokens.Count) {
+                $dirArgs = @('-C', $tokens[$k + 1])
+            }
+            $k += 1
+        } elseif ($tok -like '--dir=*') {
+            $dirArgs = @('-C', $tok.Substring(6))
+        }
+    }
+
+    $prev = if ($tokens.Count -gt 0) { $tokens[$tokens.Count - 1] } else { '' }
+    $kind = ''
+    $valueOpts = @(
+        '-C', '--dir', '--color', '--format', '--state', '--search', '--sort', '--limit',
+        '--type', '--kind', '--set', '--up', '--account', '-j', '--jobs', '-o', '--output',
+        '--limit-rate', '--clarity', '--quality', '--codec', '--audio-format', '--page',
+        '--top', '--target', '--interval', '--bin', '--bin-name', '--file'
+    )
+
+    switch ($prev) {
+        '--set'     { $kind = 'sets' }
+        '--up'      { $kind = 'ups' }
+        '--account' { $kind = 'accounts' }
+        default {
+            if ($valueOpts -contains $prev) {
+                return (__FALLBACK_CALL__)
+            }
+        }
+    }
+
+    if (-not $kind) {
+        $sub1 = ''
+        $sub2 = ''
+        for ($i = 0; $i -lt $tokens.Count; $i++) {
+            $w = $tokens[$i]
+            if ($valueOpts -contains $w) {
+                $i += 1
+                continue
+            }
+            if ($w -like '-*') {
+                continue
+            }
+            if (-not $sub1) {
+                $sub1 = $w
+            } elseif (-not $sub2) {
+                $sub2 = $w
+            }
+        }
+
+        switch ("$($sub1):$($sub2)") {
+            { $_ -in @(
+                'activate:set', 'activate:s', 'activate:list', 'activate:collection', 'activate:l', 'activate:c',
+                'active:set', 'active:s', 'active:list', 'active:collection', 'active:l', 'active:c',
+                'a:set', 'a:s', 'a:list', 'a:collection', 'a:l', 'a:c',
+                'deactivate:set', 'deactivate:s', 'deactivate:list', 'deactivate:collection', 'deactivate:l', 'deactivate:c',
+                'deactive:set', 'deactive:s', 'deactive:list', 'deactive:collection', 'deactive:l', 'deactive:c',
+                'd:set', 'd:s', 'd:list', 'd:collection', 'd:l', 'd:c'
+            ) } { $kind = 'sets'; break }
+            { $_ -in @(
+                'activate:up', 'activate:upper', 'activate:u',
+                'active:up', 'active:upper', 'active:u',
+                'a:up', 'a:upper', 'a:u',
+                'deactivate:up', 'deactivate:upper', 'deactivate:u',
+                'deactive:up', 'deactive:upper', 'deactive:u',
+                'd:up', 'd:upper', 'd:u'
+            ) } { $kind = 'ups'; break }
+            { $_ -in @(
+                'activate:account', 'activate:a', 'active:account', 'active:a', 'a:account', 'a:a',
+                'deactivate:account', 'deactivate:a', 'deactive:account', 'deactive:a', 'd:account', 'd:a',
+                'auth:logout', 'auth:check'
+            ) } { $kind = 'accounts'; break }
+            { $_ -like 'pull:*' -or $_ -like 'p:*' -or $_ -like 'like:*' -or $_ -eq 'media:reset' -or $_ -eq 'media:skip' } {
+                $kind = 'medias'; break
+            }
+        }
+    }
+
+    if ($kind) {
+        $results = @()
+        foreach ($line in (& '__PS_BIN__' @dirArgs __complete $kind $wordToComplete 2>$null)) {
+            if (-not $line) { continue }
+            $parts = $line -split "`t", 2
+            $id = $parts[0]
+            if (-not $id) { continue }
+            $desc = if ($parts.Length -gt 1 -and $parts[1]) { $parts[1] } else { $id }
+            $listText = if ($desc -ne $id) { "$id ($desc)" } else { $id }
+            $results += [System.Management.Automation.CompletionResult]::new($id, $listText, 'ParameterValue', $desc)
+        }
+        return $results
+    }
+
+    return (__FALLBACK_CALL__)
+}.GetNewClosure())
+"#
+    .replace("__RAW_BIN__", bin_name)
+    .replace("__PS_BIN__", &ps_bin)
+    .replace("__FALLBACK_CALL__", &fallback_call);
+
+    let mut out = base_script;
+    out.push_str(&dynamic_block);
+    out
+}
+
+fn attach_nushell_completer(line: &str, completer: &str) -> String {
+    if line.contains("@\"") {
+        return line.to_owned();
+    }
+    let (code_part, comment_part) = match line.find('#') {
+        Some(idx) => (&line[..idx], &line[idx..]),
+        None => (line, ""),
+    };
+    let trimmed_end = code_part.trim_end();
+    let trailing_ws = &code_part[trimmed_end.len()..];
+    let updated_code = if let Some(prefix) = trimmed_end.strip_suffix(": string") {
+        format!("{prefix}: string@\"{completer}\"")
+    } else if let Some(prefix) = trimmed_end.strip_suffix(": int") {
+        format!("{prefix}: string@\"{completer}\"")
+    } else if !trimmed_end.contains(':') {
+        format!("{trimmed_end}: string@\"{completer}\"")
+    } else {
+        trimmed_end.to_owned()
+    };
+    format!("{updated_code}{trailing_ws}{comment_part}")
+}
+
+fn wire_nushell_dynamic_completers(script: &str, bin_name: &str) -> String {
+    let defs = format!(
+        "  # Dynamic workspace DB completers via `{bin_name} __complete`\n\
+         \x20 def \"nu-complete {bin_name} sets\" [] {{\n\
+         \x20   ^{bin_name} __complete sets \"\" | lines | parse \"{{value}}\\t{{description}}\"\n\
+         \x20 }}\n\
+         \n\
+         \x20 def \"nu-complete {bin_name} ups\" [] {{\n\
+         \x20   ^{bin_name} __complete ups \"\" | lines | parse \"{{value}}\\t{{description}}\"\n\
+         \x20 }}\n\
+         \n\
+         \x20 def \"nu-complete {bin_name} accounts\" [] {{\n\
+         \x20   ^{bin_name} __complete accounts \"\" | lines | parse \"{{value}}\\t{{description}}\"\n\
+         \x20 }}\n\
+         \n\
+         \x20 def \"nu-complete {bin_name} medias\" [] {{\n\
+         \x20   ^{bin_name} __complete medias \"\" | lines | parse \"{{value}}\\t{{description}}\"\n\
+         \x20 }}\n"
+    );
+
+    let mut out_lines = Vec::new();
+    let mut inserted_defs = false;
+    let mut current_subcmd: Option<String> = None;
+
+    for line in script.lines() {
+        let trimmed = line.trim();
+
+        if !inserted_defs && trimmed == "module completions {" {
+            out_lines.push(line.to_owned());
+            out_lines.push(String::new());
+            out_lines.push(defs.clone());
+            inserted_defs = true;
+            continue;
+        }
+
+        if let Some(rest) = trimmed.strip_prefix("export extern ")
+            && let Some(cmd_part) = rest.strip_suffix('[')
+        {
+            let cmd_name = cmd_part.trim().trim_matches('"');
+            let subcmd = cmd_name
+                .strip_prefix(bin_name)
+                .map(str::trim)
+                .unwrap_or("")
+                .to_owned();
+            current_subcmd = Some(subcmd);
+            out_lines.push(line.to_owned());
+            continue;
+        }
+
+        if trimmed == "]" {
+            current_subcmd = None;
+            out_lines.push(line.to_owned());
+            continue;
+        }
+
+        if let Some(subcmd) = current_subcmd.as_deref() {
+            let mut completer_kind: Option<&str> = None;
+            if trimmed.starts_with("--set:") || trimmed.starts_with("--set ") {
+                completer_kind = Some("sets");
+            } else if trimmed.starts_with("--up:") || trimmed.starts_with("--up ") {
+                completer_kind = Some("ups");
+            } else if trimmed.starts_with("--account:") || trimmed.starts_with("--account ") {
+                completer_kind = Some("accounts");
+            } else if trimmed.starts_with("...targets")
+                || trimmed.starts_with("targets")
+                || trimmed.starts_with("...account_id")
+                || trimmed.starts_with("account_id")
+            {
+                completer_kind = match subcmd {
+                    "activate set" | "deactivate set" => Some("sets"),
+                    "activate up" | "deactivate up" => Some("ups"),
+                    "activate account" | "deactivate account" | "auth logout" | "auth check" => {
+                        Some("accounts")
+                    }
+                    "pull" | "like" | "media reset" | "media skip" => Some("medias"),
+                    _ => None,
+                };
+            }
+
+            if let Some(kind) = completer_kind {
+                let completer = format!("nu-complete {bin_name} {kind}");
+                out_lines.push(attach_nushell_completer(line, &completer));
+                continue;
+            }
+        }
+
+        out_lines.push(line.to_owned());
+    }
+
+    let mut out = out_lines.join("\n");
+    out.push('\n');
+    if !inserted_defs {
+        out.push('\n');
+        out.push_str(&defs);
+    }
+    out
+}
+
+pub fn generate_completion_script(
     cmd: &mut Command,
-    shell: Shell,
+    shell: CompletionShell,
     bin_name: &str,
     static_only: bool,
 ) -> String {
     let mut buf = Vec::new();
-    clap_complete::generate(shell, cmd, bin_name, &mut buf);
+    match shell {
+        CompletionShell::Bash => clap_complete::generate(Shell::Bash, cmd, bin_name, &mut buf),
+        CompletionShell::Zsh => clap_complete::generate(Shell::Zsh, cmd, bin_name, &mut buf),
+        CompletionShell::Fish => clap_complete::generate(Shell::Fish, cmd, bin_name, &mut buf),
+        CompletionShell::PowerShell => {
+            clap_complete::generate(Shell::PowerShell, cmd, bin_name, &mut buf)
+        }
+        CompletionShell::Elvish => clap_complete::generate(Shell::Elvish, cmd, bin_name, &mut buf),
+        CompletionShell::Nushell => {
+            clap_complete::generate(clap_complete_nushell::Nushell, cmd, bin_name, &mut buf)
+        }
+    }
     let mut script = String::from_utf8(buf).unwrap_or_default();
     if !static_only {
-        if shell == Shell::Zsh {
-            let fn_ident = sanitize_shell_fn_ident(bin_name);
-            let clap_tail = format!(
-                "\nif [ \"$funcstack[1]\" = \"_{fn_ident}\" ]; then\n    _{fn_ident} \"$@\"\nelse\n    compdef _{fn_ident} {bin_name}\nfi\n"
-            );
-            if let Some(stripped) = script.strip_suffix(&clap_tail) {
-                script = stripped.to_owned();
+        match shell {
+            CompletionShell::Zsh => {
+                let fn_ident = sanitize_shell_fn_ident(bin_name);
+                let clap_tail = format!(
+                    "\nif [ \"$funcstack[1]\" = \"_{fn_ident}\" ]; then\n    _{fn_ident} \"$@\"\nelse\n    compdef _{fn_ident} {bin_name}\nfi\n"
+                );
+                if let Some(stripped) = script.strip_suffix(&clap_tail) {
+                    script = stripped.to_owned();
+                }
+                script.push_str(&dynamic_completion_snippet(shell, bin_name));
             }
-        }
-        let snippet = dynamic_completion_snippet(shell, bin_name);
-        if !snippet.is_empty() {
-            script.push_str(&snippet);
+            CompletionShell::PowerShell => {
+                script = wire_powershell_dynamic_completer(&script, bin_name);
+            }
+            CompletionShell::Nushell => {
+                script = wire_nushell_dynamic_completers(&script, bin_name);
+            }
+            _ => {
+                let snippet = dynamic_completion_snippet(shell, bin_name);
+                if !snippet.is_empty() {
+                    script.push_str(&snippet);
+                }
+            }
         }
     }
     script
 }
 
-async fn run_dynamic_complete(runtime: RuntimeOptions, kind: &str, prefix: &str) -> AppResult<()> {
-    let Ok(ctx) = AppContext::open_read_only(runtime).await else {
-        return Ok(());
-    };
+/// Query dynamic completion lines (`id\tdescription`) from `db` for `kind` filtered by `prefix`.
+pub async fn dynamic_complete_lines(db: &Db, kind: &str, prefix: &str) -> Vec<String> {
     let needle = prefix.trim().to_ascii_lowercase();
     let matches_prefix = |id: &str, label: &str| {
         needle.is_empty()
@@ -1177,76 +1777,86 @@ async fn run_dynamic_complete(runtime: RuntimeOptions, kind: &str, prefix: &str)
             || label.to_ascii_lowercase().contains(&needle)
     };
 
+    let mut out = Vec::new();
     match kind {
         "sets" => {
-            if let Ok(rows) = ctx.db.all_sets().await {
+            if let Ok(rows) = db.all_sets().await {
                 for s in rows {
                     let id = s.set_id.to_string();
-                    if matches_prefix(&id, &s.name)
-                        && !write_stdout_line(&format!(
-                            "{id}\t{} ({})",
-                            s.name.replace('\t', " "),
+                    if matches_prefix(&id, &s.name) {
+                        out.push(format!(
+                            "{id}\t{} ({}, {})",
+                            s.name.replace(['\t', '\r', '\n'], " "),
+                            s.kind,
                             s.state
-                        ))
-                        .unwrap_or(false)
-                    {
-                        break;
+                        ));
                     }
                 }
             }
         }
         "ups" => {
-            if let Ok(rows) = ctx.db.all_ups().await {
+            if let Ok(rows) = db.all_ups().await {
                 for u in rows {
                     let id = u.up_id.to_string();
-                    if matches_prefix(&id, &u.name)
-                        && !write_stdout_line(&format!(
+                    if matches_prefix(&id, &u.name) {
+                        out.push(format!(
                             "{id}\t{} ({})",
-                            u.name.replace('\t', " "),
+                            u.name.replace(['\t', '\r', '\n'], " "),
                             u.state
-                        ))
-                        .unwrap_or(false)
-                    {
-                        break;
+                        ));
                     }
                 }
             }
         }
         "accounts" => {
-            if let Ok(rows) = ctx.db.all_accounts().await {
+            if let Ok(rows) = db.all_accounts().await {
                 for a in rows {
                     let id = a.account_id.to_string();
-                    if matches_prefix(&id, &a.name)
-                        && !write_stdout_line(&format!(
+                    if matches_prefix(&id, &a.name) {
+                        out.push(format!(
                             "{id}\t{} ({})",
-                            a.name.replace('\t', " "),
+                            a.name.replace(['\t', '\r', '\n'], " "),
                             a.state
-                        ))
-                        .unwrap_or(false)
-                    {
-                        break;
+                        ));
                     }
                 }
             }
         }
         "medias" => {
-            if let Ok(rows) = ctx.db.all_medias().await {
-                for m in rows.into_iter().take(200) {
-                    if (matches_prefix(&m.bv_id, &m.title)
-                        || matches_prefix(&m.id.to_string(), &m.title))
-                        && !write_stdout_line(&format!(
-                            "{}\t{}",
-                            m.bv_id,
-                            m.title.replace('\t', " ")
-                        ))
-                        .unwrap_or(false)
-                    {
-                        break;
-                    }
+            if let Ok(rows) = db.all_medias().await {
+                for m in rows
+                    .into_iter()
+                    .filter(|m| {
+                        matches_prefix(&m.bv_id, &m.title)
+                            || matches_prefix(&m.id.to_string(), &m.title)
+                    })
+                    .take(200)
+                {
+                    out.push(format!(
+                        "{}\t{}",
+                        m.bv_id,
+                        m.title.replace(['\t', '\r', '\n'], " ")
+                    ));
                 }
             }
         }
         _ => {}
+    }
+    out
+}
+
+pub async fn run_dynamic_complete(
+    runtime: RuntimeOptions,
+    kind: &str,
+    prefix: &str,
+) -> AppResult<()> {
+    let Ok(ctx) = AppContext::open_read_only(runtime).await else {
+        return Ok(());
+    };
+    for line in dynamic_complete_lines(&ctx.db, kind, prefix).await {
+        if !write_stdout_line(&line).unwrap_or(false) {
+            break;
+        }
     }
     Ok(())
 }
@@ -1265,7 +1875,7 @@ async fn dispatch(cmd: &mut Command, matches: ArgMatches) -> AppResult<()> {
     match matches.subcommand() {
         Some(("completion", sub)) => {
             let shell = *sub
-                .get_one::<Shell>("shell")
+                .get_one::<CompletionShell>("shell")
                 .ok_or_else(|| AppError::usage(anyhow!("missing required <shell> argument")))?;
             let bin_name = sub
                 .get_one::<String>("bin-name")
@@ -1528,6 +2138,10 @@ async fn dispatch(cmd: &mut Command, matches: ArgMatches) -> AppResult<()> {
             )
             .await
         }
+        Some(("download", sub)) => {
+            let opts = parse_download_options(sub)?;
+            download(runtime, opts).await
+        }
         Some(("like", sub)) => {
             let raw_targets = collect_strings(sub, "targets");
             let mut read_stdin = sub.get_flag("stdin");
@@ -1563,7 +2177,15 @@ async fn dispatch(cmd: &mut Command, matches: ArgMatches) -> AppResult<()> {
         }
         Some(("doctor", sub)) => {
             let ctx = AppContext::open_read_only(runtime).await?;
-            doctor(&ctx, resolve_format(sub), sub.get_flag("offline")).await
+            doctor_with_options(
+                &ctx,
+                DoctorOptions {
+                    format: resolve_format(sub),
+                    offline: sub.get_flag("offline"),
+                    output_dir: sub.get_one::<PathBuf>("output").cloned(),
+                },
+            )
+            .await
         }
         Some(("media", sub)) => {
             let ctx = AppContext::open_read_write(runtime, false).await?;
@@ -1579,6 +2201,8 @@ async fn dispatch(cmd: &mut Command, matches: ArgMatches) -> AppResult<()> {
                             skipped: s.get_flag("skipped"),
                             completed: s.get_flag("completed"),
                             missing: s.get_flag("missing"),
+                            include_inactive: s.get_flag("include-inactive"),
+                            output_dir: s.get_one::<PathBuf>("output").cloned(),
                             all: s.get_flag("all"),
                             dry_run: s.get_flag("dry-run"),
                         },
@@ -1663,27 +2287,328 @@ mod tests {
     }
 
     #[test]
+    fn new_download_pull_sync_fetch_list_doctor_media_flags_parse_cleanly() {
+        // `fav download` / `fav dl` full flag coverage + numeric qn + `-` stdin
+        let m = build_command()
+            .try_get_matches_from([
+                "fav",
+                "dl",
+                "BV1Q541167Qg",
+                "-",
+                "--page",
+                "1,3-5",
+                "--audio-only",
+                "--audio-format",
+                "mp3",
+                "--quality",
+                "120",
+                "--codec",
+                "h265",
+                "-o",
+                "./out",
+                "-j",
+                "2",
+                "--limit-rate",
+                "2M",
+                "--force",
+                "--anonymous",
+                "--dry-run",
+                "--ignore-errors",
+            ])
+            .unwrap();
+        assert_eq!(m.subcommand_name(), Some("download"));
+        let opts = parse_download_options(m.subcommand_matches("download").unwrap()).unwrap();
+        assert_eq!(opts.targets, vec!["BV1Q541167Qg"]);
+        assert!(opts.read_stdin);
+        assert_eq!(opts.pages.as_deref(), Some("1,3-5"));
+        assert!(!opts.all_pages);
+        assert!(opts.sound_only);
+        assert_eq!(opts.audio_format, Some(AudioFormat::Mp3));
+        assert_eq!(opts.clarity, Some(VideoClarity::FourK));
+        assert_eq!(opts.codec, Some(VideoCodec::Hevc));
+        assert_eq!(opts.output_dir, Some(PathBuf::from("./out")));
+        assert_eq!(opts.jobs, Some(2));
+        assert_eq!(opts.limit_rate, Some(2 * 1024 * 1024));
+        assert!(opts.force);
+        assert!(opts.anonymous);
+        assert!(opts.dry_run);
+        assert!(opts.ignore_errors);
+
+        // `--page` conflicts with `--all-pages`
+        assert!(
+            build_command()
+                .try_get_matches_from([
+                    "fav",
+                    "download",
+                    "BV1Q541167Qg",
+                    "--page",
+                    "1",
+                    "--all-pages"
+                ])
+                .is_err()
+        );
+
+        // `--audio-format` requires `--sound-only`
+        assert!(
+            build_command()
+                .try_get_matches_from(["fav", "download", "BV1Q541167Qg", "--audio-format", "flac"])
+                .is_err()
+        );
+        assert!(
+            build_command()
+                .try_get_matches_from(["fav", "pull", "--audio-format", "opus"])
+                .is_err()
+        );
+
+        // `--all-pages` + canonical clarity name
+        let m = build_command()
+            .try_get_matches_from([
+                "fav",
+                "download",
+                "https://www.bilibili.com/video/BV1Q541167Qg/?p=2",
+                "--all-pages",
+                "--clarity",
+                "1080p60",
+            ])
+            .unwrap();
+        let opts = parse_download_options(m.subcommand_matches("download").unwrap()).unwrap();
+        assert!(opts.all_pages);
+        assert_eq!(opts.clarity, Some(VideoClarity::P1080HighFrame));
+
+        // `pull` and `sync` accept new stream + recheck flags
+        let m = build_command()
+            .try_get_matches_from([
+                "fav",
+                "pull",
+                "--sound-only",
+                "--audio-format",
+                "opus",
+                "--clarity",
+                "80",
+                "--codec",
+                "av1",
+                "--recheck",
+            ])
+            .unwrap();
+        let pull_opts = parse_pull_options(m.subcommand_matches("pull").unwrap(), true).unwrap();
+        assert!(pull_opts.sound_only);
+        assert_eq!(pull_opts.audio_format, Some(AudioFormat::Opus));
+        assert_eq!(pull_opts.clarity, Some(VideoClarity::P1080));
+        assert_eq!(pull_opts.codec, Some(VideoCodec::Av1));
+        assert!(pull_opts.recheck);
+
+        let m = build_command()
+            .try_get_matches_from([
+                "fav",
+                "sync",
+                "--refresh-status",
+                "--clarity",
+                "720p",
+                "--codec",
+                "h264",
+                "--recheck",
+            ])
+            .unwrap();
+        let sync_sub = m.subcommand_matches("sync").unwrap();
+        assert!(parse_fetch_options(sync_sub).full);
+        let sync_pull = parse_pull_options(sync_sub, false).unwrap();
+        assert_eq!(sync_pull.clarity, Some(VideoClarity::P720));
+        assert_eq!(sync_pull.codec, Some(VideoCodec::Avc));
+        assert!(sync_pull.recheck);
+
+        // `ls set --kind`
+        let m = build_command()
+            .try_get_matches_from(["fav", "ls", "set", "--kind", "season"])
+            .unwrap();
+        let list_opts = parse_list_options(
+            m.subcommand_matches("list")
+                .unwrap()
+                .subcommand_matches("set")
+                .unwrap(),
+        );
+        assert_eq!(list_opts.kind.as_deref(), Some("season"));
+        assert!(
+            build_command()
+                .try_get_matches_from(["fav", "ls", "set", "--kind", "invalid"])
+                .is_err()
+        );
+
+        // `doctor -o` and `media reset -o`
+        let m = build_command()
+            .try_get_matches_from(["fav", "doctor", "--offline", "-o", "/tmp/videos"])
+            .unwrap();
+        assert_eq!(
+            m.subcommand_matches("doctor")
+                .unwrap()
+                .get_one::<PathBuf>("output"),
+            Some(&PathBuf::from("/tmp/videos"))
+        );
+
+        let m = build_command()
+            .try_get_matches_from([
+                "fav",
+                "media",
+                "reset",
+                "--missing",
+                "--include-inactive",
+                "-o",
+                "/tmp/videos",
+            ])
+            .unwrap();
+        let reset_m = m
+            .subcommand_matches("media")
+            .unwrap()
+            .subcommand_matches("reset")
+            .unwrap();
+        assert_eq!(
+            reset_m.get_one::<PathBuf>("output"),
+            Some(&PathBuf::from("/tmp/videos"))
+        );
+        assert!(reset_m.get_flag("include-inactive"));
+
+        // `completion nushell` and alias `nu` and `powershell`
+        for (arg, expected) in [
+            ("nushell", CompletionShell::Nushell),
+            ("nu", CompletionShell::Nushell),
+            ("powershell", CompletionShell::PowerShell),
+            ("pwsh", CompletionShell::PowerShell),
+        ] {
+            let m = build_command()
+                .try_get_matches_from(["fav", "completion", arg])
+                .unwrap();
+            let shell = *m
+                .subcommand_matches("completion")
+                .unwrap()
+                .get_one::<CompletionShell>("shell")
+                .unwrap();
+            assert_eq!(shell, expected);
+        }
+    }
+
+    #[test]
     fn completion_scripts_wire_dynamic_wrappers_and_respect_static_flag() {
         let mut cmd = build_command();
-        let bash_dyn = generate_completion_script(&mut cmd, Shell::Bash, "fav", false);
+
+        // Bash dynamic & static + -C forwarding + new value-taking flags
+        let bash_dyn = generate_completion_script(&mut cmd, CompletionShell::Bash, "fav", false);
         assert!(bash_dyn.contains("_fav_with_dynamic()"));
         assert!(bash_dyn.contains("complete -F _fav_with_dynamic"));
-        assert!(bash_dyn.contains("fav __complete"));
+        assert!(bash_dyn.contains("dir_args=(-C"));
+        assert!(bash_dyn.contains("--clarity|--quality|--codec|--audio-format|--page"));
+        assert!(bash_dyn.contains("--kind"));
+        assert!(bash_dyn.contains("__complete"));
+        assert!(bash_dyn.contains("1080p60"));
 
-        let bash_static = generate_completion_script(&mut cmd, Shell::Bash, "fav", true);
+        let bash_static = generate_completion_script(&mut cmd, CompletionShell::Bash, "fav", true);
         assert!(!bash_static.contains("_fav_with_dynamic"));
+        assert!(bash_static.contains("1080p60"));
 
-        let zsh_dyn = generate_completion_script(&mut cmd, Shell::Zsh, "fav", false);
+        // Zsh dynamic & static + -C forwarding
+        let zsh_dyn = generate_completion_script(&mut cmd, CompletionShell::Zsh, "fav", false);
         assert!(zsh_dyn.contains("_fav_with_dynamic()"));
         assert!(zsh_dyn.contains("compdef _fav_with_dynamic fav"));
         assert!(!zsh_dyn.contains("compdef _fav fav"));
+        assert!(zsh_dyn.contains("dir_args=(-C"));
+        assert!(zsh_dyn.contains("--clarity|--quality|--codec|--audio-format|--page"));
 
-        let zsh_static = generate_completion_script(&mut cmd, Shell::Zsh, "fav", true);
+        let zsh_static = generate_completion_script(&mut cmd, CompletionShell::Zsh, "fav", true);
         assert!(!zsh_static.contains("_fav_with_dynamic"));
         assert!(zsh_static.contains("compdef _fav fav"));
 
-        let fish_dyn = generate_completion_script(&mut cmd, Shell::Fish, "fav", false);
-        assert!(fish_dyn.contains("fav __complete sets"));
+        // Fish dynamic & static + -C forwarding
+        let fish_dyn = generate_completion_script(&mut cmd, CompletionShell::Fish, "fav", false);
+        assert!(fish_dyn.contains("function __fish_fav_complete"));
+        assert!(fish_dyn.contains("set dir_args -C"));
+        assert!(fish_dyn.contains("fav $dir_args __complete $kind"));
+        assert!(fish_dyn.contains("__fish_fav_complete sets"));
+        assert!(fish_dyn.contains("--clarity --quality --codec --audio-format --page"));
         assert!(fish_dyn.contains("-l set"));
+
+        let fish_static = generate_completion_script(&mut cmd, CompletionShell::Fish, "fav", true);
+        assert!(!fish_static.contains("__fish_fav_complete"));
+
+        // PowerShell genuine dynamic Register-ArgumentCompleter + -C forwarding + static fallback
+        let ps_dyn =
+            generate_completion_script(&mut cmd, CompletionShell::PowerShell, "fav", false);
+        assert!(ps_dyn.contains("$__fav_static_fav = {"));
+        assert!(ps_dyn.contains("Register-ArgumentCompleter -Native -CommandName 'fav'"));
+        assert!(ps_dyn.contains("$dirArgs = @('-C'"));
+        assert!(ps_dyn.contains("& 'fav' @dirArgs __complete $kind $wordToComplete"));
+        assert!(ps_dyn.contains("[System.Management.Automation.CompletionResult]::new("));
+        assert!(ps_dyn.contains("& $__fav_static_fav $wordToComplete $commandAst $cursorPosition"));
+        assert!(ps_dyn.contains("'--clarity'"));
+        assert!(ps_dyn.contains("'--audio-format'"));
+
+        let ps_static =
+            generate_completion_script(&mut cmd, CompletionShell::PowerShell, "fav", true);
+        assert!(!ps_static.contains("$__fav_static_fav"));
+        assert!(!ps_static.contains("@dirArgs __complete"));
+        assert!(ps_static.contains("Register-ArgumentCompleter"));
+
+        // Nushell dynamic & static
+        let nu_dyn = generate_completion_script(&mut cmd, CompletionShell::Nushell, "fav", false);
+        assert!(nu_dyn.contains("def \"nu-complete fav sets\" []"));
+        assert!(nu_dyn.contains("def \"nu-complete fav ups\" []"));
+        assert!(nu_dyn.contains("def \"nu-complete fav accounts\" []"));
+        assert!(nu_dyn.contains("def \"nu-complete fav medias\" []"));
+        assert!(
+            nu_dyn
+                .contains("^fav __complete sets \"\" | lines | parse \"{value}\\t{description}\"")
+        );
+        assert!(nu_dyn.contains("@\"nu-complete fav sets\""));
+        assert!(nu_dyn.contains("@\"nu-complete fav ups\""));
+        assert!(nu_dyn.contains("@\"nu-complete fav accounts\""));
+        assert!(nu_dyn.contains("@\"nu-complete fav medias\""));
+
+        let nu_static = generate_completion_script(&mut cmd, CompletionShell::Nushell, "fav", true);
+        assert!(!nu_static.contains("nu-complete fav sets"));
+        assert!(nu_static.contains("export extern"));
+
+        // Elvish still generates cleanly
+        let elvish = generate_completion_script(&mut cmd, CompletionShell::Elvish, "fav", false);
+        assert!(!elvish.is_empty());
+    }
+
+    #[tokio::test]
+    async fn dynamic_complete_medias_filters_before_limit_past_200() {
+        use crate::{
+            entity::media,
+            state::{MediaState, MediaType},
+        };
+
+        let db = Db::open_in_memory().await.unwrap();
+        let rows: Vec<media::Model> = (1..=260)
+            .map(|i| media::Model {
+                id: i,
+                bv_id: format!("BV1test{i:06}"),
+                title: if i == 245 {
+                    "Needle Special Target\tWithTab".to_owned()
+                } else {
+                    format!("Ordinary Video {i}")
+                },
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Pending.to_string(),
+                retry_count: 0,
+                last_error: None,
+                updated_at: None,
+            })
+            .collect();
+        db.upsert_medias(rows).await.unwrap();
+
+        // Unfiltered still caps cleanly at 200 results
+        let all = dynamic_complete_lines(&db, "medias", "").await;
+        assert_eq!(all.len(), 200);
+
+        // Filtering finds media #245 (past the 200 cap!) by BVID, AID, and title substring
+        let by_bvid = dynamic_complete_lines(&db, "medias", "BV1test000245").await;
+        assert_eq!(by_bvid.len(), 1);
+        assert_eq!(by_bvid[0], "BV1test000245\tNeedle Special Target WithTab");
+
+        let by_aid = dynamic_complete_lines(&db, "medias", "245").await;
+        assert!(by_aid.iter().any(|l| l.starts_with("BV1test000245\t")));
+
+        let by_title = dynamic_complete_lines(&db, "medias", "needle special").await;
+        assert_eq!(by_title.len(), 1);
+        assert_eq!(by_title[0], "BV1test000245\tNeedle Special Target WithTab");
     }
 }

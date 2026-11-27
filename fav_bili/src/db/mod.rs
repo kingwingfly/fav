@@ -181,14 +181,39 @@ pub(crate) fn now_unix() -> i64 {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use sea_orm::{DatabaseBackend, Statement};
 
     use super::*;
     use crate::{
-        entity::{account, media, media_set, media_up, set, up},
+        entity::{account, media, media_set, media_up, set, set_account, up, up_account},
         error::{ExitKind, classify_anyhow},
-        state::{AccountState, MediaPageState, MediaState, MediaType, SetState, UpState},
+        state::{AccountState, MediaPageState, MediaState, MediaType, SetKind, SetState, UpState},
     };
+
+    fn sample_set(id: i64, name: &str, count: i64, state: SetState) -> set::Model {
+        set::Model {
+            set_id: id,
+            name: name.to_owned(),
+            count,
+            state: state.to_string(),
+            kind: SetKind::Created.to_string(),
+            owner_mid: None,
+            sync_complete: false,
+            resume_page: None,
+        }
+    }
+
+    fn sample_up(id: i64, name: &str, state: UpState) -> up::Model {
+        up::Model {
+            up_id: id,
+            name: name.to_owned(),
+            state: state.to_string(),
+            sync_complete: false,
+            resume_page: None,
+        }
+    }
 
     fn sample_account(id: i64, state: AccountState) -> account::Model {
         account::Model {
@@ -356,14 +381,9 @@ mod tests {
         db.upsert_medias(medias).await.unwrap();
         assert_eq!(db.all_medias().await.unwrap().len(), count as usize);
 
-        db.upsert_sets([set::Model {
-            set_id: 1,
-            name: "Huge Set".to_owned(),
-            count,
-            state: SetState::Active.to_string(),
-        }])
-        .await
-        .unwrap();
+        db.upsert_sets([sample_set(1, "Huge Set", count, SetState::Active)])
+            .await
+            .unwrap();
 
         let links: Vec<_> = (1..=count)
             .map(|id| media_set::Model { id, set_id: 1 })
@@ -386,56 +406,28 @@ mod tests {
         // Set 20: orphan (no account link) -> should be pruned
         // Set 30: inactive & linked to account 1 -> medias only in set 30 are inactive
         db.upsert_sets([
-            set::Model {
-                set_id: 10,
-                name: "ActiveSet".to_owned(),
-                count: 1,
-                state: SetState::Active.to_string(),
-            },
-            set::Model {
-                set_id: 20,
-                name: "OrphanSet".to_owned(),
-                count: 1,
-                state: SetState::Active.to_string(),
-            },
-            set::Model {
-                set_id: 30,
-                name: "InactiveSet".to_owned(),
-                count: 2,
-                state: SetState::Inactive.to_string(),
-            },
+            sample_set(10, "ActiveSet", 1, SetState::Active),
+            sample_set(20, "OrphanSet", 1, SetState::Active),
+            sample_set(30, "InactiveSet", 2, SetState::Inactive),
         ])
         .await
         .unwrap();
         db.sync_account_sets(
             1,
             vec![
-                set::Model {
-                    set_id: 10,
-                    name: "ActiveSet".to_owned(),
-                    count: 1,
-                    state: SetState::Active.to_string(),
-                },
-                set::Model {
-                    set_id: 30,
-                    name: "InactiveSet".to_owned(),
-                    count: 2,
-                    state: SetState::Inactive.to_string(),
-                },
+                sample_set(10, "ActiveSet", 1, SetState::Active),
+                sample_set(30, "InactiveSet", 2, SetState::Inactive),
             ],
+            true,
         )
         .await
         .unwrap();
 
         // Up 50: unfollowed, linked ONLY to media 200 (which will be pruned!)
         // Because prune runs sets -> medias -> ups, up 50 MUST be pruned in ONE pass!
-        db.upsert_ups([up::Model {
-            up_id: 50,
-            name: "OrphanUp".to_owned(),
-            state: UpState::Inactive.to_string(),
-        }])
-        .await
-        .unwrap();
+        db.upsert_ups([sample_up(50, "OrphanUp", UpState::Inactive)])
+            .await
+            .unwrap();
 
         // Media 100: in ActiveSet -> keep
         // Media 200: Pending, only in InactiveSet + OrphanUp -> prune!
@@ -500,16 +492,8 @@ mod tests {
             .await
             .unwrap();
 
-        let u1 = up::Model {
-            up_id: 1,
-            name: "u1".to_owned(),
-            state: UpState::Inactive.to_string(),
-        };
-        let u2 = up::Model {
-            up_id: 2,
-            name: "u2".to_owned(),
-            state: UpState::Inactive.to_string(),
-        };
+        let u1 = sample_up(1, "u1", UpState::Inactive);
+        let u2 = sample_up(2, "u2", UpState::Inactive);
         db.sync_account_ups(1, vec![u1.clone(), u2], true)
             .await
             .unwrap();
@@ -526,14 +510,9 @@ mod tests {
         assert!(db.get_up_ids_of_account(1).await.unwrap().is_empty());
 
         // Unlink stale media_set entries
-        db.upsert_sets([set::Model {
-            set_id: 7,
-            name: "S".to_owned(),
-            count: 2,
-            state: SetState::Active.to_string(),
-        }])
-        .await
-        .unwrap();
+        db.upsert_sets([sample_set(7, "S", 2, SetState::Active)])
+            .await
+            .unwrap();
         db.upsert_medias([
             sample_media(1, MediaState::Pending),
             sample_media(2, MediaState::Pending),
@@ -557,10 +536,12 @@ mod tests {
         db.upsert_account(sample_account(1, AccountState::Active))
             .await
             .unwrap();
-        db.upsert_ups([up::Model {
+        db.upsert_ups([sample_up(9, "CoolUp", UpState::Active)])
+            .await
+            .unwrap();
+        db.upsert_up_accounts([up_account::Model {
             up_id: 9,
-            name: "CoolUp".to_owned(),
-            state: UpState::Active.to_string(),
+            account_id: 1,
         }])
         .await
         .unwrap();
@@ -585,6 +566,8 @@ mod tests {
             1,
             "P1".to_owned(),
             "1-Title 1(1)-P1.mp4".to_owned(),
+            Some(4096),
+            Some(999_001),
         )
         .await
         .unwrap();
@@ -594,7 +577,11 @@ mod tests {
         let pages = db.pages_for_media(1).await.unwrap();
         assert_eq!(pages.len(), 2);
         assert_eq!(pages[0].state, MediaPageState::Completed.as_str());
+        assert_eq!(pages[0].file_size, Some(4096));
+        assert_eq!(pages[0].file_inode, Some(999_001));
         assert_eq!(pages[1].state, MediaPageState::Failed.as_str());
+        assert_eq!(pages[1].file_size, None);
+        assert_eq!(pages[1].file_inode, None);
         assert_eq!(db.all_completed_pages().await.unwrap().len(), 1);
 
         // Failure tracking + reset + skip
@@ -650,5 +637,548 @@ mod tests {
         assert_eq!(summary.top_ups.len(), 1);
         assert_eq!(summary.top_ups[0].up_id, 9);
         assert_eq!(summary.top_ups[0].media_count, 2);
+    }
+
+    #[tokio::test]
+    async fn migration_3_backfills_sync_complete_for_existing_populated_sets_and_ups() {
+        let mut opts = SqliteConnectOptions::new()
+            .in_memory(true)
+            .foreign_keys(true)
+            .busy_timeout(BUSY_TIMEOUT);
+        opts = opts.disable_statement_logging();
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(opts)
+            .await
+            .unwrap();
+        let conn = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool);
+
+        // Apply only migrations #1 and #2 to simulate an existing v1.3.0 user database.
+        Migrator::up(&conn, Some(2)).await.unwrap();
+
+        for sql in [
+            r#"INSERT INTO "set" (set_id, name, count, state) VALUES (1, 'PopulatedSet', 1, 'Active');"#,
+            r#"INSERT INTO "set" (set_id, name, count, state) VALUES (2, 'EmptySet', 0, 'Inactive');"#,
+            r#"INSERT INTO "up" (up_id, name, state) VALUES (10, 'PopulatedUp', 'Active');"#,
+            r#"INSERT INTO "up" (up_id, name, state) VALUES (20, 'EmptyUp', 'Inactive');"#,
+            r#"INSERT INTO media (id, bv_id, title, type, state, retry_count) VALUES (100, 'BV1backfill001', 'M', 'Video', 'Pending', 0);"#,
+            r#"INSERT INTO media_set (id, set_id) VALUES (100, 1);"#,
+            r#"INSERT INTO media_up (id, up_id) VALUES (100, 10);"#,
+        ] {
+            conn.execute(Statement::from_string(DatabaseBackend::Sqlite, sql))
+                .await
+                .unwrap();
+        }
+
+        // Now apply migration #3.
+        Migrator::up(&conn, None).await.unwrap();
+        let db = Db { conn };
+
+        let s1 = db.get_set(1).await.unwrap();
+        assert_eq!(s1.kind, SetKind::Created.as_str());
+        assert_eq!(s1.owner_mid, None);
+        assert!(s1.sync_complete);
+        assert_eq!(s1.resume_page, None);
+
+        let s2 = db.get_set(2).await.unwrap();
+        assert_eq!(s2.kind, SetKind::Created.as_str());
+        assert!(!s2.sync_complete);
+        assert_eq!(s2.resume_page, None);
+
+        let u10 = db.get_up(10).await.unwrap();
+        assert!(u10.sync_complete);
+        assert_eq!(u10.resume_page, None);
+
+        let u20 = db.get_up(20).await.unwrap();
+        assert!(!u20.sync_complete);
+        assert_eq!(u20.resume_page, None);
+    }
+
+    #[tokio::test]
+    async fn active_media_condition_and_pull_candidates_require_active_account_and_resource() {
+        let db = Db::open_in_memory().await.unwrap();
+
+        db.upsert_account(sample_account(1, AccountState::Active))
+            .await
+            .unwrap();
+        db.upsert_account(sample_account(2, AccountState::Inactive))
+            .await
+            .unwrap();
+
+        // Sets: 10 (Active, acct 1), 11 (Inactive, acct 1), 20 (Active, acct 2), 30 (Active, orphan)
+        db.upsert_sets([
+            sample_set(10, "ActiveSetActiveAcct", 1, SetState::Active),
+            sample_set(11, "InactiveSetActiveAcct", 1, SetState::Inactive),
+            sample_set(20, "ActiveSetInactiveAcct", 1, SetState::Active),
+            sample_set(30, "ActiveSetOrphan", 1, SetState::Active),
+        ])
+        .await
+        .unwrap();
+        db.upsert_set_accounts([
+            set_account::Model {
+                set_id: 10,
+                account_id: 1,
+            },
+            set_account::Model {
+                set_id: 11,
+                account_id: 1,
+            },
+            set_account::Model {
+                set_id: 20,
+                account_id: 2,
+            },
+        ])
+        .await
+        .unwrap();
+
+        // UPs: 100 (Active, acct 1), 101 (Inactive, acct 1), 200 (Active, acct 2), 300 (Active, orphan)
+        db.upsert_ups([
+            sample_up(100, "ActiveUpActiveAcct", UpState::Active),
+            sample_up(101, "InactiveUpActiveAcct", UpState::Inactive),
+            sample_up(200, "ActiveUpInactiveAcct", UpState::Active),
+            sample_up(300, "ActiveUpOrphan", UpState::Active),
+        ])
+        .await
+        .unwrap();
+        db.upsert_up_accounts([
+            up_account::Model {
+                up_id: 100,
+                account_id: 1,
+            },
+            up_account::Model {
+                up_id: 101,
+                account_id: 1,
+            },
+            up_account::Model {
+                up_id: 200,
+                account_id: 2,
+            },
+        ])
+        .await
+        .unwrap();
+
+        // Active-account ownership helpers
+        assert!(db.is_set_owned_by_active_account(10).await.unwrap());
+        assert!(db.is_set_owned_by_active_account(11).await.unwrap());
+        assert!(!db.is_set_owned_by_active_account(20).await.unwrap());
+        assert!(!db.is_set_owned_by_active_account(30).await.unwrap());
+        assert_eq!(
+            db.active_account_set_ids().await.unwrap(),
+            HashSet::from([10, 11])
+        );
+
+        assert!(db.is_up_followed_by_active_account(100).await.unwrap());
+        assert!(db.is_up_followed_by_active_account(101).await.unwrap());
+        assert!(!db.is_up_followed_by_active_account(200).await.unwrap());
+        assert!(!db.is_up_followed_by_active_account(300).await.unwrap());
+        assert_eq!(
+            db.active_account_up_ids().await.unwrap(),
+            HashSet::from([100, 101])
+        );
+
+        // Medias across all combinations + two Completed medias (active vs inactive)
+        db.upsert_medias([
+            sample_media(1, MediaState::Pending),
+            sample_media(2, MediaState::Pending),
+            sample_media(3, MediaState::Pending),
+            sample_media(4, MediaState::Pending),
+            sample_media(5, MediaState::Pending),
+            sample_media(6, MediaState::Pending),
+            sample_media(7, MediaState::Pending),
+            sample_media(8, MediaState::Pending),
+            sample_media(9, MediaState::Completed),
+            sample_media(10, MediaState::Completed),
+        ])
+        .await
+        .unwrap();
+        db.upsert_media_sets([
+            media_set::Model { id: 1, set_id: 10 },
+            media_set::Model { id: 2, set_id: 11 },
+            media_set::Model { id: 5, set_id: 20 },
+            media_set::Model { id: 7, set_id: 30 },
+            media_set::Model { id: 9, set_id: 10 },
+            media_set::Model { id: 10, set_id: 20 },
+        ])
+        .await
+        .unwrap();
+        db.upsert_media_ups([
+            media_up::Model { id: 3, up_id: 100 },
+            media_up::Model { id: 4, up_id: 101 },
+            media_up::Model { id: 6, up_id: 200 },
+            media_up::Model { id: 8, up_id: 300 },
+        ])
+        .await
+        .unwrap();
+
+        // Only medias 1, 3, and 9 are active!
+        let active_ids: Vec<i64> = db
+            .all_active_medias()
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|m| m.id)
+            .collect();
+        assert_eq!(active_ids, vec![1, 3, 9]);
+        assert_eq!(
+            db.active_media_ids().await.unwrap(),
+            HashSet::from([1, 3, 9])
+        );
+        assert_eq!(db.count_active_pending_medias().await.unwrap(), 2);
+        assert_eq!(
+            db.count_active_medias_in_state(MediaState::Completed)
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(db.count_active_media_ids(&[]).await.unwrap(), 0);
+        assert_eq!(
+            db.count_active_media_ids(&[1, 1, 2, 3, 4, 9, 10])
+                .await
+                .unwrap(),
+            3
+        );
+        assert!(db.is_media_active(1).await.unwrap());
+        assert!(db.is_media_active(3).await.unwrap());
+        assert!(db.is_media_active(9).await.unwrap());
+        for inactive_id in [2, 4, 5, 6, 7, 8, 10] {
+            assert!(
+                !db.is_media_active(inactive_id).await.unwrap(),
+                "media {inactive_id} must not be active"
+            );
+        }
+
+        // completed_medias respects active_only
+        let completed_active: Vec<i64> = db
+            .completed_medias(true)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|m| m.id)
+            .collect();
+        assert_eq!(completed_active, vec![9]);
+        let completed_all: Vec<i64> = db
+            .completed_medias(false)
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|m| m.id)
+            .collect();
+        assert_eq!(completed_all, vec![9, 10]);
+
+        // pull_candidates ALWAYS enforces active_media_condition even with explicit ids / set_id / up_id!
+        let all_pull: Vec<i64> = db
+            .pull_candidates(&PullFilter::default())
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|m| m.id)
+            .collect();
+        assert_eq!(all_pull, vec![1, 3]);
+
+        let by_ids: Vec<i64> = db
+            .pull_candidates(&PullFilter {
+                ids: vec![1, 2, 5, 6, 7, 8],
+                ..Default::default()
+            })
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|m| m.id)
+            .collect();
+        assert_eq!(by_ids, vec![1]);
+
+        assert!(
+            db.pull_candidates(&PullFilter {
+                set_id: Some(20),
+                ..Default::default()
+            })
+            .await
+            .unwrap()
+            .is_empty(),
+            "active set owned by inactive account must return no pull candidates"
+        );
+        assert!(
+            db.pull_candidates(&PullFilter {
+                set_id: Some(11),
+                ..Default::default()
+            })
+            .await
+            .unwrap()
+            .is_empty(),
+            "inactive set must return no pull candidates"
+        );
+        assert!(
+            db.pull_candidates(&PullFilter {
+                up_id: Some(200),
+                ..Default::default()
+            })
+            .await
+            .unwrap()
+            .is_empty(),
+            "active UP followed by inactive account must return no pull candidates"
+        );
+        let active_up_pull: Vec<i64> = db
+            .pull_candidates(&PullFilter {
+                up_id: Some(100),
+                ..Default::default()
+            })
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|m| m.id)
+            .collect();
+        assert_eq!(active_up_pull, vec![3]);
+
+        // Deactivating account 1 immediately hides medias 1, 3, and 9!
+        db.deactivate_account(1).await.unwrap();
+        assert!(db.all_active_medias().await.unwrap().is_empty());
+        assert!(
+            db.pull_candidates(&PullFilter {
+                ids: vec![1, 3],
+                force: true,
+                ..Default::default()
+            })
+            .await
+            .unwrap()
+            .is_empty()
+        );
+        assert!(!db.is_media_active(1).await.unwrap());
+        assert!(!db.is_set_owned_by_active_account(10).await.unwrap());
+        assert!(!db.is_up_followed_by_active_account(100).await.unwrap());
+    }
+
+    #[tokio::test]
+    async fn set_kind_filter_sync_progress_cursors_and_unlink_stale() {
+        let db = Db::open_in_memory().await.unwrap();
+        db.upsert_account(sample_account(1, AccountState::Active))
+            .await
+            .unwrap();
+
+        let s1 = set::Model {
+            set_id: 1,
+            name: "MyFav".to_owned(),
+            count: 10,
+            state: SetState::Inactive.to_string(),
+            kind: SetKind::Created.to_string(),
+            owner_mid: Some(1),
+            sync_complete: false,
+            resume_page: None,
+        };
+        let s2 = set::Model {
+            set_id: 2,
+            name: "CollectedFolder".to_owned(),
+            count: 5,
+            state: SetState::Inactive.to_string(),
+            kind: SetKind::Collected.to_string(),
+            owner_mid: Some(999),
+            sync_complete: false,
+            resume_page: None,
+        };
+        let s3 = set::Model {
+            set_id: 3,
+            name: "VideoSeason".to_owned(),
+            count: 12,
+            state: SetState::Inactive.to_string(),
+            kind: SetKind::Season.to_string(),
+            owner_mid: Some(888),
+            sync_complete: false,
+            resume_page: None,
+        };
+
+        db.sync_account_sets(1, vec![s1.clone(), s2.clone(), s3.clone()], true)
+            .await
+            .unwrap();
+
+        // Filter by SetKind
+        let seasons = db
+            .query_sets(&SetFilter {
+                kind: Some(SetKind::Season),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(seasons.len(), 1);
+        assert_eq!(seasons[0].set_id, 3);
+        assert_eq!(seasons[0].owner_mid, Some(888));
+
+        let collected = db
+            .query_sets(&SetFilter {
+                kind: Some(SetKind::Collected),
+                ..Default::default()
+            })
+            .await
+            .unwrap();
+        assert_eq!(collected.len(), 1);
+        assert_eq!(collected[0].set_id, 2);
+
+        // Activate set 1 and advance sync cursor, then re-upsert via sync_account_sets:
+        // state, sync_complete, and resume_page MUST be preserved while name/count/kind/owner_mid update!
+        db.activate_set(1).await.unwrap();
+        db.set_set_sync_progress(1, false, Some(3)).await.unwrap();
+        let after_cursor = db.get_set(1).await.unwrap();
+        assert!(!after_cursor.sync_complete);
+        assert_eq!(after_cursor.resume_page, Some(3));
+
+        let mut updated_s1 = s1.clone();
+        updated_s1.name = "RenamedFav".to_owned();
+        updated_s1.count = 15;
+        updated_s1.owner_mid = Some(42);
+        // unlink_stale = false must NOT drop s2 or s3
+        let unlinked = db
+            .sync_account_sets(1, vec![updated_s1], false)
+            .await
+            .unwrap();
+        assert!(unlinked.is_empty());
+        assert_eq!(db.get_set_ids_of_account(1).await.unwrap().len(), 3);
+
+        let reloaded = db.get_set(1).await.unwrap();
+        assert_eq!(reloaded.name, "RenamedFav");
+        assert_eq!(reloaded.count, 15);
+        assert_eq!(reloaded.owner_mid, Some(42));
+        assert_eq!(reloaded.state, SetState::Active.as_str());
+        assert!(!reloaded.sync_complete);
+        assert_eq!(reloaded.resume_page, Some(3));
+
+        // Mark sync complete and unlink stale sets when unlink_stale = true
+        db.set_set_sync_progress(1, true, None).await.unwrap();
+        let completed_set = db.get_set(1).await.unwrap();
+        assert!(completed_set.sync_complete);
+        assert_eq!(completed_set.resume_page, None);
+
+        let unlinked = db.sync_account_sets(1, vec![s1], true).await.unwrap();
+        assert_eq!(unlinked.len(), 2);
+        assert_eq!(db.get_set_ids_of_account(1).await.unwrap(), vec![1]);
+
+        // UP sync progress cursor + preservation on upsert_ups
+        db.upsert_ups([sample_up(50, "Creator", UpState::Inactive)])
+            .await
+            .unwrap();
+        db.activate_up(50).await.unwrap();
+        db.set_up_sync_progress(50, false, Some(4)).await.unwrap();
+        db.upsert_ups([sample_up(50, "CreatorRenamed", UpState::Inactive)])
+            .await
+            .unwrap();
+        let reloaded_up = db.get_up(50).await.unwrap();
+        assert_eq!(reloaded_up.name, "CreatorRenamed");
+        assert_eq!(reloaded_up.state, UpState::Active.as_str());
+        assert!(!reloaded_up.sync_complete);
+        assert_eq!(reloaded_up.resume_page, Some(4));
+
+        db.set_up_sync_progress(50, true, None).await.unwrap();
+        let done_up = db.get_up(50).await.unwrap();
+        assert!(done_up.sync_complete);
+        assert_eq!(done_up.resume_page, None);
+
+        // Unknown IDs return clear errors
+        assert!(db.set_set_sync_progress(99999, true, None).await.is_err());
+        assert!(db.set_up_sync_progress(99999, true, None).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn media_page_relink_surgical_reset_and_batch_pages_query() {
+        let db = Db::open_in_memory().await.unwrap();
+        db.upsert_medias([
+            sample_media(1, MediaState::Completed),
+            sample_media(2, MediaState::Completed),
+        ])
+        .await
+        .unwrap();
+
+        db.mark_page_completed(
+            1,
+            101,
+            1,
+            "P1".to_owned(),
+            "1-Title 1(1)-P1.mp4".to_owned(),
+            Some(1000),
+            Some(111),
+        )
+        .await
+        .unwrap();
+        db.mark_page_completed(
+            1,
+            102,
+            2,
+            "P2".to_owned(),
+            "1-Title 1(2)-P2.mp4".to_owned(),
+            Some(2000),
+            Some(222),
+        )
+        .await
+        .unwrap();
+        db.mark_page_completed(
+            2,
+            201,
+            1,
+            "Only".to_owned(),
+            "2-Title 2.mp4".to_owned(),
+            Some(3000),
+            Some(333),
+        )
+        .await
+        .unwrap();
+
+        // Batch query across multiple media IDs is deterministically ordered
+        assert!(db.pages_for_media_ids(&[]).await.unwrap().is_empty());
+        let batched = db.pages_for_media_ids(&[2, 1]).await.unwrap();
+        let keys: Vec<(i64, i64)> = batched.iter().map(|p| (p.media_id, p.cid)).collect();
+        assert_eq!(keys, vec![(1, 101), (1, 102), (2, 201)]);
+
+        // Relink relocated file updates local_path, file_size, and file_inode
+        db.update_page_local_path(
+            1,
+            101,
+            "renamed/my_video.mp4".to_owned(),
+            Some(1024),
+            Some(444),
+        )
+        .await
+        .unwrap();
+        let p1 = db
+            .pages_for_media(1)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|p| p.cid == 101)
+            .unwrap();
+        assert_eq!(p1.local_path.as_deref(), Some("renamed/my_video.mp4"));
+        assert_eq!(p1.file_size, Some(1024));
+        assert_eq!(p1.file_inode, Some(444));
+        assert_eq!(p1.state, MediaPageState::Completed.as_str());
+
+        assert!(
+            db.update_page_local_path(999, 999, "nope.mp4".to_owned(), None, None)
+                .await
+                .is_err()
+        );
+
+        // Surgical per-page reset leaves P1 of media 1 and P1 of media 2 Completed!
+        assert_eq!(db.reset_specific_pages(&[]).await.unwrap(), 0);
+        let reset_count = db
+            .reset_specific_pages(&[(1, 102), (1, 102)])
+            .await
+            .unwrap();
+        assert_eq!(reset_count, 1);
+
+        let m1_pages = db.pages_for_media(1).await.unwrap();
+        assert_eq!(m1_pages[0].cid, 101);
+        assert_eq!(m1_pages[0].state, MediaPageState::Completed.as_str());
+        assert_eq!(
+            m1_pages[0].local_path.as_deref(),
+            Some("renamed/my_video.mp4")
+        );
+        assert_eq!(m1_pages[0].file_size, Some(1024));
+        assert_eq!(m1_pages[0].file_inode, Some(444));
+
+        assert_eq!(m1_pages[1].cid, 102);
+        assert_eq!(m1_pages[1].state, MediaPageState::Pending.as_str());
+        assert_eq!(m1_pages[1].local_path, None);
+        assert_eq!(m1_pages[1].downloaded_at, None);
+        assert_eq!(m1_pages[1].file_size, None);
+        assert_eq!(m1_pages[1].file_inode, None);
+
+        let m2_pages = db.pages_for_media(2).await.unwrap();
+        assert_eq!(m2_pages[0].state, MediaPageState::Completed.as_str());
+        assert_eq!(m2_pages[0].file_inode, Some(333));
     }
 }
