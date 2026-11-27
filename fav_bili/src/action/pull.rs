@@ -60,13 +60,23 @@ enum MediaOutcome {
     Cancelled,
 }
 
+pub(crate) fn resolve_sound_only(ctx: &AppContext, opts: &PullOptions) -> AppResult<bool> {
+    let sound_only = ctx.effective_sound_only(opts.sound_only);
+    if opts.audio_format.is_some() && !sound_only {
+        return Err(AppError::usage(anyhow!(
+            "--audio-format requires --sound-only (or `sound_only = true` in config.toml)."
+        )));
+    }
+    Ok(sound_only)
+}
+
 pub async fn pull(ctx: &AppContext, opts: PullOptions) -> AppResult<()> {
     let target_entries = resolve_target_entries(&opts.targets)?;
     validate_pull_scope(ctx, &opts, &target_entries).await?;
     let target_aids: Vec<i64> = target_entries.iter().map(|(_, aid)| *aid).collect();
 
     let output_dir = ctx.effective_output_dir(opts.output_dir.as_deref());
-    let sound_only = ctx.effective_sound_only(opts.sound_only);
+    let sound_only = resolve_sound_only(ctx, &opts)?;
     let audio_format = ctx.effective_audio_format(opts.audio_format);
     let clarity = ctx.effective_clarity(opts.clarity);
     let codec = ctx.effective_codec(opts.codec);
@@ -1892,5 +1902,75 @@ mod tests {
             ctx.db.get_media(701).await.unwrap().state,
             MediaState::Pending.as_str()
         );
+    }
+
+    #[tokio::test]
+    async fn pull_audio_format_validation_respects_config_sound_only() {
+        // Without `--sound-only` and without `config.sound_only = true`: rejected with Usage.
+        let (_tmp, ctx) = make_ctx().await;
+        let err = pull(
+            &ctx,
+            PullOptions {
+                audio_format: Some(AudioFormat::Mp3),
+                dry_run: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.kind(), ExitKind::Usage);
+        assert!(err.to_string().contains("--sound-only"));
+        assert!(err.to_string().contains("sound_only = true"));
+
+        // Explicit `config.sound_only = Some(false)` also rejects `--audio-format` without CLI `--sound-only`.
+        let tmp_false = tempfile::tempdir().unwrap();
+        let ws_false = Workspace::new(tmp_false.path().to_path_buf());
+        ws_false.ensure_dirs().unwrap();
+        let ctx_false = AppContext::for_test(
+            ws_false,
+            Config {
+                sound_only: Some(false),
+                ..Default::default()
+            },
+            Db::open_in_memory().await.unwrap(),
+            Arc::new(MockMuxer::succeeding()),
+            BiliClientConfig::default(),
+        );
+        let err = pull(
+            &ctx_false,
+            PullOptions {
+                audio_format: Some(AudioFormat::Opus),
+                dry_run: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.kind(), ExitKind::Usage);
+
+        // With `config.sound_only = Some(true)`: `--audio-format` is accepted without CLI `--sound-only`.
+        let tmp_true = tempfile::tempdir().unwrap();
+        let ws_true = Workspace::new(tmp_true.path().to_path_buf());
+        ws_true.ensure_dirs().unwrap();
+        let ctx_true = AppContext::for_test(
+            ws_true,
+            Config {
+                sound_only: Some(true),
+                ..Default::default()
+            },
+            Db::open_in_memory().await.unwrap(),
+            Arc::new(MockMuxer::succeeding()),
+            BiliClientConfig::default(),
+        );
+        pull(
+            &ctx_true,
+            PullOptions {
+                audio_format: Some(AudioFormat::Flac),
+                dry_run: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
     }
 }
