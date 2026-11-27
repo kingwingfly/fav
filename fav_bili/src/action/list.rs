@@ -38,6 +38,24 @@ pub struct ListOptions {
     pub limit: Option<u64>,
 }
 
+impl ListOptions {
+    /// Returns `true` when any filtering option is active.
+    pub fn has_filters(&self) -> bool {
+        self.state.as_deref().is_some_and(|s| !s.trim().is_empty())
+            || self.kind.as_deref().is_some_and(|s| !s.trim().is_empty())
+            || self.set_id.is_some()
+            || self.up_id.is_some()
+            || self.account_id.is_some()
+            || self.active_only
+            || self.inactive_only
+            || self
+                .media_type
+                .as_deref()
+                .is_some_and(|s| !s.trim().is_empty())
+            || self.search.as_deref().is_some_and(|s| !s.trim().is_empty())
+    }
+}
+
 fn parse_sort_spec(raw: Option<&str>) -> Option<(String, bool)> {
     let s = raw?.trim();
     if s.is_empty() {
@@ -382,21 +400,27 @@ pub async fn render_list(
     }
 }
 
+fn empty_list_hint(kind: ListKind, opts: &ListOptions, count: usize) -> Option<&'static str> {
+    if count != 0 || opts.format != OutputFormat::Table || opts.has_filters() {
+        return None;
+    }
+    Some(match kind {
+        ListKind::Account => {
+            "Run `fav auth login` or `fav auth usecookies --stdin` to add an account."
+        }
+        ListKind::Set => "Run `fav fetch` to discover favorite sets.",
+        ListKind::Up => "Run `fav fetch` to discover followed UPs.",
+        ListKind::Media => "Activate a set or UP (`fav activate set`) and run `fav fetch`.",
+    })
+}
+
 /// Execute `fav list <kind>` and print the formatted output to `stdout`.
 pub async fn list(ctx: &AppContext, kind: ListKind, opts: ListOptions) -> AppResult<()> {
     let (rendered, count) = render_list(ctx, kind, &opts).await?;
     if !rendered.is_empty() || matches!(opts.format, OutputFormat::Json | OutputFormat::Table) {
         write_stdout_line(&rendered).map_err(AppError::runtime)?;
     }
-    if count == 0 && opts.format == OutputFormat::Table {
-        let hint = match kind {
-            ListKind::Account => {
-                "Run `fav auth login` or `fav auth usecookies --stdin` to add an account."
-            }
-            ListKind::Set => "Run `fav fetch` to discover favorite sets.",
-            ListKind::Up => "Run `fav fetch` to discover followed UPs.",
-            ListKind::Media => "Activate a set or UP (`fav activate set`) and run `fav fetch`.",
-        };
+    if let Some(hint) = empty_list_hint(kind, &opts, count) {
         ctx.hint(hint);
     }
     Ok(())
@@ -415,6 +439,131 @@ mod tests {
         error::ExitKind,
         muxer::test_support::MockMuxer,
     };
+
+    const ALL_KINDS: [ListKind; 4] = [
+        ListKind::Account,
+        ListKind::Set,
+        ListKind::Up,
+        ListKind::Media,
+    ];
+
+    #[test]
+    fn empty_list_hint_returned_for_unfiltered_empty_table() {
+        let default_opts = ListOptions::default();
+        assert!(!default_opts.has_filters());
+        assert_eq!(
+            empty_list_hint(ListKind::Account, &default_opts, 0),
+            Some("Run `fav auth login` or `fav auth usecookies --stdin` to add an account.")
+        );
+        assert_eq!(
+            empty_list_hint(ListKind::Set, &default_opts, 0),
+            Some("Run `fav fetch` to discover favorite sets.")
+        );
+        assert_eq!(
+            empty_list_hint(ListKind::Up, &default_opts, 0),
+            Some("Run `fav fetch` to discover followed UPs.")
+        );
+        assert_eq!(
+            empty_list_hint(ListKind::Media, &default_opts, 0),
+            Some("Activate a set or UP (`fav activate set`) and run `fav fetch`.")
+        );
+
+        let non_filter_opts = ListOptions {
+            wide: true,
+            state: Some("   ".to_owned()),
+            kind: Some(String::new()),
+            media_type: Some(" \t ".to_owned()),
+            search: Some("  ".to_owned()),
+            sort: Some("id".to_owned()),
+            limit: Some(10),
+            ..Default::default()
+        };
+        assert!(!non_filter_opts.has_filters());
+        for kind in ALL_KINDS {
+            assert!(empty_list_hint(kind, &non_filter_opts, 0).is_some());
+        }
+    }
+
+    #[test]
+    fn empty_list_hint_suppressed_when_filters_active() {
+        let filtered_cases = [
+            ListOptions {
+                state: Some("pending".to_owned()),
+                ..Default::default()
+            },
+            ListOptions {
+                kind: Some("created".to_owned()),
+                ..Default::default()
+            },
+            ListOptions {
+                set_id: Some(1),
+                ..Default::default()
+            },
+            ListOptions {
+                up_id: Some(2),
+                ..Default::default()
+            },
+            ListOptions {
+                account_id: Some(3),
+                ..Default::default()
+            },
+            ListOptions {
+                active_only: true,
+                ..Default::default()
+            },
+            ListOptions {
+                inactive_only: true,
+                ..Default::default()
+            },
+            ListOptions {
+                media_type: Some("video".to_owned()),
+                ..Default::default()
+            },
+            ListOptions {
+                search: Some("rust".to_owned()),
+                ..Default::default()
+            },
+        ];
+
+        for opts in &filtered_cases {
+            assert!(opts.has_filters(), "expected has_filters() for {opts:?}");
+            for kind in ALL_KINDS {
+                assert_eq!(
+                    empty_list_hint(kind, opts, 0),
+                    None,
+                    "expected no hint for {kind:?} with {opts:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn empty_list_hint_suppressed_when_non_empty_or_non_table() {
+        let default_opts = ListOptions::default();
+        for kind in ALL_KINDS {
+            assert_eq!(empty_list_hint(kind, &default_opts, 1), None);
+        }
+
+        for format in [
+            OutputFormat::Json,
+            OutputFormat::Jsonl,
+            OutputFormat::Tsv,
+            OutputFormat::Ids,
+        ] {
+            let opts = ListOptions {
+                format,
+                ..Default::default()
+            };
+            assert!(!opts.has_filters());
+            for kind in ALL_KINDS {
+                assert_eq!(
+                    empty_list_hint(kind, &opts, 0),
+                    None,
+                    "expected no hint for {kind:?} in format {format:?}"
+                );
+            }
+        }
+    }
 
     #[tokio::test]
     async fn list_sets_displays_and_filters_by_kind() {
