@@ -27,13 +27,15 @@ Commands:
   activate    Activate accounts, favorite sets, or UPs for syncing [alias: active, a]
   deactivate  Deactivate accounts, favorite sets, or UPs [alias: d]
   fetch       Fetch metadata of followed UPs, favorite sets, and medias [alias: f]
-  pull        Download and mux pending medias [alias: p]
+  pull        Download and mux pending medias from activated sets/UPs (use `fav download` for untracked videos) [alias: p]
   sync        Fetch metadata and pull pending medias in one command [alias: s]
+  download    Download arbitrary Bilibili videos/audio without modifying the workspace DB [alias: dl]
   like        Like (or unlike) Bilibili medias by BVID/AID/URL, set, or stdin
   status      Show workspace summary, media counts, and top UPs
   doctor      Diagnose workspace DB, permissions, ffmpeg, disk sync, and account cookies
   media       Manage tracked media states (reset or skip)
   schedule    Generate (or install) user-level recurring sync schedules
+  config      Inspect effective workspace/global configuration and config file paths
   completion  Generate shell completion scripts (with optional dynamic DB completion)
   help        Print this message or the help of the given subcommand(s)
 
@@ -83,11 +85,23 @@ fav -C /data/bilibili sync
 fav ls media --state pending --format json
 fav ls media --set 123456789 --format ids
 
-# Targeted pull & state recovery
+# Targeted pull, quality/audio selection & disk recovery
 fav pull BV17x411w7KC
-fav pull --set 123456789 --jobs 4 --limit-rate 5M
+fav pull --set 123456789 --jobs 4 --limit-rate 5M --clarity 1080p --codec hevc
+fav pull --sound-only --audio-format mp3
+fav pull --recheck
 fav media reset --failed
+fav media reset --missing
 fav media skip 170001
+
+# Untracked one-off downloads (`fav download` / `fav dl`, supports BVID/URL/`?p=N`/`b23.tv`)
+fav dl BV1Q541167Qg
+fav dl "https://www.bilibili.com/video/BV1Q541167Qg/?p=2" --sound-only --audio-format flac
+fav dl "https://b23.tv/example" --anonymous
+
+# Inspect effective configuration
+fav config show
+fav config path
 
 # Like medias by set, BVID/URL, or piped IDs
 fav like --set 123456789
@@ -101,14 +115,15 @@ fav completion fish > ~/.config/fish/completions/fav.fish
 fav completion bash > ~/.local/share/bash-completion/completions/fav
 fav completion zsh > ~/.zfunc/_fav
 fav completion powershell | Out-String | Invoke-Expression
+fav completion nushell | save -f ~/.config/nushell/fav.nu
 
-# Generate/install periodic sync timers (systemd, launchd, task-scheduler)
+# Generate/install periodic sync timers (systemd, launchd, task-scheduler; use --name for multiple workspaces)
 fav schedule --target systemd --interval 3h --install
 ```
 
 ### Configuration
 
-`fav` merges `~/.config/fav/config.toml` with `<workspace>/.fav/config.toml` (supporting `output_dir`, `jobs`, `limit_rate`, `prune`, `no_progress`, `color`, `ffmpeg_path`, and `api_concurrency`).
+`fav` merges `~/.config/fav/config.toml` with `<workspace>/.fav/config.toml` (supporting `output_dir`, `tmp_dir`, `jobs`, `api_concurrency`, `limit_rate`, `clarity`/`quality`, `codec`, `sound_only`, `audio_format`, `recheck`, `prune`, `no_progress`, `color`, and `ffmpeg_path`). Run `fav config show` to inspect effective settings and provenance.
 
 ## License
 
