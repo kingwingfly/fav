@@ -173,6 +173,7 @@ pub async fn pull(ctx: &AppContext, opts: PullOptions) -> AppResult<()> {
         codec,
         limit_rate,
         try_look: false,
+        ephemeral_staging: false,
     });
     let global_cancel = CancellationToken::new();
 
