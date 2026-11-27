@@ -281,8 +281,24 @@ impl PickerState {
     fn handle_key(&mut self, key: Key, visible_rows: usize) -> PickerAction {
         let filtered = self.filtered_indices();
         match key {
-            Key::Enter => return PickerAction::Confirm,
-            Key::Escape | Key::Char('\x03') => return PickerAction::Cancel,
+            Key::Enter => {
+                if self.selected_count() == 0
+                    && let Some(&item_idx) = filtered.get(self.cursor)
+                {
+                    self.selected[item_idx] = true;
+                }
+                return PickerAction::Confirm;
+            }
+            Key::Escape => {
+                if !self.filter.is_empty() {
+                    self.filter.clear();
+                    self.cursor = 0;
+                    self.scroll = 0;
+                } else {
+                    return PickerAction::Cancel;
+                }
+            }
+            Key::Char('\x03') => return PickerAction::Cancel,
             Key::ArrowUp | Key::Char('\x10') => {
                 if !filtered.is_empty() {
                     if self.cursor == 0 {
@@ -440,7 +456,7 @@ fn render_frame(
     let mut lines = Vec::new();
 
     let header = format!(
-        "{} ({}/{} selected)  [↑↓ move, Tab/Space toggle, Ctrl-A all, Enter confirm, Esc cancel]",
+        "{} ({}/{} selected)  [↑↓ move, Tab toggle, Ctrl-A all, Enter confirm, Esc clear/cancel]",
         title,
         state.selected_count(),
         state.items.len()
@@ -642,6 +658,99 @@ mod tests {
         assert_eq!(state.selected_ids(), vec![1002, 1004]);
 
         assert_eq!(state.handle_key(Key::Enter, 10), PickerAction::Confirm);
+        // First Escape clears non-empty filter without losing selections
+        assert_eq!(state.handle_key(Key::Escape, 10), PickerAction::Continue);
+        assert!(state.filter.is_empty());
+        assert_eq!(state.selected_ids(), vec![1002, 1004]);
+        // Second Escape (with empty filter) cancels
         assert_eq!(state.handle_key(Key::Escape, 10), PickerAction::Cancel);
+    }
+
+    #[test]
+    fn picker_enter_fallback_selects_highlighted_only_when_nothing_toggled() {
+        let mut items = sample_items();
+        for item in &mut items {
+            item.selected = false;
+        }
+
+        // 0 toggled, cursor moved to item index 2 (1003) -> Enter selects 1003
+        let mut state = PickerState::new(items.clone());
+        state.handle_key(Key::ArrowDown, 10);
+        state.handle_key(Key::ArrowDown, 10);
+        assert_eq!(state.selected_count(), 0);
+        assert_eq!(state.handle_key(Key::Enter, 10), PickerAction::Confirm);
+        assert_eq!(state.selected_ids(), vec![1003]);
+
+        // 0 toggled, filtered to "rust" ([1001, 1004]), move down to 1004 -> Enter selects 1004
+        let mut state = PickerState::new(items.clone());
+        for ch in "rust".chars() {
+            state.handle_key(Key::Char(ch), 10);
+        }
+        state.handle_key(Key::ArrowDown, 10);
+        assert_eq!(state.handle_key(Key::Enter, 10), PickerAction::Confirm);
+        assert_eq!(state.selected_ids(), vec![1004]);
+
+        // >=1 toggled -> Enter returns ONLY toggled items, NOT cursor item
+        let mut state = PickerState::new(items.clone());
+        state.handle_key(Key::Tab, 10); // toggles 1001
+        state.handle_key(Key::ArrowDown, 10); // cursor on 1002 (untoggled)
+        assert_eq!(state.handle_key(Key::Enter, 10), PickerAction::Confirm);
+        assert_eq!(state.selected_ids(), vec![1001]);
+
+        // 0 toggled, empty filtered list -> Enter returns empty
+        let mut state = PickerState::new(items);
+        for ch in "no-such-match-xyz".chars() {
+            state.handle_key(Key::Char(ch), 10);
+        }
+        assert!(state.filtered_indices().is_empty());
+        assert_eq!(state.handle_key(Key::Enter, 10), PickerAction::Confirm);
+        assert!(state.selected_ids().is_empty());
+    }
+
+    #[test]
+    fn picker_escape_clears_filter_first_and_ctrl_c_cancels_immediately() {
+        let mut state = PickerState::new(sample_items());
+        // Select 1001 in addition to pre-selected 1002
+        state.handle_key(Key::Tab, 10);
+        assert_eq!(state.selected_ids(), vec![1001, 1002]);
+
+        // Filter and move cursor/scroll
+        for ch in "rust".chars() {
+            state.handle_key(Key::Char(ch), 1);
+        }
+        state.handle_key(Key::ArrowDown, 1);
+        assert_eq!(state.cursor, 1);
+        assert_eq!(state.scroll, 1);
+
+        // First Esc clears filter, resets cursor & scroll, preserves selections
+        assert_eq!(state.handle_key(Key::Escape, 1), PickerAction::Continue);
+        assert!(state.filter.is_empty());
+        assert_eq!(state.cursor, 0);
+        assert_eq!(state.scroll, 0);
+        assert_eq!(state.selected_ids(), vec![1001, 1002]);
+
+        // Second Esc with empty filter cancels
+        assert_eq!(state.handle_key(Key::Escape, 1), PickerAction::Cancel);
+
+        // Ctrl-C cancels immediately even when filter is non-empty
+        state.handle_key(Key::Char('r'), 10);
+        assert!(!state.filter.is_empty());
+        assert_eq!(
+            state.handle_key(Key::Char('\x03'), 10),
+            PickerAction::Cancel
+        );
+    }
+
+    #[test]
+    fn picker_render_frame_header_reflects_honest_controls() {
+        let state = PickerState::new(sample_items());
+        let lines = render_frame("Activate sets", &state, 10, 120);
+        let plain_header = console::strip_ansi_codes(&lines[0]);
+        assert!(
+            plain_header
+                .contains("[↑↓ move, Tab toggle, Ctrl-A all, Enter confirm, Esc clear/cancel]"),
+            "unexpected header: {plain_header}"
+        );
+        assert!(!plain_header.contains("Tab/Space"));
     }
 }

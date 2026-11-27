@@ -645,6 +645,9 @@ mod tests {
         assert_eq!(summary.accounts.active, 1);
         assert_eq!(summary.medias.total, 3);
         assert_eq!(summary.medias.pending, 1);
+        assert_eq!(summary.medias.active_pending, 1);
+        assert_eq!(summary.medias.failed, 0);
+        assert_eq!(summary.medias.active_failed, 0);
         assert_eq!(summary.medias.skipped, 1);
         assert_eq!(summary.medias.completed, 1);
         assert_eq!(summary.top_ups.len(), 1);
@@ -788,6 +791,17 @@ mod tests {
             db.active_account_up_ids().await.unwrap(),
             HashSet::from([100, 101])
         );
+        let followed_ups: Vec<i64> = db
+            .query_ups(&UpFilter {
+                followed_only: true,
+                ..Default::default()
+            })
+            .await
+            .unwrap()
+            .into_iter()
+            .map(|u| u.up_id)
+            .collect();
+        assert_eq!(followed_ups, vec![100, 101]);
 
         // Medias across all combinations + two Completed medias (active vs inactive)
         db.upsert_medias([

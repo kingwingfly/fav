@@ -18,6 +18,7 @@ use crate::{
 pub struct UpFilter {
     pub states: Vec<UpState>,
     pub active_only: bool,
+    pub followed_only: bool,
     pub account_id: Option<i64>,
     pub search: Option<String>,
     pub limit: Option<u64>,
@@ -181,6 +182,19 @@ impl Db {
         } else if !filter.states.is_empty() {
             let states: Vec<String> = filter.states.iter().map(|s| s.to_string()).collect();
             query = query.filter(up::Column::State.is_in(states));
+        }
+        if filter.followed_only {
+            let active_accounts = Query::select()
+                .column(account::Column::AccountId)
+                .from(account::Entity)
+                .and_where(Expr::col(account::Column::State).eq(AccountState::Active.as_str()))
+                .to_owned();
+            let sub = Query::select()
+                .column(up_account::Column::UpId)
+                .from(up_account::Entity)
+                .and_where(Expr::col(up_account::Column::AccountId).in_subquery(active_accounts))
+                .to_owned();
+            query = query.filter(up::Column::UpId.in_subquery(sub));
         }
         if let Some(account_id) = filter.account_id {
             let sub = Query::select()
