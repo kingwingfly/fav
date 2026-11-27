@@ -861,15 +861,8 @@ pub async fn fetch(ctx: &AppContext, mut opts: FetchOptions) -> AppResult<()> {
         summary.errors.len()
     );
 
-    if let Ok(status) = ctx.db.status_summary(0).await {
-        if status.sets.active == 0 && status.ups.active == 0 {
-            ctx.hint("Activate sets or UPs with `fav activate set` / `fav activate up`, then run `fav fetch`.");
-        } else if status.medias.pending > 0 {
-            ctx.hint(&format!(
-                "Run `fav pull` to download {} pending media(s) (or `fav status` to inspect).",
-                status.medias.pending
-            ));
-        }
+    if let Some(hint) = build_fetch_hint(ctx).await {
+        ctx.hint(&hint);
     }
 
     if !summary.errors.is_empty() && !opts.ignore_errors {
@@ -884,6 +877,29 @@ pub async fn fetch(ctx: &AppContext, mut opts: FetchOptions) -> AppResult<()> {
         )));
     }
     Ok(())
+}
+
+async fn build_fetch_hint(ctx: &AppContext) -> Option<String> {
+    let status = ctx.db.status_summary(0).await.ok()?;
+    if status.sets.active == 0 && status.ups.active == 0 {
+        return Some(
+            "Activate sets or UPs with `fav activate set` / `fav activate up`, then run `fav fetch`."
+                .to_owned(),
+        );
+    }
+    let active_pending = ctx.db.count_active_pending_medias().await.unwrap_or(0);
+    if active_pending > 0 {
+        Some(format!(
+            "Run `fav pull` to download {active_pending} active pending media(s) (or `fav status` to inspect)."
+        ))
+    } else if status.medias.pending > 0 {
+        Some(format!(
+            "{} pending media(s) belong to inactive sets/UPs; activate them with `fav activate set` / `fav activate up` before pulling.",
+            status.medias.pending
+        ))
+    } else {
+        None
+    }
 }
 
 async fn validate_explicit_targets(ctx: &AppContext, opts: &FetchOptions) -> AppResult<()> {
@@ -2420,5 +2436,109 @@ mod tests {
         .unwrap();
         assert_eq!(*requested.lock().unwrap(), vec![1]);
         assert!(ctx.db.get_media(999).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn fetch_hint_respects_active_pending_scope() {
+        let db = Db::open_in_memory().await.unwrap();
+        db.upsert_account(account::Model {
+            account_id: 1,
+            name: "Alice".to_owned(),
+            cookies: "SESSDATA=ok; bili_jct=csrf".to_owned(),
+            state: AccountState::Active.to_string(),
+            refresh_token: None,
+        })
+        .await
+        .unwrap();
+        db.upsert_sets([
+            set::Model {
+                set_id: 10,
+                name: "ActiveSet".to_owned(),
+                count: 1,
+                state: SetState::Active.to_string(),
+                kind: SetKind::Created.to_string(),
+                owner_mid: Some(1),
+                sync_complete: true,
+                resume_page: None,
+            },
+            set::Model {
+                set_id: 20,
+                name: "InactiveSet".to_owned(),
+                count: 1,
+                state: SetState::Inactive.to_string(),
+                kind: SetKind::Created.to_string(),
+                owner_mid: Some(1),
+                sync_complete: true,
+                resume_page: None,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_set_accounts([
+            set_account::Model {
+                set_id: 10,
+                account_id: 1,
+            },
+            set_account::Model {
+                set_id: 20,
+                account_id: 1,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_medias([
+            media::Model {
+                id: 1,
+                bv_id: "BV17x411w7KC".to_owned(),
+                title: "ActiveCompleted".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Completed.to_string(),
+                retry_count: 0,
+                last_error: None,
+                updated_at: None,
+            },
+            media::Model {
+                id: 2,
+                bv_id: "BV1Q541167Qg".to_owned(),
+                title: "InactivePending".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Pending.to_string(),
+                retry_count: 0,
+                last_error: None,
+                updated_at: None,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_media_sets([
+            media_set::Model { id: 1, set_id: 10 },
+            media_set::Model { id: 2, set_id: 20 },
+        ])
+        .await
+        .unwrap();
+
+        let (_tmp, ctx) = test_ctx_with_cfg(
+            Url::parse("http://127.0.0.1:1").unwrap(),
+            Config::default(),
+            db,
+        );
+
+        // Only inactive media is Pending -> must NOT tell user to run `fav pull`!
+        let inactive_hint = build_fetch_hint(&ctx)
+            .await
+            .expect("expected inactive hint");
+        assert!(
+            !inactive_hint.contains("fav pull"),
+            "inactive-only pending medias must not suggest fav pull: {inactive_hint}"
+        );
+        assert!(inactive_hint.contains("1 pending media(s) belong to inactive sets/UPs"));
+
+        // Activate set 20 -> now 1 active pending media -> suggests `fav pull`!
+        ctx.db.activate_set(20).await.unwrap();
+        let active_hint = build_fetch_hint(&ctx).await.expect("expected active hint");
+        assert!(
+            active_hint.contains("Run `fav pull` to download 1 active pending media(s)"),
+            "unexpected active hint: {active_hint}"
+        );
     }
 }

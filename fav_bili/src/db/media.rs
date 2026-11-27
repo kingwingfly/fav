@@ -1,8 +1,10 @@
+use std::collections::HashSet;
+
 use anyhow::{Context as _, Result, anyhow};
 use sea_orm::{
     ColumnTrait as _, Condition, ConnectionTrait as _, DatabaseBackend, EntityTrait as _,
-    IntoActiveModel as _, QueryFilter as _, QueryOrder as _, QuerySelect as _, Statement,
-    TransactionTrait as _,
+    IntoActiveModel as _, PaginatorTrait as _, QueryFilter as _, QueryOrder as _, QuerySelect as _,
+    Statement, TransactionTrait as _,
     sea_query::{Expr, OnConflict, Query},
 };
 use serde::Serialize;
@@ -491,6 +493,58 @@ impl Db {
             .all(&self.conn)
             .await
             .map_err(Into::into)
+    }
+
+    pub async fn count_active_medias_in_state(&self, state: MediaState) -> Result<u64> {
+        media::Entity::find()
+            .filter(
+                Condition::all()
+                    .add(media::Column::State.eq(state))
+                    .add(active_media_condition()),
+            )
+            .count(&self.conn)
+            .await
+            .map_err(Into::into)
+    }
+
+    pub async fn count_active_pending_medias(&self) -> Result<u64> {
+        self.count_active_medias_in_state(MediaState::Pending).await
+    }
+
+    pub async fn active_media_ids(&self) -> Result<HashSet<i64>> {
+        let ids: Vec<i64> = media::Entity::find()
+            .select_only()
+            .column(media::Column::Id)
+            .filter(active_media_condition())
+            .into_tuple()
+            .all(&self.conn)
+            .await?;
+        Ok(ids.into_iter().collect())
+    }
+
+    pub async fn count_active_media_ids(&self, ids: &[i64]) -> Result<usize> {
+        if ids.is_empty() {
+            return Ok(0);
+        }
+        let unique: Vec<i64> = ids
+            .iter()
+            .copied()
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+        let mut total = 0usize;
+        for chunk in unique.chunks(CHUNK_SIZE) {
+            let cnt = media::Entity::find()
+                .filter(
+                    Condition::all()
+                        .add(media::Column::Id.is_in(chunk.iter().copied()))
+                        .add(active_media_condition()),
+                )
+                .count(&self.conn)
+                .await?;
+            total += cnt as usize;
+        }
+        Ok(total)
     }
 
     pub async fn is_media_active(&self, id: i64) -> Result<bool> {

@@ -66,6 +66,12 @@ impl ReconcileReport {
     }
 }
 
+#[derive(Debug, Clone, Default)]
+pub struct ScopedReconcileReport {
+    pub active: ReconcileReport,
+    pub inactive: ReconcileReport,
+}
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct ReconcileApplied {
     pub relinked_pages: usize,
@@ -223,6 +229,195 @@ struct PendingCheck<'a> {
     is_multipage: bool,
 }
 
+#[derive(Default)]
+struct ReconcileScratch {
+    claimed: HashSet<PathBuf>,
+    tag_cache: HashMap<PathBuf, Option<(i64, i64)>>,
+}
+
+async fn reconcile_slice(
+    completed_medias: &[media::Model],
+    pages_by_media: &HashMap<i64, Vec<media_page::Model>>,
+    muxer: &dyn Muxer,
+    output_dir: &Path,
+    disk_index: &DiskIndex,
+    scratch: &mut ReconcileScratch,
+) -> ReconcileReport {
+    if completed_medias.is_empty() {
+        return ReconcileReport::default();
+    }
+
+    let mut report = ReconcileReport::default();
+    let mut unresolved: Vec<PendingCheck<'_>> = Vec::new();
+    let mut legacy_medias: Vec<&media::Model> = Vec::new();
+
+    // Pass 1 (Layer 1): Exact `local_path` exists and is non-empty.
+    // Run across all pages FIRST so intact pages claim their files before relocation heuristics run.
+    for media_row in completed_medias {
+        let Some(pages) = pages_by_media.get(&media_row.id) else {
+            legacy_medias.push(media_row);
+            continue;
+        };
+        if pages.is_empty() {
+            legacy_medias.push(media_row);
+            continue;
+        }
+        let media_has_multiple_pages = pages.len() > 1;
+        for page in pages {
+            if page.state != MediaPageState::Completed.as_str() {
+                continue;
+            }
+            report.total_checked_pages += 1;
+            let exact_present = page.local_path.as_deref().and_then(|raw| {
+                let candidate = resolve_recorded_path(output_dir, raw);
+                std::fs::metadata(&candidate)
+                    .ok()
+                    .filter(|m| m.is_file() && m.len() > 0)
+                    .map(|_| candidate)
+            });
+            if let Some(present_path) = exact_present {
+                report.verified_pages += 1;
+                scratch.claimed.insert(path_key(&present_path));
+            } else {
+                unresolved.push(PendingCheck {
+                    media: media_row,
+                    page,
+                    is_multipage: media_has_multiple_pages || page.page > 1,
+                });
+            }
+        }
+    }
+
+    // Pass 2 (Layer 2): Same-disk inode match (survives arbitrary rename / move into subdirs).
+    let mut after_layer2: Vec<PendingCheck<'_>> = Vec::new();
+    for item in unresolved {
+        let matched = item
+            .page
+            .file_inode
+            .and_then(|ino| u64::try_from(ino).ok())
+            .and_then(|ino| disk_index.by_inode.get(&ino))
+            .filter(|candidate| !scratch.claimed.contains(&path_key(candidate)));
+
+        if let Some(new_path) = matched {
+            scratch.claimed.insert(path_key(new_path));
+            report
+                .relocated
+                .push(make_relocated(item.page, output_dir, new_path));
+        } else {
+            after_layer2.push(item);
+        }
+    }
+
+    // Pass 3 (Layer 3): Recursive `{aid}` prefix or `{bv_id}` filename match among unclaimed files.
+    let mut after_layer3: Vec<PendingCheck<'_>> = Vec::new();
+    for item in after_layer2 {
+        let mut matched: Option<&PathBuf> = None;
+
+        if let Some(candidates) = disk_index.by_aid_prefix.get(&item.media.id) {
+            matched = candidates.iter().find(|p| {
+                !scratch.claimed.contains(&path_key(p))
+                    && (!item.is_multipage || matches_page_marker(p, item.page.page))
+            });
+        }
+
+        if matched.is_none() && is_real_bvid(&item.media.bv_id) {
+            let bv_lower = item.media.bv_id.to_ascii_lowercase();
+            matched = disk_index
+                .by_bvid_lower
+                .iter()
+                .find(|(name_lower, p)| {
+                    name_lower.contains(&bv_lower)
+                        && !scratch.claimed.contains(&path_key(p))
+                        && (!item.is_multipage || matches_page_marker(p, item.page.page))
+                })
+                .map(|(_, p)| p);
+        }
+
+        if let Some(new_path) = matched {
+            scratch.claimed.insert(path_key(new_path));
+            report
+                .relocated
+                .push(make_relocated(item.page, output_dir, new_path));
+        } else {
+            after_layer3.push(item);
+        }
+    }
+
+    // Pass 4 (Layer 4): Cross-disk rename with changed filename — match by exact file size +
+    // embedded `fav:aid=...;cid=...` comment tag via `muxer.read_comment_tag`.
+    for item in after_layer3 {
+        let mut matched: Option<PathBuf> = None;
+        if let Some(size_u64) = item.page.file_size.and_then(|s| u64::try_from(s).ok())
+            && size_u64 > 0
+            && let Some(candidates) = disk_index.by_size.get(&size_u64)
+        {
+            for candidate in candidates {
+                let key = path_key(candidate);
+                if scratch.claimed.contains(&key) {
+                    continue;
+                }
+                let parsed = if let Some(&cached) = scratch.tag_cache.get(&key) {
+                    cached
+                } else {
+                    let raw_tag = muxer.read_comment_tag(candidate).await.ok().flatten();
+                    let parsed_tag = raw_tag.as_deref().and_then(parse_comment_tag);
+                    scratch.tag_cache.insert(key.clone(), parsed_tag);
+                    parsed_tag
+                };
+                if parsed == Some((item.page.media_id, item.page.cid)) {
+                    matched = Some(candidate.clone());
+                    break;
+                }
+            }
+        }
+
+        if let Some(new_path) = matched {
+            scratch.claimed.insert(path_key(&new_path));
+            report
+                .relocated
+                .push(make_relocated(item.page, output_dir, &new_path));
+        } else {
+            report.missing_pages.push(MissingPage {
+                media_id: item.page.media_id,
+                cid: item.page.cid,
+            });
+        }
+    }
+
+    // Legacy v1.x `Completed` medias with 0 `media_page` rows.
+    for media_row in legacy_medias {
+        report.total_checked_legacy += 1;
+        let mut matched: Option<&PathBuf> =
+            disk_index
+                .by_aid_prefix
+                .get(&media_row.id)
+                .and_then(|list| {
+                    list.iter()
+                        .find(|p| !scratch.claimed.contains(&path_key(p)))
+                });
+
+        if matched.is_none() && is_real_bvid(&media_row.bv_id) {
+            let bv_lower = media_row.bv_id.to_ascii_lowercase();
+            matched = disk_index
+                .by_bvid_lower
+                .iter()
+                .find(|(name_lower, p)| {
+                    name_lower.contains(&bv_lower) && !scratch.claimed.contains(&path_key(p))
+                })
+                .map(|(_, p)| p);
+        }
+
+        if let Some(found_path) = matched {
+            scratch.claimed.insert(path_key(found_path));
+            report.verified_legacy += 1;
+        } else {
+            report.missing_legacy_ids.push(media_row.id);
+        }
+    }
+
+    report
+}
+
 /// Reconcile `Completed` medias in SQLite against files on disk under `output_dir` using
 /// 4 rename-safe layers (exact path -> same-disk inode -> `{aid}`/`{bvid}` recursive scan ->
 /// size-matched embedded `fav:aid=...;cid=...` container tag) plus legacy v1.x media checks.
@@ -253,173 +448,80 @@ pub async fn reconcile_completed_medias(
         .await
         .unwrap_or_default();
 
-    let mut report = ReconcileReport::default();
-    let mut claimed: HashSet<PathBuf> = HashSet::new();
-    let mut unresolved: Vec<PendingCheck<'_>> = Vec::new();
-    let mut legacy_medias: Vec<&media::Model> = Vec::new();
+    let mut scratch = ReconcileScratch::default();
+    Ok(reconcile_slice(
+        &completed_medias,
+        &pages_by_media,
+        muxer,
+        output_dir,
+        &disk_index,
+        &mut scratch,
+    )
+    .await)
+}
 
-    // Pass 1 (Layer 1): Exact `local_path` exists and is non-empty.
-    // Run across all pages FIRST so intact pages claim their files before relocation heuristics run.
-    for media_row in &completed_medias {
-        let Some(pages) = pages_by_media.get(&media_row.id) else {
-            legacy_medias.push(media_row);
-            continue;
-        };
-        if pages.is_empty() {
-            legacy_medias.push(media_row);
-            continue;
-        }
-        let media_has_multiple_pages = pages.len() > 1;
-        for page in pages {
-            if page.state != MediaPageState::Completed.as_str() {
-                continue;
-            }
-            report.total_checked_pages += 1;
-            let exact_present = page.local_path.as_deref().and_then(|raw| {
-                let candidate = resolve_recorded_path(output_dir, raw);
-                std::fs::metadata(&candidate)
-                    .ok()
-                    .filter(|m| m.is_file() && m.len() > 0)
-                    .map(|_| candidate)
-            });
-            if let Some(present_path) = exact_present {
-                report.verified_pages += 1;
-                claimed.insert(path_key(&present_path));
-            } else {
-                unresolved.push(PendingCheck {
-                    media: media_row,
-                    page,
-                    is_multipage: media_has_multiple_pages || page.page > 1,
-                });
-            }
-        }
+/// Reconcile active and inactive `Completed` medias in a single disk scan of `output_dir`.
+/// Active medias are reconciled first so `active` matches
+/// `reconcile_completed_medias(..., active_only = true, None)` 1-to-1 and active claims take
+/// priority over inactive medias.
+pub async fn reconcile_completed_medias_scoped(
+    db: &Db,
+    muxer: &dyn Muxer,
+    output_dir: &Path,
+) -> Result<ScopedReconcileReport> {
+    let all_completed = db.completed_medias(false).await?;
+    if all_completed.is_empty() {
+        return Ok(ScopedReconcileReport::default());
     }
 
-    // Pass 2 (Layer 2): Same-disk inode match (survives arbitrary rename / move into subdirs).
-    let mut after_layer2: Vec<PendingCheck<'_>> = Vec::new();
-    for item in unresolved {
-        let matched = item
-            .page
-            .file_inode
-            .and_then(|ino| u64::try_from(ino).ok())
-            .and_then(|ino| disk_index.by_inode.get(&ino))
-            .filter(|candidate| !claimed.contains(&path_key(candidate)));
-
-        if let Some(new_path) = matched {
-            claimed.insert(path_key(new_path));
-            report
-                .relocated
-                .push(make_relocated(item.page, output_dir, new_path));
+    let active_ids = db.active_media_ids().await?;
+    let mut active_medias = Vec::new();
+    let mut inactive_medias = Vec::new();
+    for m in all_completed {
+        if active_ids.contains(&m.id) {
+            active_medias.push(m);
         } else {
-            after_layer2.push(item);
+            inactive_medias.push(m);
         }
     }
 
-    // Pass 3 (Layer 3): Recursive `{aid}` prefix or `{bv_id}` filename match among unclaimed files.
-    let mut after_layer3: Vec<PendingCheck<'_>> = Vec::new();
-    for item in after_layer2 {
-        let mut matched: Option<&PathBuf> = None;
-
-        if let Some(candidates) = disk_index.by_aid_prefix.get(&item.media.id) {
-            matched = candidates.iter().find(|p| {
-                !claimed.contains(&path_key(p))
-                    && (!item.is_multipage || matches_page_marker(p, item.page.page))
-            });
-        }
-
-        if matched.is_none() && is_real_bvid(&item.media.bv_id) {
-            let bv_lower = item.media.bv_id.to_ascii_lowercase();
-            matched = disk_index
-                .by_bvid_lower
-                .iter()
-                .find(|(name_lower, p)| {
-                    name_lower.contains(&bv_lower)
-                        && !claimed.contains(&path_key(p))
-                        && (!item.is_multipage || matches_page_marker(p, item.page.page))
-                })
-                .map(|(_, p)| p);
-        }
-
-        if let Some(new_path) = matched {
-            claimed.insert(path_key(new_path));
-            report
-                .relocated
-                .push(make_relocated(item.page, output_dir, new_path));
-        } else {
-            after_layer3.push(item);
-        }
+    let all_ids: Vec<i64> = active_medias
+        .iter()
+        .chain(inactive_medias.iter())
+        .map(|m| m.id)
+        .collect();
+    let all_pages = db.pages_for_media_ids(&all_ids).await?;
+    let mut pages_by_media: HashMap<i64, Vec<media_page::Model>> = HashMap::new();
+    for page in all_pages {
+        pages_by_media.entry(page.media_id).or_default().push(page);
     }
 
-    // Pass 4 (Layer 4): Cross-disk rename with changed filename — match by exact file size +
-    // embedded `fav:aid=...;cid=...` comment tag via `muxer.read_comment_tag`.
-    let mut tag_cache: HashMap<PathBuf, Option<(i64, i64)>> = HashMap::new();
-    for item in after_layer3 {
-        let mut matched: Option<PathBuf> = None;
-        if let Some(size_u64) = item.page.file_size.and_then(|s| u64::try_from(s).ok())
-            && size_u64 > 0
-            && let Some(candidates) = disk_index.by_size.get(&size_u64)
-        {
-            for candidate in candidates {
-                let key = path_key(candidate);
-                if claimed.contains(&key) {
-                    continue;
-                }
-                let parsed = if let Some(&cached) = tag_cache.get(&key) {
-                    cached
-                } else {
-                    let raw_tag = muxer.read_comment_tag(candidate).await.ok().flatten();
-                    let parsed_tag = raw_tag.as_deref().and_then(parse_comment_tag);
-                    tag_cache.insert(key.clone(), parsed_tag);
-                    parsed_tag
-                };
-                if parsed == Some((item.page.media_id, item.page.cid)) {
-                    matched = Some(candidate.clone());
-                    break;
-                }
-            }
-        }
+    let output_dir_owned = output_dir.to_path_buf();
+    let disk_index = tokio::task::spawn_blocking(move || DiskIndex::scan(&output_dir_owned))
+        .await
+        .unwrap_or_default();
 
-        if let Some(new_path) = matched {
-            claimed.insert(path_key(&new_path));
-            report
-                .relocated
-                .push(make_relocated(item.page, output_dir, &new_path));
-        } else {
-            report.missing_pages.push(MissingPage {
-                media_id: item.page.media_id,
-                cid: item.page.cid,
-            });
-        }
-    }
+    let mut scratch = ReconcileScratch::default();
+    let active = reconcile_slice(
+        &active_medias,
+        &pages_by_media,
+        muxer,
+        output_dir,
+        &disk_index,
+        &mut scratch,
+    )
+    .await;
+    let inactive = reconcile_slice(
+        &inactive_medias,
+        &pages_by_media,
+        muxer,
+        output_dir,
+        &disk_index,
+        &mut scratch,
+    )
+    .await;
 
-    // Legacy v1.x `Completed` medias with 0 `media_page` rows.
-    for media_row in legacy_medias {
-        report.total_checked_legacy += 1;
-        let mut matched: Option<&PathBuf> = disk_index
-            .by_aid_prefix
-            .get(&media_row.id)
-            .and_then(|list| list.iter().find(|p| !claimed.contains(&path_key(p))));
-
-        if matched.is_none() && is_real_bvid(&media_row.bv_id) {
-            let bv_lower = media_row.bv_id.to_ascii_lowercase();
-            matched = disk_index
-                .by_bvid_lower
-                .iter()
-                .find(|(name_lower, p)| {
-                    name_lower.contains(&bv_lower) && !claimed.contains(&path_key(p))
-                })
-                .map(|(_, p)| p);
-        }
-
-        if let Some(found_path) = matched {
-            claimed.insert(path_key(found_path));
-            report.verified_legacy += 1;
-        } else {
-            report.missing_legacy_ids.push(media_row.id);
-        }
-    }
-
-    Ok(report)
+    Ok(ScopedReconcileReport { active, inactive })
 }
 
 /// Apply a [`ReconcileReport`] to SQLite:
@@ -748,5 +850,86 @@ mod tests {
             db.get_media(60).await.unwrap().state,
             MediaState::Pending.as_str()
         );
+    }
+
+    #[tokio::test]
+    async fn scoped_reconcile_partitions_active_and_inactive_in_single_scan() {
+        let tmp = tempfile::tempdir().unwrap();
+        let out_dir = tmp.path().join("videos");
+        std::fs::create_dir_all(&out_dir).unwrap();
+
+        let db = Db::open_in_memory().await.unwrap();
+        seed_completed_media(&db, 10, "BV17x411w7KC", "ActivePresent").await;
+        // Inactive set 20 owned by active account 1
+        db.upsert_sets([set::Model {
+            set_id: 20,
+            name: "InactiveFav".to_owned(),
+            count: 2,
+            state: SetState::Inactive.to_string(),
+            kind: SetKind::Created.to_string(),
+            owner_mid: Some(1),
+            sync_complete: true,
+            resume_page: None,
+        }])
+        .await
+        .unwrap();
+        db.upsert_set_accounts([set_account::Model {
+            set_id: 20,
+            account_id: 1,
+        }])
+        .await
+        .unwrap();
+        db.upsert_medias([
+            media::Model {
+                id: 20,
+                bv_id: "BV1Q541167Qg".to_owned(),
+                title: "InactiveMissingLegacy".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Completed.to_string(),
+                retry_count: 0,
+                last_error: None,
+                updated_at: None,
+            },
+            media::Model {
+                id: 30,
+                bv_id: "BV1xx411c7mD".to_owned(),
+                title: "InactivePresentLegacy".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Completed.to_string(),
+                retry_count: 0,
+                last_error: None,
+                updated_at: None,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_media_sets([
+            media_set::Model { id: 20, set_id: 20 },
+            media_set::Model { id: 30, set_id: 20 },
+        ])
+        .await
+        .unwrap();
+
+        std::fs::write(out_dir.join("10-ActivePresent.mp4"), b"active").unwrap();
+        std::fs::write(out_dir.join("30-InactivePresentLegacy.mp4"), b"inactive").unwrap();
+
+        let muxer = MockMuxer::succeeding();
+        let scoped = reconcile_completed_medias_scoped(&db, &muxer, &out_dir)
+            .await
+            .unwrap();
+        let direct_active = reconcile_completed_medias(&db, &muxer, &out_dir, true, None)
+            .await
+            .unwrap();
+
+        assert_eq!(scoped.active.total_checked(), direct_active.total_checked());
+        assert_eq!(
+            scoped.active.total_verified(),
+            direct_active.total_verified()
+        );
+        assert!(!scoped.active.has_drift());
+        assert_eq!(scoped.active.verified_legacy, 1);
+
+        assert_eq!(scoped.inactive.verified_legacy, 1);
+        assert_eq!(scoped.inactive.missing_legacy_ids, vec![20]);
     }
 }

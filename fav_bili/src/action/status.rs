@@ -4,6 +4,7 @@ use crate::{
     context::AppContext,
     db::StatusSummary,
     error::{AppError, AppResult},
+    state::MediaState,
     table::{
         OutputFormat, TableOptions, format_state_badge, render_ids, render_tsv, table,
         write_stdout_line,
@@ -180,23 +181,205 @@ pub async fn status(ctx: &AppContext, format: OutputFormat, top: usize) -> AppRe
                 return Ok(());
             }
 
-            if s.accounts.total == 0 {
-                ctx.hint("Run `fav auth login` or `fav auth usecookies --stdin` to sign in.");
-            } else if s.sets.active == 0 && s.ups.active == 0 {
-                ctx.hint("No active sets or UPs. Run `fav fetch`, then `fav activate set` (or `fav activate up`).");
-            } else if s.medias.pending > 0 {
-                ctx.hint(&format!(
-                    "{} media(s) pending. Run `fav pull` (or `fav sync`) to download.",
-                    s.medias.pending
-                ));
-            } else if s.medias.failed > 0 {
-                ctx.hint(&format!(
-                    "{} media(s) failed. Run `fav pull --retry-failed` or `fav media reset --failed`.",
-                    s.medias.failed
-                ));
+            if let Some(hint) = build_status_hint(ctx, s).await {
+                ctx.hint(&hint);
             }
         }
     }
 
     Ok(())
+}
+
+async fn build_status_hint(ctx: &AppContext, s: &StatusSummary) -> Option<String> {
+    if s.accounts.total == 0 {
+        return Some(
+            "Run `fav auth login` or `fav auth usecookies --stdin` to sign in.".to_owned(),
+        );
+    }
+    if s.accounts.active == 0 {
+        return Some(
+            "No active accounts. Run `fav activate account` or `fav auth login` first.".to_owned(),
+        );
+    }
+    if s.sets.active == 0 && s.ups.active == 0 {
+        return Some(
+            "No active sets or UPs. Run `fav fetch`, then `fav activate set` (or `fav activate up`)."
+                .to_owned(),
+        );
+    }
+    let active_pending = ctx.db.count_active_pending_medias().await.unwrap_or(0);
+    if active_pending > 0 {
+        return Some(format!(
+            "Run `fav pull` (or `fav sync`) to download {active_pending} active pending media(s)."
+        ));
+    }
+    let active_failed = ctx
+        .db
+        .count_active_medias_in_state(MediaState::Failed)
+        .await
+        .unwrap_or(0);
+    if active_failed > 0 {
+        return Some(format!(
+            "{active_failed} active media(s) failed. Run `fav pull --retry-failed` or `fav media reset --failed`."
+        ));
+    }
+    if s.medias.pending > 0 {
+        return Some(format!(
+            "{} pending media(s) belong to inactive sets/UPs; activate them with `fav activate set` / `fav activate up` before pulling.",
+            s.medias.pending
+        ));
+    }
+    if s.medias.failed > 0 {
+        return Some(format!(
+            "{} failed media(s) belong to inactive sets/UPs; activate them with `fav activate set` / `fav activate up` before retrying.",
+            s.medias.failed
+        ));
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::*;
+    use crate::{
+        api::BiliClientConfig,
+        config::{Config, Workspace},
+        db::Db,
+        entity::{account, media, media_set, set, set_account},
+        muxer::test_support::MockMuxer,
+        state::{AccountState, MediaType, SetKind, SetState},
+    };
+
+    #[tokio::test]
+    async fn status_hint_distinguishes_active_and_inactive_pending_and_failed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ws = Workspace::new(tmp.path().join("ws"));
+        ws.ensure_dirs().unwrap();
+        let db = Db::open_in_memory().await.unwrap();
+
+        db.upsert_account(account::Model {
+            account_id: 1,
+            name: "Alice".to_owned(),
+            cookies: "SESSDATA=s".to_owned(),
+            state: AccountState::Active.to_string(),
+            refresh_token: None,
+        })
+        .await
+        .unwrap();
+        db.upsert_sets([
+            set::Model {
+                set_id: 10,
+                name: "ActiveSet".to_owned(),
+                count: 1,
+                state: SetState::Active.to_string(),
+                kind: SetKind::Created.to_string(),
+                owner_mid: Some(1),
+                sync_complete: true,
+                resume_page: None,
+            },
+            set::Model {
+                set_id: 20,
+                name: "InactiveSet".to_owned(),
+                count: 1,
+                state: SetState::Inactive.to_string(),
+                kind: SetKind::Created.to_string(),
+                owner_mid: Some(1),
+                sync_complete: true,
+                resume_page: None,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_set_accounts([
+            set_account::Model {
+                set_id: 10,
+                account_id: 1,
+            },
+            set_account::Model {
+                set_id: 20,
+                account_id: 1,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_medias([
+            media::Model {
+                id: 1,
+                bv_id: "BV17x411w7KC".to_owned(),
+                title: "ActiveCompleted".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Completed.to_string(),
+                retry_count: 0,
+                last_error: None,
+                updated_at: None,
+            },
+            media::Model {
+                id: 2,
+                bv_id: "BV1Q541167Qg".to_owned(),
+                title: "InactivePending".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Pending.to_string(),
+                retry_count: 0,
+                last_error: None,
+                updated_at: None,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_media_sets([
+            media_set::Model { id: 1, set_id: 10 },
+            media_set::Model { id: 2, set_id: 20 },
+        ])
+        .await
+        .unwrap();
+
+        let ctx = AppContext::for_test(
+            ws,
+            Config::default(),
+            db,
+            Arc::new(MockMuxer::succeeding()),
+            BiliClientConfig::default(),
+        );
+
+        // Only inactive pending -> must NOT tell user to run `fav pull`!
+        let summary = ctx.db.status_summary(0).await.unwrap();
+        let hint = build_status_hint(&ctx, &summary).await.unwrap();
+        assert!(!hint.contains("fav pull"), "unexpected hint: {hint}");
+        assert!(hint.contains("1 pending media(s) belong to inactive sets/UPs"));
+
+        // Mark inactive media as Failed -> must NOT tell user to run `fav pull --retry-failed`!
+        ctx.db.set_media_state(2, MediaState::Failed).await.unwrap();
+        let summary_failed = ctx.db.status_summary(0).await.unwrap();
+        let hint_failed = build_status_hint(&ctx, &summary_failed).await.unwrap();
+        assert!(
+            !hint_failed.contains("fav pull"),
+            "unexpected failed hint: {hint_failed}"
+        );
+        assert!(hint_failed.contains("1 failed media(s) belong to inactive sets/UPs"));
+
+        // Activate set 20 -> active failed -> suggests `fav pull --retry-failed`!
+        ctx.db.activate_set(20).await.unwrap();
+        let summary_active_failed = ctx.db.status_summary(0).await.unwrap();
+        let hint_active_failed = build_status_hint(&ctx, &summary_active_failed)
+            .await
+            .unwrap();
+        assert!(hint_active_failed.contains("1 active media(s) failed"));
+        assert!(hint_active_failed.contains("fav pull --retry-failed"));
+
+        // Reset to Pending -> active pending -> suggests `fav pull`!
+        ctx.db
+            .set_media_state(2, MediaState::Pending)
+            .await
+            .unwrap();
+        let summary_active_pending = ctx.db.status_summary(0).await.unwrap();
+        let hint_active_pending = build_status_hint(&ctx, &summary_active_pending)
+            .await
+            .unwrap();
+        assert!(
+            hint_active_pending
+                .contains("Run `fav pull` (or `fav sync`) to download 1 active pending media(s)")
+        );
+    }
 }

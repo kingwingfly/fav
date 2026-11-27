@@ -8,7 +8,9 @@ use crate::{
     db::{MediaFilter, MediaResetFilter},
     error::{AppError, AppResult},
     id_parse::{MediaIdent, parse_media_idents},
-    reconcile::{apply_reconciliation, reconcile_completed_medias},
+    reconcile::{
+        apply_reconciliation, reconcile_completed_medias, reconcile_completed_medias_scoped,
+    },
     state::MediaState,
 };
 
@@ -21,6 +23,7 @@ pub struct MediaResetOptions {
     pub skipped: bool,
     pub completed: bool,
     pub missing: bool,
+    pub include_inactive: bool,
     pub all: bool,
     pub dry_run: bool,
     pub output_dir: Option<PathBuf>,
@@ -46,6 +49,82 @@ async fn resolve_media_ids(ctx: &AppContext, targets: &[String]) -> AppResult<Ve
     Ok(ids)
 }
 
+async fn collect_non_missing_selector_ids(
+    ctx: &AppContext,
+    opts: &MediaResetOptions,
+    explicit_ids: &[i64],
+) -> AppResult<BTreeSet<i64>> {
+    let mut ids = BTreeSet::new();
+    for &id in explicit_ids {
+        if ctx.db.get_media(id).await.is_ok() {
+            ids.insert(id);
+        }
+    }
+    if opts.all {
+        for m in ctx.db.all_medias().await? {
+            ids.insert(m.id);
+        }
+    } else {
+        let mut states = Vec::new();
+        if opts.failed {
+            states.push(MediaState::Failed);
+        }
+        if opts.expired {
+            states.push(MediaState::Expired);
+        }
+        if opts.permission_denied {
+            states.push(MediaState::PermissionDenied);
+        }
+        if opts.skipped {
+            states.push(MediaState::Skipped);
+        }
+        if opts.completed {
+            states.push(MediaState::Completed);
+        }
+        if !states.is_empty() {
+            for m in ctx
+                .db
+                .query_medias(&MediaFilter {
+                    states,
+                    ..Default::default()
+                })
+                .await?
+            {
+                ids.insert(m.id);
+            }
+        }
+    }
+    Ok(ids)
+}
+
+async fn build_post_reset_hint(
+    ctx: &AppContext,
+    reset_ids: &[i64],
+) -> AppResult<(usize, Option<String>)> {
+    if reset_ids.is_empty() {
+        return Ok((0, None));
+    }
+    let active_reset = ctx.db.count_active_media_ids(reset_ids).await?;
+    let inactive_reset = reset_ids.len().saturating_sub(active_reset);
+    let active_pending = ctx.db.count_active_pending_medias().await?;
+
+    let hint = if active_pending > 0 {
+        if inactive_reset > 0 {
+            Some(format!(
+                "Run `fav pull` to download {active_pending} active pending media(s) ({inactive_reset} reset media(s) belong to inactive sets/UPs; activate them with `fav activate set` / `fav activate up` first)."
+            ))
+        } else {
+            Some("Run `fav pull` to download pending medias.".to_owned())
+        }
+    } else {
+        Some(format!(
+            "{inactive_reset} reset media(s) belong to inactive sets/UPs; activate their set/UP with `fav activate set` / `fav activate up` before pulling."
+        ))
+    };
+
+    Ok((inactive_reset, hint))
+}
+
 pub async fn reset(ctx: &AppContext, opts: MediaResetOptions) -> AppResult<()> {
     let any_selector = !opts.targets.is_empty()
         || opts.failed
@@ -69,59 +148,27 @@ pub async fn reset(ctx: &AppContext, opts: MediaResetOptions) -> AppResult<()> {
         .into_iter()
         .collect();
 
-    let missing_report = if opts.missing {
+    let (missing_report, inactive_missing_medias) = if opts.missing {
         let output_dir = ctx.effective_output_dir(opts.output_dir.as_deref());
-        Some(
-            reconcile_completed_medias(&ctx.db, ctx.muxer.as_ref(), &output_dir, false, None)
-                .await?,
-        )
+        if opts.include_inactive {
+            let rep =
+                reconcile_completed_medias(&ctx.db, ctx.muxer.as_ref(), &output_dir, false, None)
+                    .await?;
+            (Some(rep), 0usize)
+        } else {
+            let scoped =
+                reconcile_completed_medias_scoped(&ctx.db, ctx.muxer.as_ref(), &output_dir).await?;
+            let inactive_missing = scoped.inactive.affected_missing_media_ids().len();
+            (Some(scoped.active), inactive_missing)
+        }
     } else {
-        None
+        (None, 0usize)
     };
 
     if opts.dry_run {
-        let mut preview_ids = BTreeSet::new();
-        for &id in &explicit_ids {
-            if ctx.db.get_media(id).await.is_ok() {
-                preview_ids.insert(id);
-            }
-        }
+        let mut preview_ids = collect_non_missing_selector_ids(ctx, &opts, &explicit_ids).await?;
         if let Some(ref rep) = missing_report {
             preview_ids.extend(rep.affected_missing_media_ids());
-        }
-        if opts.all {
-            for m in ctx.db.all_medias().await? {
-                preview_ids.insert(m.id);
-            }
-        } else {
-            let mut states = Vec::new();
-            if opts.failed {
-                states.push(MediaState::Failed);
-            }
-            if opts.expired {
-                states.push(MediaState::Expired);
-            }
-            if opts.permission_denied {
-                states.push(MediaState::PermissionDenied);
-            }
-            if opts.skipped {
-                states.push(MediaState::Skipped);
-            }
-            if opts.completed {
-                states.push(MediaState::Completed);
-            }
-            if !states.is_empty() {
-                for m in ctx
-                    .db
-                    .query_medias(&MediaFilter {
-                        states,
-                        ..Default::default()
-                    })
-                    .await?
-                {
-                    preview_ids.insert(m.id);
-                }
-            }
         }
         if let Some(ref rep) = missing_report {
             eprintln!(
@@ -131,6 +178,11 @@ pub async fn reset(ctx: &AppContext, opts: MediaResetOptions) -> AppResult<()> {
                 rep.missing_legacy_ids.len(),
                 preview_ids.len()
             );
+            if inactive_missing_medias > 0 {
+                eprintln!(
+                    "Note: {inactive_missing_medias} missing media(s) in inactive sets/UPs skipped (activate their set/UP first or pass --include-inactive)."
+                );
+            }
         } else {
             eprintln!(
                 "Dry run: would reset {} media(s) to Pending.",
@@ -140,7 +192,20 @@ pub async fn reset(ctx: &AppContext, opts: MediaResetOptions) -> AppResult<()> {
         return Ok(());
     }
 
-    let mut total_reset_medias = 0u64;
+    let has_other_selector = !explicit_ids.is_empty()
+        || opts.failed
+        || opts.expired
+        || opts.permission_denied
+        || opts.skipped
+        || opts.completed
+        || opts.all;
+
+    let other_reset_ids = if has_other_selector {
+        collect_non_missing_selector_ids(ctx, &opts, &explicit_ids).await?
+    } else {
+        BTreeSet::new()
+    };
+
     let mut missing_reset_ids = BTreeSet::new();
 
     // 1. Handle `--missing` surgically: relink renamed/moved files and reset ONLY missing pages,
@@ -154,7 +219,17 @@ pub async fn reset(ctx: &AppContext, opts: MediaResetOptions) -> AppResult<()> {
                 applied.relinked_pages
             );
         }
-        total_reset_medias += applied.reset_medias as u64;
+        if !opts.include_inactive && inactive_missing_medias > 0 {
+            if applied.reset_medias == 0 {
+                info!(
+                    "0 active missing media(s) found ({inactive_missing_medias} missing in inactive sets/UPs skipped; activate their set/UP first or pass --include-inactive)."
+                );
+            } else {
+                info!(
+                    "Skipped {inactive_missing_medias} missing media(s) in inactive sets/UPs (activate their set/UP first or pass --include-inactive)."
+                );
+            }
+        }
     }
 
     // 2. Handle explicit targets and state selectors (deduplicating IDs already reset by `--missing`).
@@ -163,14 +238,6 @@ pub async fn reset(ctx: &AppContext, opts: MediaResetOptions) -> AppResult<()> {
         .copied()
         .filter(|id| !missing_reset_ids.contains(id))
         .collect();
-
-    let has_other_selector = !explicit_ids.is_empty()
-        || opts.failed
-        || opts.expired
-        || opts.permission_denied
-        || opts.skipped
-        || opts.completed
-        || opts.all;
 
     if has_other_selector {
         let mut page_reset_ids: BTreeSet<i64> = explicit_ids.iter().copied().collect();
@@ -189,16 +256,25 @@ pub async fn reset(ctx: &AppContext, opts: MediaResetOptions) -> AppResult<()> {
             completed: opts.completed,
             all: opts.all,
         };
-        let other_count = ctx.db.reset_media_states(&filter).await?;
+        ctx.db.reset_media_states(&filter).await?;
         for media_id in page_reset_ids {
             ctx.db.reset_pages_for_media(media_id).await?;
         }
-        total_reset_medias += other_count;
     }
 
-    info!("Reset {total_reset_medias} media(s) to Pending.");
-    if total_reset_medias > 0 {
-        ctx.hint("Run `fav pull` to download pending medias.");
+    let mut all_reset_ids = missing_reset_ids;
+    all_reset_ids.extend(other_reset_ids);
+    let reset_ids_vec: Vec<i64> = all_reset_ids.into_iter().collect();
+
+    info!("Reset {} media(s) to Pending.", reset_ids_vec.len());
+    let (inactive_reset, hint) = build_post_reset_hint(ctx, &reset_ids_vec).await?;
+    if inactive_reset > 0 {
+        info!(
+            "{inactive_reset} reset media(s) belong to inactive sets/UPs and will not be pulled until activated."
+        );
+    }
+    if let Some(msg) = hint {
+        ctx.hint(&msg);
     }
     Ok(())
 }
@@ -225,10 +301,58 @@ mod tests {
         config::{Config, Workspace},
         db::Db,
         downloader::file_size_and_inode,
-        entity::media,
+        entity::{account, media, media_set, set, set_account},
         muxer::test_support::MockMuxer,
-        state::{MediaPageState, MediaType},
+        state::{AccountState, MediaPageState, MediaType, SetKind, SetState},
     };
+
+    async fn seed_active_and_inactive_sets(db: &Db) {
+        db.upsert_account(account::Model {
+            account_id: 1,
+            name: "Alice".to_owned(),
+            cookies: "SESSDATA=s".to_owned(),
+            state: AccountState::Active.to_string(),
+            refresh_token: None,
+        })
+        .await
+        .unwrap();
+        db.upsert_sets([
+            set::Model {
+                set_id: 100,
+                name: "ActiveSet".to_owned(),
+                count: 3,
+                state: SetState::Active.to_string(),
+                kind: SetKind::Created.to_string(),
+                owner_mid: Some(1),
+                sync_complete: true,
+                resume_page: None,
+            },
+            set::Model {
+                set_id: 200,
+                name: "InactiveSet".to_owned(),
+                count: 2,
+                state: SetState::Inactive.to_string(),
+                kind: SetKind::Created.to_string(),
+                owner_mid: Some(1),
+                sync_complete: true,
+                resume_page: None,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_set_accounts([
+            set_account::Model {
+                set_id: 100,
+                account_id: 1,
+            },
+            set_account::Model {
+                set_id: 200,
+                account_id: 1,
+            },
+        ])
+        .await
+        .unwrap();
+    }
 
     #[tokio::test]
     async fn reset_missing_respects_output_dir_relinks_renamed_and_surgically_resets_pages() {
@@ -239,6 +363,7 @@ mod tests {
         std::fs::create_dir_all(&custom_out).unwrap();
 
         let db = Db::open_in_memory().await.unwrap();
+        seed_active_and_inactive_sets(&db).await;
         db.upsert_medias([
             media::Model {
                 id: 10,
@@ -269,6 +394,36 @@ mod tests {
                 retry_count: 0,
                 last_error: None,
                 updated_at: None,
+            },
+            media::Model {
+                id: 40,
+                bv_id: "BV1inactive040".to_owned(),
+                title: "InactiveMissing".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Completed.to_string(),
+                retry_count: 0,
+                last_error: None,
+                updated_at: None,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_media_sets([
+            media_set::Model {
+                id: 10,
+                set_id: 100,
+            },
+            media_set::Model {
+                id: 20,
+                set_id: 100,
+            },
+            media_set::Model {
+                id: 30,
+                set_id: 100,
+            },
+            media_set::Model {
+                id: 40,
+                set_id: 200,
             },
         ])
         .await
@@ -347,7 +502,7 @@ mod tests {
             Some("20-Renamed.mp4")
         );
 
-        // Real reset --missing with `-o custom_out`
+        // Real reset --missing with `-o custom_out` (active-only by default!)
         reset(
             &ctx,
             MediaResetOptions {
@@ -380,10 +535,153 @@ mod tests {
             Some("renamed_BV1Q541167Qg.mp4")
         );
 
-        // Media 30 (legacy v1.x): reset to Pending!
+        // Media 30 (active legacy v1.x): reset to Pending!
         assert_eq!(
             ctx.db.get_media(30).await.unwrap().state,
             MediaState::Pending.as_str()
         );
+
+        // Media 40 (inactive legacy v1.x): SKIPPED by default, remains Completed!
+        assert_eq!(
+            ctx.db.get_media(40).await.unwrap().state,
+            MediaState::Completed.as_str()
+        );
+
+        // Explicit `--include-inactive` resets inactive media 40 too!
+        reset(
+            &ctx,
+            MediaResetOptions {
+                missing: true,
+                include_inactive: true,
+                output_dir: Some(custom_out),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            ctx.db.get_media(40).await.unwrap().state,
+            MediaState::Pending.as_str()
+        );
+    }
+
+    #[tokio::test]
+    async fn post_reset_hint_never_suggests_fav_pull_when_no_active_pending_exist() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ws = Workspace::new(tmp.path().join("ws"));
+        ws.ensure_dirs().unwrap();
+        let custom_out = tmp.path().join("out");
+        std::fs::create_dir_all(&custom_out).unwrap();
+
+        let db = Db::open_in_memory().await.unwrap();
+        seed_active_and_inactive_sets(&db).await;
+        db.upsert_medias([
+            media::Model {
+                id: 50,
+                bv_id: "BV17x411w7KC".to_owned(),
+                title: "InactiveMissing".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Completed.to_string(),
+                retry_count: 0,
+                last_error: None,
+                updated_at: None,
+            },
+            media::Model {
+                id: 60,
+                bv_id: "BV1Q541167Qg".to_owned(),
+                title: "ActiveCompleted".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Completed.to_string(),
+                retry_count: 0,
+                last_error: None,
+                updated_at: None,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_media_sets([
+            media_set::Model {
+                id: 50,
+                set_id: 200,
+            },
+            media_set::Model {
+                id: 60,
+                set_id: 100,
+            },
+        ])
+        .await
+        .unwrap();
+        std::fs::write(custom_out.join("60-ActiveCompleted.mp4"), b"ok").unwrap();
+
+        let ctx = AppContext::for_test(
+            ws,
+            Config::default(),
+            db,
+            Arc::new(MockMuxer::succeeding()),
+            BiliClientConfig::default(),
+        );
+
+        // Default `--missing` finds 0 active missing -> media 50 stays Completed!
+        reset(
+            &ctx,
+            MediaResetOptions {
+                missing: true,
+                output_dir: Some(custom_out.clone()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            ctx.db.get_media(50).await.unwrap().state,
+            MediaState::Completed.as_str()
+        );
+        let (inactive_cnt, none_hint) = build_post_reset_hint(&ctx, &[]).await.unwrap();
+        assert_eq!(inactive_cnt, 0);
+        assert!(none_hint.is_none());
+
+        // Resetting inactive media 50 with `--include-inactive`: 0 active pending -> hint tells user to activate, NEVER `Run fav pull`!
+        reset(
+            &ctx,
+            MediaResetOptions {
+                missing: true,
+                include_inactive: true,
+                output_dir: Some(custom_out),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            ctx.db.get_media(50).await.unwrap().state,
+            MediaState::Pending.as_str()
+        );
+        let (inactive_cnt, inactive_hint) = build_post_reset_hint(&ctx, &[50]).await.unwrap();
+        assert_eq!(inactive_cnt, 1);
+        let msg = inactive_hint.expect("expected inactive activation hint");
+        assert!(
+            !msg.contains("fav pull"),
+            "inactive-only reset must not suggest fav pull: {msg}"
+        );
+        assert!(msg.contains("fav activate set"));
+
+        // Resetting active media 60 -> active pending > 0 -> suggests `fav pull`!
+        ctx.db
+            .set_media_state(60, MediaState::Pending)
+            .await
+            .unwrap();
+        let (inactive_cnt, active_hint) = build_post_reset_hint(&ctx, &[60]).await.unwrap();
+        assert_eq!(inactive_cnt, 0);
+        assert_eq!(
+            active_hint.as_deref(),
+            Some("Run `fav pull` to download pending medias.")
+        );
+
+        // Resetting mixed [50, 60] -> hints active count + notes inactive reset!
+        let (inactive_cnt, mixed_hint) = build_post_reset_hint(&ctx, &[50, 60]).await.unwrap();
+        assert_eq!(inactive_cnt, 1);
+        let mixed_msg = mixed_hint.expect("expected mixed hint");
+        assert!(mixed_msg.contains("Run `fav pull` to download 1 active pending media(s)"));
+        assert!(mixed_msg.contains("1 reset media(s) belong to inactive sets/UPs"));
     }
 }

@@ -987,8 +987,25 @@ async fn cli_binary_end_to_end_help_exit_codes_json_schedule_completion_doctor_a
         .await
         .unwrap();
 
+        db.upsert_set_accounts([
+            set_account::Model {
+                set_id: 100,
+                account_id: 42,
+            },
+            set_account::Model {
+                set_id: 200,
+                account_id: 42,
+            },
+            set_account::Model {
+                set_id: 300,
+                account_id: 42,
+            },
+        ])
+        .await
+        .unwrap();
+
         // Seed 220 medias (media #220 is past index 200 for `__complete medias` filter-before-take check)
-        // plus legacy Completed media 9001 missing from `custom_out`.
+        // plus active legacy Completed media 9001 and inactive legacy Completed media 9002 missing from `custom_out`.
         let mut seed_medias: Vec<media::Model> = (1..=220)
             .map(|i| media::Model {
                 id: i,
@@ -1008,7 +1025,17 @@ async fn cli_binary_end_to_end_help_exit_codes_json_schedule_completion_doctor_a
         seed_medias.push(media::Model {
             id: 9001,
             bv_id: aid_to_bvid(9001).unwrap(),
-            title: "LegacyMissingClip".to_owned(),
+            title: "ActiveLegacyMissingClip".to_owned(),
+            r#type: MediaType::Video.to_string(),
+            state: MediaState::Completed.to_string(),
+            retry_count: 0,
+            last_error: None,
+            updated_at: None,
+        });
+        seed_medias.push(media::Model {
+            id: 9002,
+            bv_id: aid_to_bvid(9002).unwrap(),
+            title: "InactiveLegacyMissingClip".to_owned(),
             r#type: MediaType::Video.to_string(),
             state: MediaState::Completed.to_string(),
             retry_count: 0,
@@ -1016,6 +1043,18 @@ async fn cli_binary_end_to_end_help_exit_codes_json_schedule_completion_doctor_a
             updated_at: None,
         });
         db.upsert_medias(seed_medias).await.unwrap();
+        db.upsert_media_sets([
+            media_set::Model {
+                id: 9001,
+                set_id: 100,
+            },
+            media_set::Model {
+                id: 9002,
+                set_id: 200,
+            },
+        ])
+        .await
+        .unwrap();
     }
 
     let ls_season = Command::new(bin)
@@ -1082,6 +1121,13 @@ async fn cli_binary_end_to_end_help_exit_codes_json_schedule_completion_doctor_a
             .contains("1 missing legacy media"),
         "expected missing legacy media in doctor -o output: {disk_sync}"
     );
+    assert!(
+        disk_sync["detail"]
+            .as_str()
+            .unwrap()
+            .contains("1 missing in inactive sets/UPs ignored"),
+        "expected inactive missing note in doctor -o output: {disk_sync}"
+    );
 
     let reset_o = Command::new(bin)
         .args([
@@ -1105,7 +1151,95 @@ async fn cli_binary_end_to_end_help_exit_codes_json_schedule_completion_doctor_a
         assert_eq!(
             db.get_media(9001).await.unwrap().state,
             MediaState::Pending.as_str(),
-            "media reset --missing -o must reset missing legacy media to Pending"
+            "media reset --missing -o must reset active missing legacy media to Pending"
+        );
+        assert_eq!(
+            db.get_media(9002).await.unwrap().state,
+            MediaState::Completed.as_str(),
+            "media reset --missing -o must skip inactive missing legacy media by default"
+        );
+    }
+
+    // Now ONLY inactive media 9002 is missing -> doctor MUST report `ok` with NO `fav pull --recheck` hint!
+    let doc_inactive_only = Command::new(bin)
+        .args([
+            "-C",
+            ws_dir.path().to_str().unwrap(),
+            "doctor",
+            "--offline",
+            "-o",
+            custom_out.path().to_str().unwrap(),
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(doc_inactive_only.status.success());
+    let doc_checks_ok: serde_json::Value =
+        serde_json::from_slice(&doc_inactive_only.stdout).unwrap();
+    let disk_sync_ok = doc_checks_ok
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["name"] == "disk_sync")
+        .expect("disk_sync check present");
+    assert_eq!(disk_sync_ok["status"], "ok");
+    assert!(
+        disk_sync_ok["hint"].is_null(),
+        "doctor must not hint fav pull --recheck when only inactive items are missing: {disk_sync_ok}"
+    );
+    assert!(
+        disk_sync_ok["detail"]
+            .as_str()
+            .unwrap()
+            .contains("1 missing in inactive sets/UPs ignored"),
+        "expected inactive missing ignored detail: {disk_sync_ok}"
+    );
+
+    // Second `media reset --missing -o` skips 9002, logs 0 active missing, and does NOT emit `Run fav pull` hint.
+    let reset_zero = Command::new(bin)
+        .args([
+            "-C",
+            ws_dir.path().to_str().unwrap(),
+            "media",
+            "reset",
+            "--missing",
+            "-o",
+            custom_out.path().to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(reset_zero.status.success());
+    let reset_zero_stderr = String::from_utf8_lossy(&reset_zero.stderr);
+    assert!(
+        reset_zero_stderr.contains("0 active missing media(s) found"),
+        "expected 0 active missing note in stderr: {reset_zero_stderr}"
+    );
+    assert!(
+        !reset_zero_stderr.contains("Run `fav pull`"),
+        "0 reset medias must not emit fav pull hint: {reset_zero_stderr}"
+    );
+
+    // Passing `--include-inactive` explicitly resets 9002 to Pending.
+    let reset_inc = Command::new(bin)
+        .args([
+            "-C",
+            ws_dir.path().to_str().unwrap(),
+            "media",
+            "reset",
+            "--missing",
+            "--include-inactive",
+            "-o",
+            custom_out.path().to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(reset_inc.status.success());
+    {
+        let db = Db::open_existing(&ws.db_path(), true).await.unwrap();
+        assert_eq!(
+            db.get_media(9002).await.unwrap().state,
+            MediaState::Pending.as_str(),
+            "media reset --missing --include-inactive must reset inactive missing media"
         );
     }
 
@@ -3192,5 +3326,421 @@ async fn temp_staging_uses_configured_tmp_dir_and_download_dot_fav_tmp() {
     assert!(
         !expected_dl_tmp.exists(),
         "<output_dir>/.fav-tmp must be removed when empty"
+    );
+}
+
+#[tokio::test]
+async fn active_scope_consistency_across_doctor_media_reset_status_and_pull_recheck() {
+    let bin = env!("CARGO_BIN_EXE_fav");
+
+    // 1. CLI binary regression test: workspace with ONLY inactive missing Completed & inactive Pending medias.
+    let ws_dir = tempfile::tempdir().unwrap();
+    let out_dir = tempfile::tempdir().unwrap();
+    let ws = Workspace::new(ws_dir.path().to_path_buf());
+    ws.ensure_dirs().unwrap();
+    {
+        let db = Db::open_or_create(&ws.db_path()).await.unwrap();
+        db.upsert_account(account::Model {
+            account_id: 1001,
+            name: "Alice".to_owned(),
+            cookies: "SESSDATA=sess_a; bili_jct=csrf_a".to_owned(),
+            state: AccountState::Active.to_string(),
+            refresh_token: None,
+        })
+        .await
+        .unwrap();
+        db.upsert_sets([
+            set::Model {
+                set_id: 10,
+                name: "ActiveEmpty".to_owned(),
+                count: 0,
+                state: SetState::Active.to_string(),
+                kind: SetKind::Created.to_string(),
+                owner_mid: Some(1001),
+                sync_complete: true,
+                resume_page: None,
+            },
+            set::Model {
+                set_id: 20,
+                name: "InactiveLegacy".to_owned(),
+                count: 2,
+                state: SetState::Inactive.to_string(),
+                kind: SetKind::Created.to_string(),
+                owner_mid: Some(1001),
+                sync_complete: true,
+                resume_page: None,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_set_accounts([
+            set_account::Model {
+                set_id: 10,
+                account_id: 1001,
+            },
+            set_account::Model {
+                set_id: 20,
+                account_id: 1001,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_medias([
+            media::Model {
+                id: 7001,
+                bv_id: aid_to_bvid(7001).unwrap(),
+                title: "InactiveCompletedMissing".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Completed.to_string(),
+                retry_count: 0,
+                last_error: None,
+                updated_at: None,
+            },
+            media::Model {
+                id: 7002,
+                bv_id: aid_to_bvid(7002).unwrap(),
+                title: "InactivePending".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Pending.to_string(),
+                retry_count: 0,
+                last_error: None,
+                updated_at: None,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_media_sets([
+            media_set::Model {
+                id: 7001,
+                set_id: 20,
+            },
+            media_set::Model {
+                id: 7002,
+                set_id: 20,
+            },
+        ])
+        .await
+        .unwrap();
+    }
+
+    // 1a. `fav doctor --offline -o out_dir --json`: disk_sync is OK with NO `fav pull --recheck` hint!
+    let doc = Command::new(bin)
+        .args([
+            "-C",
+            ws_dir.path().to_str().unwrap(),
+            "doctor",
+            "--offline",
+            "-o",
+            out_dir.path().to_str().unwrap(),
+            "--json",
+        ])
+        .output()
+        .unwrap();
+    assert!(doc.status.success());
+    let doc_json: serde_json::Value = serde_json::from_slice(&doc.stdout).unwrap();
+    let disk_sync = doc_json
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|c| c["name"] == "disk_sync")
+        .unwrap();
+    assert_eq!(disk_sync["status"], "ok");
+    assert!(disk_sync["hint"].is_null());
+    assert!(
+        disk_sync["detail"]
+            .as_str()
+            .unwrap()
+            .contains("1 missing in inactive sets/UPs ignored")
+    );
+
+    // 1b. `fav status`: hints that pending media belongs to inactive sets/UPs (NEVER `Run fav pull`)!
+    let st = Command::new(bin)
+        .args(["-C", ws_dir.path().to_str().unwrap(), "status"])
+        .output()
+        .unwrap();
+    assert!(st.status.success());
+    let st_stderr = String::from_utf8_lossy(&st.stderr);
+    assert!(
+        !st_stderr.contains("fav pull"),
+        "status must not suggest fav pull when only inactive medias are pending: {st_stderr}"
+    );
+    assert!(
+        st_stderr.contains("1 pending media(s) belong to inactive sets/UPs"),
+        "expected inactive pending hint in status stderr: {st_stderr}"
+    );
+
+    // 1c. `fav media reset --missing -o`: skips inactive 7001 and prints no `fav pull` hint!
+    let reset_default = Command::new(bin)
+        .args([
+            "-C",
+            ws_dir.path().to_str().unwrap(),
+            "media",
+            "reset",
+            "--missing",
+            "-o",
+            out_dir.path().to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(reset_default.status.success());
+    let reset_default_stderr = String::from_utf8_lossy(&reset_default.stderr);
+    assert!(reset_default_stderr.contains("0 active missing media(s) found"));
+    assert!(!reset_default_stderr.contains("fav pull"));
+    {
+        let db = Db::open_existing(&ws.db_path(), true).await.unwrap();
+        assert_eq!(
+            db.get_media(7001).await.unwrap().state,
+            MediaState::Completed.as_str()
+        );
+    }
+
+    // 1d. `fav pull --recheck -o`: logs explicit 0-missing recheck summary AND inactive pending note!
+    let pull_recheck_noop = Command::new(bin)
+        .args([
+            "-C",
+            ws_dir.path().to_str().unwrap(),
+            "pull",
+            "--recheck",
+            "-o",
+            out_dir.path().to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(
+        pull_recheck_noop.status.success(),
+        "pull --recheck failed: {}",
+        String::from_utf8_lossy(&pull_recheck_noop.stderr)
+    );
+    let pull_stderr = String::from_utf8_lossy(&pull_recheck_noop.stderr);
+    assert!(
+        pull_stderr.contains("Recheck verified 0 active completed item(s) on disk; 0 missing."),
+        "expected clear 0-missing recheck log: {pull_stderr}"
+    );
+    assert!(
+        pull_stderr.contains(
+            "No active pending medias to pull (1 pending media(s) belong to inactive sets/UPs)."
+        ),
+        "expected inactive pending explanation in pull stderr: {pull_stderr}"
+    );
+
+    // 1e. `fav media reset --missing --include-inactive -o`: resets inactive 7001 WITHOUT hinting `fav pull`!
+    let reset_inc = Command::new(bin)
+        .args([
+            "-C",
+            ws_dir.path().to_str().unwrap(),
+            "media",
+            "reset",
+            "--missing",
+            "--include-inactive",
+            "-o",
+            out_dir.path().to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(reset_inc.status.success());
+    let reset_inc_stderr = String::from_utf8_lossy(&reset_inc.stderr);
+    assert!(
+        !reset_inc_stderr.contains("fav pull"),
+        "reset --missing --include-inactive with 0 active pending must not suggest fav pull: {reset_inc_stderr}"
+    );
+    assert!(
+        reset_inc_stderr.contains("belong to inactive sets/UPs"),
+        "expected inactive set/UP hint in stderr: {reset_inc_stderr}"
+    );
+    {
+        let db = Db::open_existing(&ws.db_path(), true).await.unwrap();
+        assert_eq!(
+            db.get_media(7001).await.unwrap().state,
+            MediaState::Pending.as_str()
+        );
+    }
+
+    // 2. Active missing Completed media vs inactive missing Completed media with `pull --recheck`:
+    //    Active missing item IS warned by doctor, reset by `media reset --missing`, AND re-downloaded by `pull --recheck`!
+    let mut state = MockState::default();
+    state
+        .accounts_by_sessdata
+        .insert("sess_a".to_owned(), MockAccount::active(1001, "Alice"));
+    let active_id = 7101;
+    let inactive_id = 7102;
+    state.views.insert(
+        active_id,
+        MockViewResponse::Ok {
+            aid: active_id,
+            bvid: aid_to_bvid(active_id).unwrap(),
+            title: "ActiveRecoverable".to_owned(),
+            owner: MockUp {
+                mid: 55,
+                name: "Creator55".to_owned(),
+            },
+            pages: vec![MockPage {
+                cid: 71011,
+                page: 1,
+                part: "P1".to_owned(),
+            }],
+        },
+    );
+    state.playurls.insert(
+        (active_id, 71011),
+        MockPlayurlResponse::Dash {
+            videos: vec![MockStreamSpec {
+                id: 80,
+                path: "/cdn/scope_active_v.mp4".to_owned(),
+                backup_paths: vec![],
+                mime_type: "video/mp4".to_owned(),
+                codecs: "avc1.640032".to_owned(),
+                bandwidth: 500_000,
+                codecid: 7,
+            }],
+            audios: Some(vec![MockStreamSpec {
+                id: 30280,
+                path: "/cdn/scope_active_a.m4a".to_owned(),
+                backup_paths: vec![],
+                mime_type: "audio/mp4".to_owned(),
+                codecs: "mp4a.40.2".to_owned(),
+                bandwidth: 128_000,
+                codecid: 0,
+            }]),
+        },
+    );
+    state.cdn_assets.insert(
+        "/cdn/scope_active_v.mp4".to_owned(),
+        MockCdnAsset::ok(b"video-bytes".to_vec()),
+    );
+    state.cdn_assets.insert(
+        "/cdn/scope_active_a.m4a".to_owned(),
+        MockCdnAsset::ok(b"audio-bytes".to_vec()),
+    );
+
+    let server = MockBiliServer::start(state).await;
+    let tmp2 = tempfile::tempdir().unwrap();
+    let ws2 = Workspace::new(tmp2.path().join("ws"));
+    ws2.ensure_dirs().unwrap();
+    let out2 = tmp2.path().join("out");
+    std::fs::create_dir_all(&out2).unwrap();
+    let db2 = Db::open_in_memory().await.unwrap();
+    db2.upsert_account(account::Model {
+        account_id: 1001,
+        name: "Alice".to_owned(),
+        cookies: "SESSDATA=sess_a; bili_jct=csrf_a".to_owned(),
+        state: AccountState::Active.to_string(),
+        refresh_token: None,
+    })
+    .await
+    .unwrap();
+    db2.upsert_sets([
+        set::Model {
+            set_id: 1,
+            name: "ActiveSet".to_owned(),
+            count: 1,
+            state: SetState::Active.to_string(),
+            kind: SetKind::Created.to_string(),
+            owner_mid: Some(1001),
+            sync_complete: true,
+            resume_page: None,
+        },
+        set::Model {
+            set_id: 2,
+            name: "InactiveSet".to_owned(),
+            count: 1,
+            state: SetState::Inactive.to_string(),
+            kind: SetKind::Created.to_string(),
+            owner_mid: Some(1001),
+            sync_complete: true,
+            resume_page: None,
+        },
+    ])
+    .await
+    .unwrap();
+    db2.upsert_set_accounts([
+        set_account::Model {
+            set_id: 1,
+            account_id: 1001,
+        },
+        set_account::Model {
+            set_id: 2,
+            account_id: 1001,
+        },
+    ])
+    .await
+    .unwrap();
+    db2.upsert_medias([
+        media::Model {
+            id: active_id,
+            bv_id: aid_to_bvid(active_id).unwrap(),
+            title: "ActiveRecoverable".to_owned(),
+            r#type: MediaType::Video.to_string(),
+            state: MediaState::Completed.to_string(),
+            retry_count: 0,
+            last_error: None,
+            updated_at: None,
+        },
+        media::Model {
+            id: inactive_id,
+            bv_id: aid_to_bvid(inactive_id).unwrap(),
+            title: "InactiveMissing".to_owned(),
+            r#type: MediaType::Video.to_string(),
+            state: MediaState::Completed.to_string(),
+            retry_count: 0,
+            last_error: None,
+            updated_at: None,
+        },
+    ])
+    .await
+    .unwrap();
+    db2.upsert_media_sets([
+        media_set::Model {
+            id: active_id,
+            set_id: 1,
+        },
+        media_set::Model {
+            id: inactive_id,
+            set_id: 2,
+        },
+    ])
+    .await
+    .unwrap();
+
+    let ctx2 = AppContext::for_test(
+        ws2,
+        Config::default(),
+        db2,
+        Arc::new(MockMuxer::succeeding()),
+        server.client_config(),
+    );
+
+    // `pull --recheck` re-downloads ONLY active_id and leaves inactive_id untouched!
+    pull(
+        &ctx2,
+        PullOptions {
+            recheck: true,
+            output_dir: Some(out2.clone()),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("pull --recheck should recover active missing media");
+
+    assert_eq!(server.cdn_hits("/cdn/scope_active_v.mp4"), 1);
+    assert_eq!(
+        ctx2.db.get_media(active_id).await.unwrap().state,
+        MediaState::Completed.as_str()
+    );
+    assert_eq!(
+        ctx2.db.pages_for_media(active_id).await.unwrap().len(),
+        1,
+        "recovered active media should now have completed media_page"
+    );
+    assert_eq!(
+        ctx2.db.get_media(inactive_id).await.unwrap().state,
+        MediaState::Completed.as_str()
+    );
+    assert!(
+        ctx2.db
+            .pages_for_media(inactive_id)
+            .await
+            .unwrap()
+            .is_empty(),
+        "inactive missing media must remain untouched by pull --recheck"
     );
 }

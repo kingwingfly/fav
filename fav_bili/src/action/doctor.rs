@@ -8,7 +8,7 @@ use crate::{
     context::AppContext,
     cookies::{extract_csrf, parse_cookie_header, validate_sessdata},
     error::{AppError, AppResult},
-    reconcile::reconcile_completed_medias,
+    reconcile::reconcile_completed_medias_scoped,
     table::{
         OutputFormat, TableOptions, render_ids, render_json, render_jsonl, render_table,
         render_tsv, write_stdout_line,
@@ -229,6 +229,61 @@ pub async fn doctor(ctx: &AppContext, format: OutputFormat, offline: bool) -> Ap
 }
 
 pub async fn doctor_with_options(ctx: &AppContext, opts: DoctorOptions) -> AppResult<()> {
+    let (checks, non_auth_failed, auth_failed) = collect_doctor_checks(ctx, &opts).await;
+
+    let table_opts = TableOptions::detect(true, ctx.runtime.color);
+    let rendered = match opts.format {
+        OutputFormat::Table => render_table(
+            ["check", "status", "detail", "hint"],
+            checks.iter().map(|c| {
+                [
+                    c.name.clone(),
+                    c.status.badge(table_opts.colored),
+                    c.detail.clone(),
+                    c.hint.clone().unwrap_or_default(),
+                ]
+            }),
+            table_opts,
+        ),
+        OutputFormat::Json => render_json(&checks)?,
+        OutputFormat::Jsonl => render_jsonl(&checks)?,
+        OutputFormat::Tsv => render_tsv(
+            ["check", "status", "detail", "hint"],
+            checks.iter().map(|c| {
+                [
+                    c.name.clone(),
+                    c.status.as_str().to_owned(),
+                    c.detail.clone(),
+                    c.hint.clone().unwrap_or_default(),
+                ]
+            }),
+        ),
+        OutputFormat::Ids => render_ids(
+            checks
+                .iter()
+                .filter(|c| c.status == CheckStatus::Fail)
+                .map(|c| c.name.as_str()),
+        ),
+    };
+    if !rendered.is_empty() || matches!(opts.format, OutputFormat::Json | OutputFormat::Table) {
+        write_stdout_line(&rendered).map_err(AppError::runtime)?;
+    }
+
+    if non_auth_failed {
+        Err(AppError::runtime(anyhow!("Doctor found failing checks.")))
+    } else if auth_failed {
+        Err(AppError::auth(anyhow!(
+            "Doctor found expired or invalid account credentials."
+        )))
+    } else {
+        Ok(())
+    }
+}
+
+async fn collect_doctor_checks(
+    ctx: &AppContext,
+    opts: &DoctorOptions,
+) -> (Vec<DoctorCheck>, bool, bool) {
     let mut checks: Vec<DoctorCheck> = Vec::new();
     let mut non_auth_failed = false;
     let mut auth_failed = false;
@@ -277,24 +332,31 @@ pub async fn doctor_with_options(ctx: &AppContext, opts: DoctorOptions) -> AppRe
         }
     }
 
-    // 4. DB-vs-disk drift (4-layer rename-safe reconciliation across tracked pages + legacy v1.x)
+    // 4. DB-vs-disk drift (4-layer rename-safe reconciliation scoped to active resources, matching `fav pull --recheck` 1-to-1)
     let output_dir = ctx.effective_output_dir(opts.output_dir.as_deref());
-    match reconcile_completed_medias(&ctx.db, ctx.muxer.as_ref(), &output_dir, false, None).await {
-        Ok(report) => {
+    match reconcile_completed_medias_scoped(&ctx.db, ctx.muxer.as_ref(), &output_dir).await {
+        Ok(scoped) => {
+            let report = scoped.active;
+            let inactive_missing = scoped.inactive.total_missing_items();
             let verified = report.total_verified();
             let relocated = report.relocated.len();
             let missing = report.total_missing_items();
             let total = report.total_checked();
 
             if !report.has_drift() {
-                let detail = if report.total_checked_legacy > 0 {
+                let mut detail = if report.total_checked_legacy > 0 {
                     format!(
-                        "{verified} completed item(s) verified on disk ({} page(s), {} legacy media(s))",
+                        "{verified} active completed item(s) verified on disk ({} page(s), {} legacy media(s))",
                         report.verified_pages, report.verified_legacy
                     )
                 } else {
-                    format!("{verified} completed page(s) verified on disk")
+                    format!("{verified} active completed item(s) verified on disk")
                 };
+                if inactive_missing > 0 {
+                    detail.push_str(&format!(
+                        "; {inactive_missing} missing in inactive sets/UPs ignored"
+                    ));
+                }
                 checks.push(DoctorCheck {
                     name: "disk_sync".into(),
                     status: CheckStatus::Ok,
@@ -322,16 +384,21 @@ pub async fn doctor_with_options(ctx: &AppContext, opts: DoctorOptions) -> AppRe
                         ));
                     }
                 }
+                let inactive_note = if inactive_missing > 0 {
+                    format!("; {inactive_missing} missing in inactive sets/UPs ignored")
+                } else {
+                    String::new()
+                };
                 checks.push(DoctorCheck {
                     name: "disk_sync".into(),
                     status: CheckStatus::Warn,
                     detail: format!(
-                        "{} (of {total} under {})",
+                        "{} (of {total} active under {}){inactive_note}",
                         parts.join(", "),
                         output_dir.display()
                     ),
                     hint: Some(
-                        "Run `fav pull --recheck` to relink renamed files and re-download missing ones, or `fav media reset --missing` to re-queue them."
+                        "Run `fav pull --recheck` to relink renamed active files and re-download missing ones, or `fav media reset --missing` to re-queue them."
                             .into(),
                     ),
                 });
@@ -503,53 +570,7 @@ pub async fn doctor_with_options(ctx: &AppContext, opts: DoctorOptions) -> AppRe
         }
     }
 
-    let table_opts = TableOptions::detect(true, ctx.runtime.color);
-    let rendered = match opts.format {
-        OutputFormat::Table => render_table(
-            ["check", "status", "detail", "hint"],
-            checks.iter().map(|c| {
-                [
-                    c.name.clone(),
-                    c.status.badge(table_opts.colored),
-                    c.detail.clone(),
-                    c.hint.clone().unwrap_or_default(),
-                ]
-            }),
-            table_opts,
-        ),
-        OutputFormat::Json => render_json(&checks)?,
-        OutputFormat::Jsonl => render_jsonl(&checks)?,
-        OutputFormat::Tsv => render_tsv(
-            ["check", "status", "detail", "hint"],
-            checks.iter().map(|c| {
-                [
-                    c.name.clone(),
-                    c.status.as_str().to_owned(),
-                    c.detail.clone(),
-                    c.hint.clone().unwrap_or_default(),
-                ]
-            }),
-        ),
-        OutputFormat::Ids => render_ids(
-            checks
-                .iter()
-                .filter(|c| c.status == CheckStatus::Fail)
-                .map(|c| c.name.as_str()),
-        ),
-    };
-    if !rendered.is_empty() || matches!(opts.format, OutputFormat::Json | OutputFormat::Table) {
-        write_stdout_line(&rendered).map_err(AppError::runtime)?;
-    }
-
-    if non_auth_failed {
-        Err(AppError::runtime(anyhow!("Doctor found failing checks.")))
-    } else if auth_failed {
-        Err(AppError::auth(anyhow!(
-            "Doctor found expired or invalid account credentials."
-        )))
-    } else {
-        Ok(())
-    }
+    (checks, non_auth_failed, auth_failed)
 }
 
 #[cfg(test)]
@@ -594,9 +615,9 @@ ramfs /var/ramdisk ramfs rw 0 0
             api::BiliClientConfig,
             config::{Config, Workspace},
             db::Db,
-            entity::media,
+            entity::{account, media, media_set, set, set_account},
             muxer::test_support::MockMuxer,
-            state::{MediaState, MediaType},
+            state::{AccountState, MediaState, MediaType, SetKind, SetState},
         };
 
         let tmp = tempfile::tempdir().unwrap();
@@ -606,16 +627,85 @@ ramfs /var/ramdisk ramfs rw 0 0
         std::fs::create_dir_all(&custom_out).unwrap();
 
         let db = Db::open_in_memory().await.unwrap();
-        db.upsert_medias([media::Model {
-            id: 10,
-            bv_id: "BV17x411w7KC".to_owned(),
-            title: "LegacyMissing".to_owned(),
-            r#type: MediaType::Video.to_string(),
-            state: MediaState::Completed.to_string(),
-            retry_count: 0,
-            last_error: None,
-            updated_at: None,
-        }])
+        db.upsert_account(account::Model {
+            account_id: 1,
+            name: "Alice".to_owned(),
+            cookies: "SESSDATA=s; bili_jct=c".to_owned(),
+            state: AccountState::Active.to_string(),
+            refresh_token: None,
+        })
+        .await
+        .unwrap();
+        db.upsert_sets([
+            set::Model {
+                set_id: 100,
+                name: "ActiveSet".to_owned(),
+                count: 1,
+                state: SetState::Active.to_string(),
+                kind: SetKind::Created.to_string(),
+                owner_mid: Some(1),
+                sync_complete: true,
+                resume_page: None,
+            },
+            set::Model {
+                set_id: 200,
+                name: "InactiveSet".to_owned(),
+                count: 1,
+                state: SetState::Inactive.to_string(),
+                kind: SetKind::Created.to_string(),
+                owner_mid: Some(1),
+                sync_complete: true,
+                resume_page: None,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_set_accounts([
+            set_account::Model {
+                set_id: 100,
+                account_id: 1,
+            },
+            set_account::Model {
+                set_id: 200,
+                account_id: 1,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_medias([
+            media::Model {
+                id: 10,
+                bv_id: "BV17x411w7KC".to_owned(),
+                title: "ActiveLegacyMissing".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Completed.to_string(),
+                retry_count: 0,
+                last_error: None,
+                updated_at: None,
+            },
+            media::Model {
+                id: 20,
+                bv_id: "BV1Q541167Qg".to_owned(),
+                title: "InactiveLegacyMissing".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Completed.to_string(),
+                retry_count: 0,
+                last_error: None,
+                updated_at: None,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_media_sets([
+            media_set::Model {
+                id: 10,
+                set_id: 100,
+            },
+            media_set::Model {
+                id: 20,
+                set_id: 200,
+            },
+        ])
         .await
         .unwrap();
 
@@ -627,15 +717,55 @@ ramfs /var/ramdisk ramfs rw 0 0
             BiliClientConfig::default(),
         );
 
-        doctor_with_options(
-            &ctx,
-            DoctorOptions {
-                format: OutputFormat::Json,
-                offline: true,
-                output_dir: Some(custom_out),
-            },
-        )
-        .await
-        .expect("doctor with warn-only disk drift should succeed");
+        let opts = DoctorOptions {
+            format: OutputFormat::Json,
+            offline: true,
+            output_dir: Some(custom_out.clone()),
+        };
+
+        // Active missing + inactive missing -> Warn with active hint + inactive note.
+        let (checks, non_auth_failed, auth_failed) = collect_doctor_checks(&ctx, &opts).await;
+        assert!(!non_auth_failed && !auth_failed);
+        let disk_sync = checks.iter().find(|c| c.name == "disk_sync").unwrap();
+        assert_eq!(disk_sync.status, CheckStatus::Warn);
+        assert!(disk_sync.detail.contains("1 missing legacy media(s)"));
+        assert!(
+            disk_sync
+                .detail
+                .contains("1 missing in inactive sets/UPs ignored")
+        );
+        assert!(
+            disk_sync
+                .hint
+                .as_deref()
+                .unwrap()
+                .contains("fav pull --recheck")
+        );
+
+        doctor_with_options(&ctx, opts.clone())
+            .await
+            .expect("doctor with warn-only disk drift should succeed");
+
+        // Place the active file on disk so ONLY the inactive legacy media is missing ->
+        // disk_sync MUST be Ok and NEVER suggest `fav pull --recheck`!
+        std::fs::write(custom_out.join("10-ActiveLegacyMissing.mp4"), b"ok").unwrap();
+        let (checks_ok, _, _) = collect_doctor_checks(&ctx, &opts).await;
+        let disk_sync_ok = checks_ok.iter().find(|c| c.name == "disk_sync").unwrap();
+        assert_eq!(disk_sync_ok.status, CheckStatus::Ok);
+        assert!(
+            disk_sync_ok
+                .detail
+                .contains("1 active completed item(s) verified on disk")
+        );
+        assert!(
+            disk_sync_ok
+                .detail
+                .contains("1 missing in inactive sets/UPs ignored")
+        );
+        assert!(
+            disk_sync_ok.hint.is_none(),
+            "doctor must not suggest fav pull --recheck when only inactive items are missing: {:?}",
+            disk_sync_ok.hint
+        );
     }
 }

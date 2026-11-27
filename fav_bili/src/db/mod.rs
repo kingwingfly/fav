@@ -819,6 +819,24 @@ mod tests {
             .map(|m| m.id)
             .collect();
         assert_eq!(active_ids, vec![1, 3, 9]);
+        assert_eq!(
+            db.active_media_ids().await.unwrap(),
+            HashSet::from([1, 3, 9])
+        );
+        assert_eq!(db.count_active_pending_medias().await.unwrap(), 2);
+        assert_eq!(
+            db.count_active_medias_in_state(MediaState::Completed)
+                .await
+                .unwrap(),
+            1
+        );
+        assert_eq!(db.count_active_media_ids(&[]).await.unwrap(), 0);
+        assert_eq!(
+            db.count_active_media_ids(&[1, 1, 2, 3, 4, 9, 10])
+                .await
+                .unwrap(),
+            3
+        );
         assert!(db.is_media_active(1).await.unwrap());
         assert!(db.is_media_active(3).await.unwrap());
         assert!(db.is_media_active(9).await.unwrap());

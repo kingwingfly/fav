@@ -156,6 +156,11 @@ pub async fn pull(ctx: &AppContext, opts: PullOptions) -> AppResult<()> {
                 report.missing_pages.len(),
                 report.missing_legacy_ids.len(),
             );
+        } else {
+            info!(
+                "Recheck verified {} active completed item(s) on disk; 0 missing.",
+                report.total_verified()
+            );
         }
     }
 
@@ -294,6 +299,25 @@ pub async fn pull(ctx: &AppContext, opts: PullOptions) -> AppResult<()> {
                     break 'accounts;
                 }
             }
+        }
+    }
+
+    if downloaded_total == 0
+        && failed_total == 0
+        && skipped_total == 0
+        && expired_accounts == 0
+        && !interrupted
+        && target_aids.is_empty()
+        && opts.set_ids.is_empty()
+        && opts.up_ids.is_empty()
+        && let Ok(summary) = ctx.db.status_summary(0).await
+        && let Ok(active_pending) = ctx.db.count_active_pending_medias().await
+    {
+        let inactive_pending = summary.medias.pending.saturating_sub(active_pending);
+        if inactive_pending > 0 {
+            info!(
+                "No active pending medias to pull ({inactive_pending} pending media(s) belong to inactive sets/UPs)."
+            );
         }
     }
 

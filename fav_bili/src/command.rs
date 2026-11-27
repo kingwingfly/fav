@@ -931,7 +931,11 @@ pub fn build_command() -> Command {
                                 .action(ArgAction::SetTrue),
                             Arg::new("missing")
                                 .long("missing")
-                                .help("Reset Completed medias whose downloaded files are missing on disk")
+                                .help("Reset active Completed medias whose downloaded files are missing on disk")
+                                .action(ArgAction::SetTrue),
+                            Arg::new("include-inactive")
+                                .long("include-inactive")
+                                .help("Include medias in inactive sets/UPs when scanning with --missing")
                                 .action(ArgAction::SetTrue),
                             Arg::new("output")
                                 .long("output")
@@ -2197,6 +2201,7 @@ async fn dispatch(cmd: &mut Command, matches: ArgMatches) -> AppResult<()> {
                             skipped: s.get_flag("skipped"),
                             completed: s.get_flag("completed"),
                             missing: s.get_flag("missing"),
+                            include_inactive: s.get_flag("include-inactive"),
                             output_dir: s.get_one::<PathBuf>("output").cloned(),
                             all: s.get_flag("all"),
                             dry_run: s.get_flag("dry-run"),
@@ -2440,16 +2445,26 @@ mod tests {
         );
 
         let m = build_command()
-            .try_get_matches_from(["fav", "media", "reset", "--missing", "-o", "/tmp/videos"])
+            .try_get_matches_from([
+                "fav",
+                "media",
+                "reset",
+                "--missing",
+                "--include-inactive",
+                "-o",
+                "/tmp/videos",
+            ])
+            .unwrap();
+        let reset_m = m
+            .subcommand_matches("media")
+            .unwrap()
+            .subcommand_matches("reset")
             .unwrap();
         assert_eq!(
-            m.subcommand_matches("media")
-                .unwrap()
-                .subcommand_matches("reset")
-                .unwrap()
-                .get_one::<PathBuf>("output"),
+            reset_m.get_one::<PathBuf>("output"),
             Some(&PathBuf::from("/tmp/videos"))
         );
+        assert!(reset_m.get_flag("include-inactive"));
 
         // `completion nushell` and alias `nu` and `powershell`
         for (arg, expected) in [

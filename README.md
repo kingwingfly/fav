@@ -240,7 +240,7 @@ fav ls set --sort count --format tsv
 
 # Recover or skip stuck media items without touching SQLite manually
 fav media reset --failed
-fav media reset --missing
+fav media reset --missing                     # active sets/UPs only (pass --include-inactive to include inactive ones)
 fav media skip 170001
 
 # Like (or unlike) medias directly by set, BVID/URL, or piped IDs
