@@ -1195,24 +1195,89 @@ fn dynamic_completion_snippet(shell: CompletionShell, bin_name: &str) -> String 
                  {bin_name} $dir_args __complete $kind (commandline -ct) 2>/dev/null\n\
              end\n\
              \n\
-             function __fish_{fn_ident}_not_expecting_opt_val\n\
+             function __fish_{fn_ident}_subcmd_is\n\
+                 set -l expected $argv[1]\n\
+                 set -l cur (commandline -ct)\n\
+                 if string match -q -- '-*' \"$cur\"\n\
+                     return 1\n\
+                 end\n\
                  set -l tokens (commandline -opc)\n\
-                 if test (count $tokens) -lt 2\n\
-                     return 0\n\
+                 set -l n (count $tokens)\n\
+                 if test $n -lt 2\n\
+                     return 1\n\
                  end\n\
                  switch $tokens[-1]\n\
                      case {VALUE_TAKING_FLAGS_FISH}\n\
                          return 1\n\
                  end\n\
-                 return 0\n\
+                 set -l sub1 \"\"\n\
+                 set -l sub2 \"\"\n\
+                 set -l i 2\n\
+                 while test $i -le $n\n\
+                     set -l w $tokens[$i]\n\
+                     switch $w\n\
+                         case {VALUE_TAKING_FLAGS_FISH}\n\
+                             set i (math $i + 2)\n\
+                             continue\n\
+                         case '-*'\n\
+                             set i (math $i + 1)\n\
+                             continue\n\
+                     end\n\
+                     if test -z \"$sub1\"\n\
+                         set sub1 $w\n\
+                     else if test -z \"$sub2\"\n\
+                         set sub2 $w\n\
+                     end\n\
+                     set i (math $i + 1)\n\
+                 end\n\
+                 switch $expected\n\
+                     case sets\n\
+                         switch $sub1\n\
+                             case activate active a deactivate deactive d\n\
+                                 switch $sub2\n\
+                                     case set s list collection l c\n\
+                                         return 0\n\
+                                 end\n\
+                         end\n\
+                     case ups\n\
+                         switch $sub1\n\
+                             case activate active a deactivate deactive d\n\
+                                 switch $sub2\n\
+                                     case up upper u\n\
+                                         return 0\n\
+                                 end\n\
+                         end\n\
+                     case accounts\n\
+                         switch $sub1\n\
+                             case activate active a deactivate deactive d\n\
+                                 switch $sub2\n\
+                                     case account a\n\
+                                         return 0\n\
+                                 end\n\
+                             case auth\n\
+                                 switch $sub2\n\
+                                     case logout check\n\
+                                         return 0\n\
+                                 end\n\
+                         end\n\
+                     case medias\n\
+                         switch $sub1\n\
+                             case pull p like\n\
+                                 return 0\n\
+                             case media\n\
+                                 switch $sub2\n\
+                                     case reset skip\n\
+                                         return 0\n\
+                                 end\n\
+                         end\n\
+                 end\n\
+                 return 1\n\
              end\n\
              \n\
-             complete -c {bin_name} -n '__fish_seen_subcommand_from activate active a deactivate deactive d; and __fish_seen_subcommand_from set s list collection l c; and __fish_{fn_ident}_not_expecting_opt_val' -f -a '(__fish_{fn_ident}_complete sets)'\n\
-             complete -c {bin_name} -n '__fish_seen_subcommand_from activate active a deactivate deactive d; and __fish_seen_subcommand_from up upper u; and __fish_{fn_ident}_not_expecting_opt_val' -f -a '(__fish_{fn_ident}_complete ups)'\n\
-             complete -c {bin_name} -n '__fish_seen_subcommand_from activate active a deactivate deactive d; and __fish_seen_subcommand_from account a; and __fish_{fn_ident}_not_expecting_opt_val' -f -a '(__fish_{fn_ident}_complete accounts)'\n\
-             complete -c {bin_name} -n '__fish_seen_subcommand_from auth; and __fish_seen_subcommand_from logout check; and __fish_{fn_ident}_not_expecting_opt_val' -f -a '(__fish_{fn_ident}_complete accounts)'\n\
-             complete -c {bin_name} -n '__fish_seen_subcommand_from pull p like; and __fish_{fn_ident}_not_expecting_opt_val' -f -a '(__fish_{fn_ident}_complete medias)'\n\
-             complete -c {bin_name} -n '__fish_seen_subcommand_from media; and __fish_seen_subcommand_from reset skip; and __fish_{fn_ident}_not_expecting_opt_val' -f -a '(__fish_{fn_ident}_complete medias)'\n\
+             complete -c {bin_name} -n '__fish_{fn_ident}_subcmd_is sets' -f -a '(__fish_{fn_ident}_complete sets)'\n\
+             complete -c {bin_name} -n '__fish_{fn_ident}_subcmd_is ups' -f -a '(__fish_{fn_ident}_complete ups)'\n\
+             complete -c {bin_name} -n '__fish_{fn_ident}_subcmd_is accounts' -f -a '(__fish_{fn_ident}_complete accounts)'\n\
+             complete -c {bin_name} -n '__fish_{fn_ident}_subcmd_is medias' -f -a '(__fish_{fn_ident}_complete medias)'\n\
              complete -c {bin_name} -l set -r -f -a '(__fish_{fn_ident}_complete sets)'\n\
              complete -c {bin_name} -l up -r -f -a '(__fish_{fn_ident}_complete ups)'\n\
              complete -c {bin_name} -l account -r -f -a '(__fish_{fn_ident}_complete accounts)'\n"
@@ -1768,6 +1833,18 @@ pub fn generate_completion_script(
     script
 }
 
+fn sanitize_completion_desc(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    for c in raw.chars() {
+        match c {
+            '\t' | '\r' | '\n' => out.push(' '),
+            c if c.is_control() => {}
+            other => out.push(other),
+        }
+    }
+    out
+}
+
 /// Query dynamic completion lines (`id\tdescription`) from `db` for `kind` filtered by `prefix`.
 pub async fn dynamic_complete_lines(db: &Db, kind: &str, prefix: &str) -> Vec<String> {
     let needle = prefix.trim().to_ascii_lowercase();
@@ -1786,7 +1863,7 @@ pub async fn dynamic_complete_lines(db: &Db, kind: &str, prefix: &str) -> Vec<St
                     if matches_prefix(&id, &s.name) {
                         out.push(format!(
                             "{id}\t{} ({}, {})",
-                            s.name.replace(['\t', '\r', '\n'], " "),
+                            sanitize_completion_desc(&s.name),
                             s.kind,
                             s.state
                         ));
@@ -1801,7 +1878,7 @@ pub async fn dynamic_complete_lines(db: &Db, kind: &str, prefix: &str) -> Vec<St
                     if matches_prefix(&id, &u.name) {
                         out.push(format!(
                             "{id}\t{} ({})",
-                            u.name.replace(['\t', '\r', '\n'], " "),
+                            sanitize_completion_desc(&u.name),
                             u.state
                         ));
                     }
@@ -1815,7 +1892,7 @@ pub async fn dynamic_complete_lines(db: &Db, kind: &str, prefix: &str) -> Vec<St
                     if matches_prefix(&id, &a.name) {
                         out.push(format!(
                             "{id}\t{} ({})",
-                            a.name.replace(['\t', '\r', '\n'], " "),
+                            sanitize_completion_desc(&a.name),
                             a.state
                         ));
                     }
@@ -1835,7 +1912,7 @@ pub async fn dynamic_complete_lines(db: &Db, kind: &str, prefix: &str) -> Vec<St
                     out.push(format!(
                         "{}\t{}",
                         m.bv_id,
-                        m.title.replace(['\t', '\r', '\n'], " ")
+                        sanitize_completion_desc(&m.title)
                     ));
                 }
             }
@@ -1931,8 +2008,7 @@ async fn dispatch(cmd: &mut Command, matches: ArgMatches) -> AppResult<()> {
                 .cloned()
                 .or_else(|| std::env::current_exe().ok())
                 .unwrap_or_else(|| PathBuf::from("fav"));
-            let output =
-                schedule(target, interval, &ws_root, &fav_bin, install).map_err(AppError::usage)?;
+            let output = schedule(target, interval, &ws_root, &fav_bin, install)?;
             write_stdout_line(&output).map_err(AppError::runtime)?;
             Ok(())
         }
@@ -2515,17 +2591,34 @@ mod tests {
         assert!(!zsh_static.contains("_fav_with_dynamic"));
         assert!(zsh_static.contains("compdef _fav fav"));
 
-        // Fish dynamic & static + -C forwarding
+        // Fish dynamic & static + -C forwarding + positional subcommand matching (no `a` alias collision)
         let fish_dyn = generate_completion_script(&mut cmd, CompletionShell::Fish, "fav", false);
         assert!(fish_dyn.contains("function __fish_fav_complete"));
+        assert!(fish_dyn.contains("function __fish_fav_subcmd_is"));
         assert!(fish_dyn.contains("set dir_args -C"));
         assert!(fish_dyn.contains("fav $dir_args __complete $kind"));
         assert!(fish_dyn.contains("__fish_fav_complete sets"));
+        assert!(fish_dyn.contains("__fish_fav_subcmd_is sets"));
+        assert!(fish_dyn.contains("__fish_fav_subcmd_is ups"));
+        assert!(fish_dyn.contains("__fish_fav_subcmd_is accounts"));
+        assert!(fish_dyn.contains("__fish_fav_subcmd_is medias"));
         assert!(fish_dyn.contains("--clarity --quality --codec --audio-format --page"));
         assert!(fish_dyn.contains("-l set"));
+        // Dynamic snippet must NOT use unordered `__fish_seen_subcommand_from` (which caused `a` collision)
+        let fish_dynamic_section = fish_dyn
+            .split_once("# Dynamic workspace DB completions")
+            .map(|(_, rest)| rest)
+            .expect("missing Fish dynamic completion section");
+        assert!(
+            !fish_dynamic_section.contains("__fish_seen_subcommand_from"),
+            "Fish dynamic completions must use positional sub1/sub2 checks instead of __fish_seen_subcommand_from"
+        );
+        assert!(fish_dynamic_section.contains("set -l sub1"));
+        assert!(fish_dynamic_section.contains("set -l sub2"));
 
         let fish_static = generate_completion_script(&mut cmd, CompletionShell::Fish, "fav", true);
         assert!(!fish_static.contains("__fish_fav_complete"));
+        assert!(!fish_static.contains("__fish_fav_subcmd_is"));
 
         // PowerShell genuine dynamic Register-ArgumentCompleter + -C forwarding + static fallback
         let ps_dyn =
@@ -2610,5 +2703,74 @@ mod tests {
         let by_title = dynamic_complete_lines(&db, "medias", "needle special").await;
         assert_eq!(by_title.len(), 1);
         assert_eq!(by_title[0], "BV1test000245\tNeedle Special Target WithTab");
+    }
+
+    #[tokio::test]
+    async fn dynamic_complete_lines_strips_nul_and_control_chars() {
+        use crate::{
+            entity::{account, media, set, up},
+            state::{AccountState, MediaState, MediaType, SetKind, SetState, UpState},
+        };
+
+        assert_eq!(
+            sanitize_completion_desc("A\0B\x1b[31mC\x07\x7f\u{0085}\tD\r\nE"),
+            "AB[31mC D  E"
+        );
+
+        let db = Db::open_in_memory().await.unwrap();
+        db.upsert_sets([set::Model {
+            set_id: 1,
+            name: "Set\0Bad\x1bTitle\tTab\nNL".to_owned(),
+            count: 1,
+            state: SetState::Active.to_string(),
+            kind: SetKind::Created.to_string(),
+            owner_mid: Some(1),
+            sync_complete: true,
+            resume_page: None,
+        }])
+        .await
+        .unwrap();
+        db.upsert_ups([up::Model {
+            up_id: 2,
+            name: "Up\0Name\x07Bell\rCR".to_owned(),
+            state: UpState::Active.to_string(),
+            sync_complete: true,
+            resume_page: None,
+        }])
+        .await
+        .unwrap();
+        db.upsert_account(account::Model {
+            account_id: 3,
+            name: "Acct\0User\x7fDel\tTab".to_owned(),
+            cookies: String::new(),
+            state: AccountState::Active.to_string(),
+            refresh_token: None,
+        })
+        .await
+        .unwrap();
+        db.upsert_medias([media::Model {
+            id: 4,
+            bv_id: "BV17x411w7KC".to_owned(),
+            title: "Vid\0Title\x1bEsc\u{0085}Nel\nLine".to_owned(),
+            r#type: MediaType::Video.to_string(),
+            state: MediaState::Pending.to_string(),
+            retry_count: 0,
+            last_error: None,
+            updated_at: None,
+        }])
+        .await
+        .unwrap();
+
+        let sets = dynamic_complete_lines(&db, "sets", "").await;
+        assert_eq!(sets, vec!["1\tSetBadTitle Tab NL (Created, Active)"]);
+
+        let ups = dynamic_complete_lines(&db, "ups", "").await;
+        assert_eq!(ups, vec!["2\tUpNameBell CR (Active)"]);
+
+        let accounts = dynamic_complete_lines(&db, "accounts", "").await;
+        assert_eq!(accounts, vec!["3\tAcctUserDel Tab (Active)"]);
+
+        let medias = dynamic_complete_lines(&db, "medias", "").await;
+        assert_eq!(medias, vec!["BV17x411w7KC\tVidTitleEscNel Line"]);
     }
 }

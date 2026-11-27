@@ -6,6 +6,8 @@ use std::str::FromStr;
 use anyhow::{Context as _, Result, anyhow, bail};
 use clap::{ValueEnum, builder::PossibleValue};
 
+use crate::error::{AppError, AppResult};
+
 /// Supported OS scheduler backends for `fav schedule`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ScheduleTarget {
@@ -193,8 +195,8 @@ pub fn generate_schedule(
     interval: &str,
     workspace_dir: &Path,
     fav_bin: &Path,
-) -> Result<GeneratedSchedule> {
-    let parsed = parse_interval(interval)?;
+) -> AppResult<GeneratedSchedule> {
+    let parsed = parse_interval(interval).map_err(AppError::usage)?;
 
     match target {
         ScheduleTarget::Systemd => {
@@ -206,7 +208,7 @@ pub fn generate_schedule(
                  \n\
                  [Service]\n\
                  Type=oneshot\n\
-                 ExecStart={} -C {} sync\n",
+                 ExecStart={} -C {} --non-interactive --no-progress sync\n",
                 escape_systemd_arg(fav_bin),
                 escape_systemd_arg(workspace_dir),
             );
@@ -261,6 +263,8 @@ Enable and start the user timer (user-level, no root privileges required):\n\
                      <string>{bin_xml}</string>\n\
                      <string>-C</string>\n\
                      <string>{dir_xml}</string>\n\
+                     <string>--non-interactive</string>\n\
+                     <string>--no-progress</string>\n\
                      <string>sync</string>\n\
                    </array>\n\
                    <key>StartInterval</key>\n\
@@ -294,7 +298,8 @@ Load the LaunchAgent (user-level, no root privileges required):\n\
             let script = format!(
                 "$FavBin = '{bin_ps}'\n\
                  $WorkspaceDir = '{dir_ps}'\n\
-                 $Action = New-ScheduledTaskAction -Execute $FavBin -Argument \"-C `\"$WorkspaceDir`\" sync\"\n\
+                 $EscapedWorkspace = $WorkspaceDir.Replace('\"', '\\\"')\n\
+                 $Action = New-ScheduledTaskAction -Execute $FavBin -Argument ('-C \"' + $EscapedWorkspace + '\" --non-interactive --no-progress sync')\n\
                  $Trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval ({})\n\
                  $Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable\n\
                  Register-ScheduledTask -TaskName 'FavSync' -Action $Action -Trigger $Trigger -Settings $Settings -Force\n",
@@ -363,18 +368,28 @@ pub fn schedule(
     workspace_dir: &Path,
     fav_bin: &Path,
     install: bool,
-) -> Result<String> {
+) -> AppResult<String> {
     let generated = generate_schedule(target, interval, workspace_dir, fav_bin)?;
     if install {
         let dest_dir = default_install_dir(target, workspace_dir)?;
         let written = write_schedule_files(&generated, &dest_dir)?;
+        let instructions = if target == ScheduleTarget::TaskScheduler
+            && let Some(script_path) = written.first()
+        {
+            let escaped = escape_powershell_single(&script_path.to_string_lossy());
+            format!(
+                "Register the scheduled task in PowerShell:\n  powershell -ExecutionPolicy Bypass -File '{escaped}'"
+            )
+        } else {
+            generated.instructions
+        };
         let mut out = String::new();
         out.push_str("Installed schedule files:\n");
         for path in written {
             out.push_str(&format!("  {}\n", path.display()));
         }
         out.push('\n');
-        out.push_str(&generated.instructions);
+        out.push_str(&instructions);
         Ok(out)
     } else {
         let mut out = String::new();
@@ -394,6 +409,7 @@ pub fn schedule(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::ExitKind;
 
     #[test]
     fn parse_interval_valid_and_invalid() {
@@ -445,11 +461,9 @@ mod tests {
         assert_eq!(sched.files.len(), 2);
         assert_eq!(sched.files[0].filename, "fav.service");
         assert!(sched.files[0].content.contains("Type=oneshot"));
-        assert!(
-            sched.files[0].content.contains(
-                "ExecStart=\"/usr/local/bin/fav\" -C \"/home/user/Videos/fav 100%%\" sync"
-            )
-        );
+        assert!(sched.files[0].content.contains(
+            "ExecStart=\"/usr/local/bin/fav\" -C \"/home/user/Videos/fav 100%%\" --non-interactive --no-progress sync"
+        ));
         assert_eq!(sched.files[1].filename, "fav.timer");
         assert!(sched.files[1].content.contains("OnUnitActiveSec=3h"));
         assert!(sched.files[1].content.contains("Persistent=true"));
@@ -472,6 +486,8 @@ mod tests {
         assert!(xml.contains("<integer>1800</integer>"));
         assert!(xml.contains("<string>/opt/homebrew/bin/fav</string>"));
         assert!(xml.contains("<string>/Users/me/A &amp; B &lt;fav&gt;</string>"));
+        assert!(xml.contains("<string>--non-interactive</string>"));
+        assert!(xml.contains("<string>--no-progress</string>"));
         assert!(xml.contains("<string>sync</string>"));
         assert!(sched.instructions.contains("launchctl"));
         assert!(!sched.instructions.contains("sudo"));
@@ -482,16 +498,76 @@ mod tests {
         let sched = generate_schedule(
             ScheduleTarget::TaskScheduler,
             "1d",
-            Path::new(r"C:\Users\O'Brien\Videos"),
+            Path::new(r#"C:\Users\O'Brien\$env`dir"quote\Videos"#),
             Path::new(r"C:\bin\fav.exe"),
         )
         .unwrap();
         assert_eq!(sched.files.len(), 1);
         assert_eq!(sched.files[0].filename, "install-fav-task.ps1");
         let ps = &sched.files[0].content;
-        assert!(ps.contains("O''Brien"));
+        assert!(ps.contains(r#"$WorkspaceDir = 'C:\Users\O''Brien\$env`dir"quote\Videos'"#));
+        assert!(ps.contains(r#"$EscapedWorkspace = $WorkspaceDir.Replace('"', '\"')"#));
+        assert!(ps.contains(
+            r#"$Action = New-ScheduledTaskAction -Execute $FavBin -Argument ('-C "' + $EscapedWorkspace + '" --non-interactive --no-progress sync')"#
+        ));
+        assert!(!ps.contains("\"-C"));
         assert!(ps.contains("New-TimeSpan -Days 1"));
         assert!(ps.contains("Register-ScheduledTask"));
+        assert!(
+            sched
+                .instructions
+                .contains("powershell -ExecutionPolicy Bypass -File install-fav-task.ps1")
+        );
+    }
+
+    #[test]
+    fn task_scheduler_install_instructions_use_escaped_installed_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ws_dir = tmp.path().join("O'Brien $ws");
+        fs::create_dir_all(&ws_dir).unwrap();
+        let fav_bin = Path::new(r"C:\bin\fav.exe");
+
+        // install == false keeps bare filename
+        let dry_out =
+            schedule(ScheduleTarget::TaskScheduler, "3h", &ws_dir, fav_bin, false).unwrap();
+        assert!(dry_out.contains("powershell -ExecutionPolicy Bypass -File install-fav-task.ps1"));
+
+        // install == true emits the actual installed path, single-quote escaped
+        let installed_out =
+            schedule(ScheduleTarget::TaskScheduler, "3h", &ws_dir, fav_bin, true).unwrap();
+        let expected_path = ws_dir.join(".fav").join("install-fav-task.ps1");
+        assert!(expected_path.is_file());
+        let escaped = escape_powershell_single(&expected_path.to_string_lossy());
+        assert!(
+            installed_out.contains(&format!(
+                "powershell -ExecutionPolicy Bypass -File '{escaped}'"
+            )),
+            "expected installed PowerShell path in output, got:\n{installed_out}"
+        );
+        assert!(escaped.contains("O''Brien $ws"));
+    }
+
+    #[test]
+    fn schedule_classifies_bad_interval_as_usage_and_io_error_as_runtime() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fav_bin = Path::new("/usr/bin/fav");
+
+        // Invalid --interval -> ExitKind::Usage
+        let bad_interval_err =
+            schedule(ScheduleTarget::Systemd, "0m", tmp.path(), fav_bin, false).unwrap_err();
+        assert_eq!(bad_interval_err.kind(), ExitKind::Usage);
+
+        // Filesystem I/O failure during --install (e.g. `.fav` is a regular file) -> ExitKind::Runtime
+        fs::write(tmp.path().join(".fav"), b"not a directory").unwrap();
+        let io_err = schedule(
+            ScheduleTarget::TaskScheduler,
+            "3h",
+            tmp.path(),
+            fav_bin,
+            true,
+        )
+        .unwrap_err();
+        assert_eq!(io_err.kind(), ExitKind::Runtime);
     }
 
     #[test]
