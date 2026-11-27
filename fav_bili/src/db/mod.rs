@@ -370,6 +370,7 @@ mod tests {
         db.upsert_ups(Vec::new()).await.unwrap();
         db.upsert_media_sets(Vec::new()).await.unwrap();
         db.upsert_media_ups(Vec::new()).await.unwrap();
+        db.upsert_up_feed_media_ups(Vec::new()).await.unwrap();
         db.upsert_set_accounts(Vec::new()).await.unwrap();
         db.upsert_up_accounts(Vec::new()).await.unwrap();
 
@@ -455,9 +456,13 @@ mod tests {
         ])
         .await
         .unwrap();
-        db.upsert_media_ups([media_up::Model { id: 200, up_id: 50 }])
-            .await
-            .unwrap();
+        db.upsert_media_ups([media_up::Model {
+            id: 200,
+            up_id: 50,
+            from_up_feed: false,
+        }])
+        .await
+        .unwrap();
 
         // Dry run must predict exact counts without mutating DB
         let dry = db.prune_all(false, true).await.unwrap();
@@ -553,8 +558,16 @@ mod tests {
         .await
         .unwrap();
         db.upsert_media_ups([
-            media_up::Model { id: 1, up_id: 9 },
-            media_up::Model { id: 2, up_id: 9 },
+            media_up::Model {
+                id: 1,
+                up_id: 9,
+                from_up_feed: false,
+            },
+            media_up::Model {
+                id: 2,
+                up_id: 9,
+                from_up_feed: false,
+            },
         ])
         .await
         .unwrap();
@@ -802,10 +815,26 @@ mod tests {
         .await
         .unwrap();
         db.upsert_media_ups([
-            media_up::Model { id: 3, up_id: 100 },
-            media_up::Model { id: 4, up_id: 101 },
-            media_up::Model { id: 6, up_id: 200 },
-            media_up::Model { id: 8, up_id: 300 },
+            media_up::Model {
+                id: 3,
+                up_id: 100,
+                from_up_feed: false,
+            },
+            media_up::Model {
+                id: 4,
+                up_id: 101,
+                from_up_feed: false,
+            },
+            media_up::Model {
+                id: 6,
+                up_id: 200,
+                from_up_feed: false,
+            },
+            media_up::Model {
+                id: 8,
+                up_id: 300,
+                from_up_feed: false,
+            },
         ])
         .await
         .unwrap();
@@ -1180,5 +1209,142 @@ mod tests {
         let m2_pages = db.pages_for_media(2).await.unwrap();
         assert_eq!(m2_pages[0].state, MediaPageState::Completed.as_str());
         assert_eq!(m2_pages[0].file_inode, Some(333));
+    }
+
+    #[tokio::test]
+    async fn migration_4_backfill_roundtrip_and_up_feed_monotonicity() {
+        let mut opts = SqliteConnectOptions::new()
+            .in_memory(true)
+            .foreign_keys(true)
+            .busy_timeout(BUSY_TIMEOUT);
+        opts = opts.disable_statement_logging();
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect_with(opts)
+            .await
+            .unwrap();
+        let conn = SqlxSqliteConnector::from_sqlx_sqlite_pool(pool);
+
+        // Apply migrations #1 and #2, seed Active, Inactive, and Deactivated UPs with media_up links.
+        Migrator::up(&conn, Some(2)).await.unwrap();
+        for sql in [
+            r#"INSERT INTO "up" (up_id, name, state) VALUES (10, 'ActiveUp', 'Active');"#,
+            r#"INSERT INTO "up" (up_id, name, state) VALUES (20, 'InactiveFavCreator', 'Inactive');"#,
+            r#"INSERT INTO "up" (up_id, name, state) VALUES (30, 'DeactivatedUp', 'Deactivated');"#,
+            r#"INSERT INTO media (id, bv_id, title, type, state, retry_count) VALUES (100, 'BV1m4test00100', 'M100', 'Video', 'Pending', 0);"#,
+            r#"INSERT INTO media (id, bv_id, title, type, state, retry_count) VALUES (101, 'BV1m4test00101', 'M101', 'Video', 'Pending', 0);"#,
+            r#"INSERT INTO media (id, bv_id, title, type, state, retry_count) VALUES (102, 'BV1m4test00102', 'M102', 'Video', 'Pending', 0);"#,
+            r#"INSERT INTO media_up (id, up_id) VALUES (100, 10);"#,
+            r#"INSERT INTO media_up (id, up_id) VALUES (101, 20);"#,
+            r#"INSERT INTO media_up (id, up_id) VALUES (102, 30);"#,
+        ] {
+            conn.execute(Statement::from_string(DatabaseBackend::Sqlite, sql))
+                .await
+                .unwrap();
+        }
+
+        // Apply Migration #3 only: it prematurely marks Inactive/Deactivated UPs sync_complete = 1.
+        Migrator::up(&conn, Some(1)).await.unwrap();
+        conn.execute(Statement::from_string(
+            DatabaseBackend::Sqlite,
+            r#"UPDATE "up" SET resume_page = 3 WHERE up_id IN (20, 30);"#,
+        ))
+        .await
+        .unwrap();
+
+        // Apply Migration #4: backfills from_up_feed = 1 for Active UPs only, and resets non-Active UPs.
+        Migrator::up(&conn, None).await.unwrap();
+        let db = Db { conn };
+        db.check_integrity().await.unwrap();
+
+        let u10 = db.get_up(10).await.unwrap();
+        assert!(u10.sync_complete);
+        assert_eq!(u10.resume_page, None);
+        assert_eq!(db.get_up_feed_media_ids(10).await.unwrap(), vec![100]);
+
+        let u20 = db.get_up(20).await.unwrap();
+        assert!(!u20.sync_complete);
+        assert_eq!(u20.resume_page, None);
+        assert!(db.get_up_feed_media_ids(20).await.unwrap().is_empty());
+        assert_eq!(db.get_up_ids_of_media(101).await.unwrap(), vec![20]);
+
+        let u30 = db.get_up(30).await.unwrap();
+        assert!(!u30.sync_complete);
+        assert_eq!(u30.resume_page, None);
+        assert!(db.get_up_feed_media_ids(30).await.unwrap().is_empty());
+        assert_eq!(db.get_up_ids_of_media(102).await.unwrap(), vec![30]);
+
+        // Verify upsert_media_ups vs upsert_up_feed_media_ups monotonicity (false -> true, never true -> false).
+        db.upsert_medias([
+            sample_media(200, MediaState::Pending),
+            sample_media(201, MediaState::Pending),
+            sample_media(202, MediaState::Pending),
+        ])
+        .await
+        .unwrap();
+
+        // Favorite-set / backfill insert sets from_up_feed = false.
+        db.upsert_media_ups([media_up::Model {
+            id: 200,
+            up_id: 10,
+            from_up_feed: false,
+        }])
+        .await
+        .unwrap();
+        assert_eq!(db.get_up_ids_of_media(200).await.unwrap(), vec![10]);
+        assert_eq!(db.get_up_feed_media_ids(10).await.unwrap(), vec![100]);
+
+        // UP-feed upsert upgrades existing (200, 10) false -> true, inserts (201, 10) as true,
+        // and enforces true even if caller passes from_up_feed = false.
+        db.upsert_up_feed_media_ups([
+            media_up::Model {
+                id: 200,
+                up_id: 10,
+                from_up_feed: true,
+            },
+            media_up::Model {
+                id: 201,
+                up_id: 10,
+                from_up_feed: true,
+            },
+            media_up::Model {
+                id: 202,
+                up_id: 10,
+                from_up_feed: false,
+            },
+        ])
+        .await
+        .unwrap();
+        let mut feed_ids = db.get_up_feed_media_ids(10).await.unwrap();
+        feed_ids.sort_unstable();
+        assert_eq!(feed_ids, vec![100, 200, 201, 202]);
+
+        // Subsequent favorite-set / backfill upsert with from_up_feed = false MUST NOT downgrade true -> false.
+        db.upsert_media_ups([
+            media_up::Model {
+                id: 200,
+                up_id: 10,
+                from_up_feed: false,
+            },
+            media_up::Model {
+                id: 201,
+                up_id: 10,
+                from_up_feed: false,
+            },
+        ])
+        .await
+        .unwrap();
+        let mut feed_ids_after = db.get_up_feed_media_ids(10).await.unwrap();
+        feed_ids_after.sort_unstable();
+        assert_eq!(feed_ids_after, vec![100, 200, 201, 202]);
+
+        // Verify Migration #4 down/up roundtrip cleanly drops and re-adds from_up_feed.
+        Migrator::down(db.conn(), Some(1)).await.unwrap();
+        Migrator::up(db.conn(), None).await.unwrap();
+        db.check_integrity().await.unwrap();
+        let mut feed_ids_roundtrip = db.get_up_feed_media_ids(10).await.unwrap();
+        feed_ids_roundtrip.sort_unstable();
+        assert_eq!(feed_ids_roundtrip, vec![100, 200, 201, 202]);
+        assert!(db.get_up_feed_media_ids(20).await.unwrap().is_empty());
     }
 }
