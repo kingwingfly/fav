@@ -62,6 +62,7 @@ struct RawMedia {
     bvid: Option<String>,
     #[serde(default)]
     bv_id: Option<String>,
+    #[serde(default, deserialize_with = "null_as_default")]
     title: String,
     #[serde(
         default = "default_media_type",
@@ -86,8 +87,7 @@ impl TryFrom<RawMedia> for Media {
             .id
             .or(raw.aid)
             .ok_or("missing `id` / `aid` field in media")?;
-        let bv_id = pick_optional_str(raw.bvid, raw.bv_id)
-            .ok_or("missing `bvid` / `bv_id` field in media")?;
+        let bv_id = pick_optional_str(raw.bvid, raw.bv_id).unwrap_or_default();
         Ok(Self {
             id,
             bv_id,
@@ -160,7 +160,26 @@ mod tests {
         let missing_id = r#"{"bvid": "BV1xx411c7mD", "title": "No ID"}"#;
         assert!(serde_json::from_str::<Media>(missing_id).is_err());
 
-        let missing_bvid = r#"{"id": 170005, "title": "No BV"}"#;
-        assert!(serde_json::from_str::<Media>(missing_bvid).is_err());
+        let missing_bvid = r#"{"id": 170005, "title": "Audio Track", "type": 12}"#;
+        let media: Media = serde_json::from_str(missing_bvid).unwrap();
+        assert_eq!(media.id, 170005);
+        assert_eq!(media.bv_id, "");
+        assert_eq!(media.title, "Audio Track");
+        assert_eq!(media.r#type, MediaType::Audio);
+
+        let null_bvid_and_title =
+            r#"{"id": 170006, "bvid": null, "bv_id": null, "title": null, "type": 24, "attr": 9}"#;
+        let media: Media = serde_json::from_str(null_bvid_and_title).unwrap();
+        assert_eq!(media.id, 170006);
+        assert_eq!(media.bv_id, "");
+        assert_eq!(media.title, "");
+        assert_eq!(media.r#type, MediaType::Unknown(24));
+        assert!(media.is_invalidated());
+
+        let missing_title = r#"{"aid": 170007}"#;
+        let media: Media = serde_json::from_str(missing_title).unwrap();
+        assert_eq!(media.id, 170007);
+        assert_eq!(media.bv_id, "");
+        assert_eq!(media.title, "");
     }
 }

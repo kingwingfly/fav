@@ -1,4 +1,8 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 use anyhow::{Result, anyhow};
 use reqwest::cookie::{CookieStore as _, Jar};
@@ -35,10 +39,23 @@ pub fn parse_cookie_header(raw: &str) -> BTreeMap<String, String> {
     map
 }
 
-/// Parse a Netscape HTTP Cookie File (`cookies.txt`) extracting cookies scoped to `bilibili.com`.
+/// Parse a Netscape HTTP Cookie File (`cookies.txt`) extracting unexpired cookies scoped to
+/// `bilibili.com`.
 ///
 /// Supports `#HttpOnly_` prefixed rows used by browser cookie exporters and `yt-dlp`.
 pub fn parse_netscape_cookies(content: &str) -> BTreeMap<String, String> {
+    let now_unix = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    parse_netscape_cookies_at(content, now_unix)
+}
+
+/// Parse a Netscape HTTP Cookie File (`cookies.txt`) relative to `now_unix` (Unix epoch seconds),
+/// skipping rows whose non-zero expiration timestamp is at or before `now_unix`.
+///
+/// Session cookies (`expiration == 0`) and cookies with future expiration timestamps are retained.
+pub fn parse_netscape_cookies_at(content: &str, now_unix: u64) -> BTreeMap<String, String> {
     let mut map = BTreeMap::new();
     for raw_line in content.lines() {
         let line = raw_line.trim();
@@ -62,6 +79,11 @@ pub fn parse_netscape_cookies(content: &str) -> BTreeMap<String, String> {
             .trim_start_matches('.')
             .to_ascii_lowercase();
         if domain != "bilibili.com" && !domain.ends_with(".bilibili.com") {
+            continue;
+        }
+        if let Ok(exp) = fields[4].trim().parse::<i64>()
+            && (exp < 0 || (exp > 0 && (exp as u64) <= now_unix))
+        {
             continue;
         }
         let name = fields[5].trim();
@@ -182,6 +204,30 @@ api.bilibili.com\tFALSE\t/\tFALSE\t0\tbuvid3\tBUV-1
         assert_eq!(map.get("bili_jct").map(String::as_str), Some("csrf123"));
         assert_eq!(map.get("buvid3").map(String::as_str), Some("BUV-1"));
         assert!(!map.contains_key("other"));
+    }
+
+    #[test]
+    fn parse_netscape_cookies_at_skips_expired_and_keeps_future_and_session() {
+        let now = 1_700_000_000u64;
+        let txt = "\
+# Netscape HTTP Cookie File
+.bilibili.com\tTRUE\t/\tTRUE\t1699999999\tSESSDATA\texpired_sess
+.bilibili.com\tTRUE\t/\tTRUE\t1700000000\tbili_jct\texact_now_expired
+.bilibili.com\tTRUE\t/\tTRUE\t-1\tneg_cookie\tnegative_expiry_expired
+#HttpOnly_.bilibili.com\tTRUE\t/\tTRUE\t1700000001\tDedeUserID\tfuture_uid
+.bilibili.com\tTRUE\t/\tFALSE\t0\tbuvid3\tsession_buvid
+.bilibili.com\tTRUE\t/\tTRUE\t1600000000\tDedeUserID\texpired_duplicate_must_not_overwrite
+";
+        let map = parse_netscape_cookies_at(txt, now);
+        assert!(!map.contains_key("SESSDATA"));
+        assert!(!map.contains_key("bili_jct"));
+        assert!(!map.contains_key("neg_cookie"));
+        assert_eq!(
+            map.get("DedeUserID").map(String::as_str),
+            Some("future_uid")
+        );
+        assert_eq!(map.get("buvid3").map(String::as_str), Some("session_buvid"));
+        assert_eq!(map.len(), 2);
     }
 
     #[test]
