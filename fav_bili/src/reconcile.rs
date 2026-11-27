@@ -215,16 +215,27 @@ fn is_real_bvid(bv_id: &str) -> bool {
     lower.len() == 12 && lower.starts_with("bv1")
 }
 
-fn matches_page_marker(path: &Path, page_num: i32) -> bool {
-    if page_num <= 0 {
-        return false;
-    }
-    let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
-        return false;
-    };
+struct PageMarkerSpan {
+    start_byte: usize,
+    end_byte: usize,
+    num: i32,
+}
 
+fn sanitize_part_component(part: &str) -> String {
+    let opts = sanitize_filename::Options {
+        windows: true,
+        truncate: false,
+        replacement: "_",
+    };
+    sanitize_filename::sanitize_with_options(part.trim(), opts)
+        .trim()
+        .trim_end_matches(['.', ' '])
+        .to_string()
+}
+
+fn parse_page_marker_spans(stem: &str) -> Vec<PageMarkerSpan> {
     let bytes = stem.as_bytes();
-    let mut last_canonical: Option<i32> = None;
+    let mut spans = Vec::new();
     let mut i = 0;
     while i < bytes.len() {
         if bytes[i] == b'(' {
@@ -236,13 +247,14 @@ fn matches_page_marker(path: &Path, page_num: i32) -> bool {
             if j > start && j < bytes.len() && bytes[j] == b')' {
                 let digits = &stem[start..j];
                 if !digits.starts_with('0')
-                    && let Ok(k) = digits.parse::<i32>()
-                    && k > 0
+                    && let Ok(num) = digits.parse::<i32>()
+                    && num > 0
                 {
-                    let followed_by_boundary = j + 1 == bytes.len() || bytes[j + 1] == b'-';
-                    if followed_by_boundary {
-                        last_canonical = Some(k);
-                    }
+                    spans.push(PageMarkerSpan {
+                        start_byte: i,
+                        end_byte: j + 1,
+                        num,
+                    });
                 }
                 i = j + 1;
                 continue;
@@ -250,13 +262,86 @@ fn matches_page_marker(path: &Path, page_num: i32) -> bool {
         }
         i += 1;
     }
+    spans
+}
 
-    if let Some(canonical_page) = last_canonical {
-        canonical_page == page_num
-    } else {
-        let marker = format!("({page_num})");
-        stem.contains(&marker)
+fn matches_page_marker(path: &Path, page_num: i32, part: &str) -> bool {
+    if page_num <= 0 {
+        return false;
     }
+    let Some(stem) = path.file_stem().and_then(|s| s.to_str()) else {
+        return false;
+    };
+
+    let bytes = stem.as_bytes();
+    let spans = parse_page_marker_spans(stem);
+    let is_preceded_by_space =
+        |span: &PageMarkerSpan| span.start_byte > 0 && bytes[span.start_byte - 1] == b' ';
+    let is_followed_by_dash = |span: &PageMarkerSpan| bytes.get(span.end_byte) == Some(&b'-');
+    let is_at_end = |span: &PageMarkerSpan| span.end_byte == bytes.len();
+
+    let clean_part = sanitize_part_component(part);
+    if !clean_part.is_empty() {
+        let dash_spans: Vec<&PageMarkerSpan> =
+            spans.iter().filter(|s| is_followed_by_dash(s)).collect();
+
+        // 1. Prefer a `({k})-` marker whose trailing suffix matches the sanitized `part`
+        //    (exact match, or non-empty prefix match for byte-truncated long filenames).
+        if let Some(exact) = dash_spans
+            .iter()
+            .rev()
+            .find(|s| stem[s.end_byte + 1..] == clean_part)
+        {
+            return exact.num == page_num;
+        }
+        if let Some(prefix) = dash_spans.iter().rev().find(|s| {
+            let suffix = &stem[s.end_byte + 1..];
+            !suffix.is_empty() && clean_part.starts_with(suffix)
+        }) {
+            return prefix.num == page_num;
+        }
+
+        // 2. Otherwise consider ONLY `({k})-` markers (NOT a trailing `({k})` at end-of-stem
+        //    which belongs to `{part}`, like `Lecture (2024)` or `Part (2)`).
+        //    Prefer markers NOT immediately preceded by `' '` (since `build_safe_filename` trims
+        //    trailing spaces/dots from `title` before `({page})`, whereas in-part tokens like
+        //    `Part (2)-Draft` have a space before `(2)`).
+        if !dash_spans.is_empty() {
+            if let Some(last_tight) = dash_spans.iter().rev().find(|s| !is_preceded_by_space(s)) {
+                return last_tight.num == page_num;
+            }
+            return dash_spans[0].num == page_num;
+        }
+
+        // 3. No `({k})-` markers exist: if there is a canonical no-part trailing `({k})` at
+        //    end-of-stem not preceded by `' '` (e.g. `102-Clip (2)(1).mp4`), use it.
+        if let Some(trailing_tight) = spans
+            .iter()
+            .rev()
+            .find(|s| is_at_end(s) && !is_preceded_by_space(s))
+        {
+            return trailing_tight.num == page_num;
+        }
+    } else {
+        // Empty `part`: canonical markers are `({k})` at end-of-stem or followed by `'-'`.
+        // Prefer non-space-preceded markers if multiple exist, checking the last one.
+        let canonical: Vec<&PageMarkerSpan> = spans
+            .iter()
+            .filter(|s| is_at_end(s) || is_followed_by_dash(s))
+            .collect();
+        if !canonical.is_empty() {
+            let chosen = canonical
+                .iter()
+                .rev()
+                .find(|s| !is_preceded_by_space(s))
+                .unwrap_or_else(|| canonical.last().expect("canonical is non-empty"));
+            return chosen.num == page_num;
+        }
+    }
+
+    // Fallback when no canonical markers exist (e.g. custom rename `custom_(2)_edited.mp4`).
+    let marker = format!("({page_num})");
+    stem.contains(&marker)
 }
 
 struct PendingCheck<'a> {
@@ -352,7 +437,8 @@ async fn reconcile_slice(
         if let Some(candidates) = disk_index.by_aid_prefix.get(&item.media.id) {
             matched = candidates.iter().find(|p| {
                 !scratch.claimed.contains(&path_key(p))
-                    && (!item.is_multipage || matches_page_marker(p, item.page.page))
+                    && (!item.is_multipage
+                        || matches_page_marker(p, item.page.page, &item.page.part))
             });
         }
 
@@ -364,7 +450,8 @@ async fn reconcile_slice(
                 .find(|(name_lower, p)| {
                     name_lower.contains(&bv_lower)
                         && !scratch.claimed.contains(&path_key(p))
-                        && (!item.is_multipage || matches_page_marker(p, item.page.page))
+                        && (!item.is_multipage
+                            || matches_page_marker(p, item.page.page, &item.page.part))
                 })
                 .map(|(_, p)| p);
         }
@@ -972,52 +1059,160 @@ mod tests {
     #[test]
     fn matches_page_marker_prefers_canonical_markers_and_supports_custom_renames() {
         // Video title contains `(2)` while canonical page marker is `(1)`
-        assert!(matches_page_marker(Path::new("100-Clip (2)(1)-P1.mp4"), 1));
-        assert!(!matches_page_marker(Path::new("100-Clip (2)(1)-P1.mp4"), 2));
-        assert!(!matches_page_marker(Path::new("100-Clip (2)(1)-P1.mp4"), 3));
+        assert!(matches_page_marker(
+            Path::new("100-Clip (2)(1)-P1.mp4"),
+            1,
+            "P1"
+        ));
+        assert!(!matches_page_marker(
+            Path::new("100-Clip (2)(1)-P1.mp4"),
+            2,
+            "P1"
+        ));
+        assert!(!matches_page_marker(
+            Path::new("100-Clip (2)(1)-P1.mp4"),
+            3,
+            "P1"
+        ));
+
+        // Part title ending with parenthesized year/number MUST NOT overshadow canonical `(1)-`
+        assert!(matches_page_marker(
+            Path::new("100-Rust Tutorial(1)-Lecture (2024).mp4"),
+            1,
+            "Lecture (2024)"
+        ));
+        assert!(!matches_page_marker(
+            Path::new("100-Rust Tutorial(1)-Lecture (2024).mp4"),
+            2024,
+            "Lecture (2024)"
+        ));
+        assert!(matches_page_marker(
+            Path::new("100-Rust Tutorial(1)-Lecture (2024) edited.mp4"),
+            1,
+            "Lecture (2024)"
+        ));
+
+        // Part title containing `Part (2)` MUST match page 1, NOT page 2
+        assert!(matches_page_marker(
+            Path::new("100-Course(1)-Part (2).mp4"),
+            1,
+            "Part (2)"
+        ));
+        assert!(!matches_page_marker(
+            Path::new("100-Course(1)-Part (2).mp4"),
+            2,
+            "Part (2)"
+        ));
+        assert!(!matches_page_marker(
+            Path::new("100-Course(1)-Part (2).mp4"),
+            2,
+            "Other Part"
+        ));
+
+        // Part title containing `Part (2)-Draft` (with dash after parenthesized number) MUST match page 1, NOT page 2
+        assert!(matches_page_marker(
+            Path::new("100-Clip(1)-Part (2)-Draft.mp4"),
+            1,
+            "Part (2)-Draft"
+        ));
+        assert!(!matches_page_marker(
+            Path::new("100-Clip(1)-Part (2)-Draft.mp4"),
+            2,
+            "Part (2)-Draft"
+        ));
+        // Even if the part suffix was edited so exact/prefix part matching misses,
+        // non-space-preceded `(1)-` beats space-preceded ` (2)-`.
+        assert!(matches_page_marker(
+            Path::new("100-Clip(1)-Part (2)-Edited.mp4"),
+            1,
+            "Part (2)-Draft"
+        ));
+        assert!(!matches_page_marker(
+            Path::new("100-Clip(1)-Part (2)-Edited.mp4"),
+            2,
+            "Part (2)-Draft"
+        ));
+
+        // Truncated long part suffix still matches via prefix against sanitized part
+        assert!(matches_page_marker(
+            Path::new("100-Title(1)-VeryLongPart.mp4"),
+            1,
+            "VeryLongPartNameThatWasTruncated"
+        ));
+        assert!(!matches_page_marker(
+            Path::new("100-Title(1)-VeryLongPart.mp4"),
+            2,
+            "VeryLongPartNameThatWasTruncated"
+        ));
 
         // No part suffix: canonical `(1)` at end of stem
-        assert!(matches_page_marker(Path::new("100-Clip (2)(1).mp4"), 1));
-        assert!(!matches_page_marker(Path::new("100-Clip (2)(1).mp4"), 2));
+        assert!(matches_page_marker(Path::new("100-Clip (2)(1).mp4"), 1, ""));
+        assert!(!matches_page_marker(
+            Path::new("100-Clip (2)(1).mp4"),
+            2,
+            ""
+        ));
 
         // Title contains `(2)-` before the real `(1)-` marker: last canonical marker wins
         assert!(matches_page_marker(
             Path::new("100-Season (2)-Live(1)-P1.mp4"),
-            1
+            1,
+            "P1"
         ));
         assert!(!matches_page_marker(
             Path::new("100-Season (2)-Live(1)-P1.mp4"),
-            2
+            2,
+            "P1"
         ));
 
         // Multi-digit page numbers and nested parent directories containing `(2)`
         assert!(matches_page_marker(
             Path::new("season (2)/100-Clip (2)(12)-P12.mp4"),
-            12
+            12,
+            "P12"
         ));
         assert!(!matches_page_marker(
             Path::new("season (2)/100-Clip (2)(12)-P12.mp4"),
-            2
+            2,
+            "P12"
         ));
 
         // UTF-8 CJK titles and part names
         assert!(matches_page_marker(
             Path::new("100-测试 (2)(1)-第一集.mp4"),
-            1
+            1,
+            "第一集"
         ));
         assert!(!matches_page_marker(
             Path::new("100-测试 (2)(1)-第一集.mp4"),
-            2
+            2,
+            "第一集"
         ));
 
         // Custom renamed filename without canonical `(<k>)-` or trailing `(<k>)` falls back to substring in stem
-        assert!(matches_page_marker(Path::new("custom_(2)_final.mp4"), 2));
-        assert!(!matches_page_marker(Path::new("custom_(2)_final.mp4"), 1));
+        assert!(matches_page_marker(
+            Path::new("custom_(2)_edited.mp4"),
+            2,
+            "P2"
+        ));
+        assert!(!matches_page_marker(
+            Path::new("custom_(2)_edited.mp4"),
+            1,
+            "P1"
+        ));
 
         // Non-positive or missing markers never match
-        assert!(!matches_page_marker(Path::new("100-Clip (0)-P1.mp4"), 0));
-        assert!(!matches_page_marker(Path::new("100-Clip (0)-P1.mp4"), 1));
-        assert!(!matches_page_marker(Path::new("100-Clip.mp4"), 1));
+        assert!(!matches_page_marker(
+            Path::new("100-Clip (0)-P1.mp4"),
+            0,
+            "P1"
+        ));
+        assert!(!matches_page_marker(
+            Path::new("100-Clip (0)-P1.mp4"),
+            1,
+            "P1"
+        ));
+        assert!(!matches_page_marker(Path::new("100-Clip.mp4"), 1, "P1"));
     }
 
     #[tokio::test]
@@ -1128,6 +1323,104 @@ mod tests {
                 MissingPage {
                     media_id: 102,
                     cid: 1202
+                },
+            ])
+        );
+    }
+
+    #[tokio::test]
+    async fn layer3_multipage_reconcile_handles_parenthesized_numbers_in_part_name() {
+        let tmp = tempfile::tempdir().unwrap();
+        let out_dir = tmp.path().join("videos");
+        let moved_dir = out_dir.join("moved");
+        std::fs::create_dir_all(&moved_dir).unwrap();
+
+        let db = Db::open_in_memory().await.unwrap();
+        seed_completed_media(&db, 200, "BV17x411w7KC", "Rust Tutorial").await;
+        seed_completed_media(&db, 201, "BV1Q541167Qg", "Course").await;
+
+        // Media 200: P1 has part "Lecture (2024)"; only P1 exists on disk (cross-disk move, no inode).
+        std::fs::write(
+            moved_dir.join("200-Rust Tutorial(1)-Lecture (2024).mp4"),
+            b"m200-p1",
+        )
+        .unwrap();
+        db.mark_page_completed(
+            200,
+            2001,
+            1,
+            "Lecture (2024)".to_owned(),
+            "old/200-Rust Tutorial(1)-Lecture (2024).mp4".to_owned(),
+            Some(999),
+            None,
+        )
+        .await
+        .unwrap();
+        db.mark_page_completed(
+            200,
+            2002,
+            2,
+            "Lecture (2025)".to_owned(),
+            "old/200-Rust Tutorial(2)-Lecture (2025).mp4".to_owned(),
+            Some(999),
+            None,
+        )
+        .await
+        .unwrap();
+
+        // Media 201: P1 has part "Part (2)"; only P1 exists on disk; P2 MUST NOT steal P1's file!
+        std::fs::write(moved_dir.join("201-Course(1)-Part (2).mp4"), b"m201-p1").unwrap();
+        db.mark_page_completed(
+            201,
+            2101,
+            1,
+            "Part (2)".to_owned(),
+            "old/201-Course(1)-Part (2).mp4".to_owned(),
+            Some(999),
+            None,
+        )
+        .await
+        .unwrap();
+        db.mark_page_completed(
+            201,
+            2102,
+            2,
+            "Part (3)".to_owned(),
+            "old/201-Course(2)-Part (3).mp4".to_owned(),
+            Some(999),
+            None,
+        )
+        .await
+        .unwrap();
+
+        let muxer = MockMuxer::succeeding();
+        let rep = reconcile_completed_medias(&db, &muxer, &out_dir, true, None)
+            .await
+            .unwrap();
+
+        assert_eq!(rep.relocated.len(), 2);
+        assert!(rep.relocated.iter().any(|r| {
+            r.media_id == 200
+                && r.cid == 2001
+                && r.new_local_path == "moved/200-Rust Tutorial(1)-Lecture (2024).mp4"
+        }));
+        assert!(rep.relocated.iter().any(|r| {
+            r.media_id == 201
+                && r.cid == 2101
+                && r.new_local_path == "moved/201-Course(1)-Part (2).mp4"
+        }));
+
+        let missing: HashSet<MissingPage> = rep.missing_pages.iter().copied().collect();
+        assert_eq!(
+            missing,
+            HashSet::from([
+                MissingPage {
+                    media_id: 200,
+                    cid: 2002
+                },
+                MissingPage {
+                    media_id: 201,
+                    cid: 2102
                 },
             ])
         );
