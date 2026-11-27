@@ -1459,9 +1459,21 @@ mod tests {
             .unwrap();
         ctx.db
             .upsert_media_ups([
-                crate::entity::media_up::Model { id: 1, up_id: 100 },
-                crate::entity::media_up::Model { id: 2, up_id: 200 },
-                crate::entity::media_up::Model { id: 3, up_id: 100 },
+                crate::entity::media_up::Model {
+                    id: 1,
+                    up_id: 100,
+                    from_up_feed: false,
+                },
+                crate::entity::media_up::Model {
+                    id: 2,
+                    up_id: 200,
+                    from_up_feed: false,
+                },
+                crate::entity::media_up::Model {
+                    id: 3,
+                    up_id: 100,
+                    from_up_feed: false,
+                },
             ])
             .await
             .unwrap();

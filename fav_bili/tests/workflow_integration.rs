@@ -3925,10 +3925,26 @@ async fn pull_consistent_filters_and_safe_bulk_force() {
     .await
     .unwrap();
     db.upsert_media_ups([
-        fav_bili::entity::media_up::Model { id: 1, up_id: 100 },
-        fav_bili::entity::media_up::Model { id: 2, up_id: 200 },
-        fav_bili::entity::media_up::Model { id: 3, up_id: 100 },
-        fav_bili::entity::media_up::Model { id: 4, up_id: 100 },
+        fav_bili::entity::media_up::Model {
+            id: 1,
+            up_id: 100,
+            from_up_feed: false,
+        },
+        fav_bili::entity::media_up::Model {
+            id: 2,
+            up_id: 200,
+            from_up_feed: false,
+        },
+        fav_bili::entity::media_up::Model {
+            id: 3,
+            up_id: 100,
+            from_up_feed: false,
+        },
+        fav_bili::entity::media_up::Model {
+            id: 4,
+            up_id: 100,
+            from_up_feed: false,
+        },
     ])
     .await
     .unwrap();
