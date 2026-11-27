@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 use crate::{
     error::AppError,
     state::{AudioFormat, VideoClarity, VideoCodec},
+    table::ColorChoice,
 };
 
 pub const FAV_DIR_ENV: &str = "FAV_DIR";
@@ -420,6 +421,17 @@ impl Config {
             })
             .transpose()
     }
+
+    /// Parse configured `color`, if set.
+    pub fn parsed_color(&self) -> Result<Option<ColorChoice>> {
+        self.color
+            .as_deref()
+            .map(|s| {
+                ColorChoice::from_str(s)
+                    .map_err(|msg| anyhow::Error::from(AppError::usage(anyhow!("{msg}"))))
+            })
+            .transpose()
+    }
 }
 
 /// Parse human-readable rate limits such as `"5M"`, `"500K"`, `"2.5MB"`, or raw bytes/sec `"1048576"`.
@@ -695,6 +707,7 @@ tmp_dir = "staging"
         assert_eq!(cfg.parsed_codec().unwrap(), Some(VideoCodec::Hevc));
         assert_eq!(cfg.sound_only, Some(true));
         assert_eq!(cfg.parsed_audio_format().unwrap(), Some(AudioFormat::Mp3));
+        assert_eq!(cfg.parsed_color().unwrap(), Some(ColorChoice::Auto));
         assert_eq!(cfg.recheck, Some(true));
         assert_eq!(cfg.tmp_dir, Some(PathBuf::from("staging")));
 
@@ -736,6 +749,34 @@ tmp_dir = "staging"
             ..Default::default()
         };
         assert!(bad_audio.parsed_audio_format().is_err());
+        let bad_color = Config {
+            color: Some("rainbow".to_owned()),
+            ..Default::default()
+        };
+        let err = bad_color.parsed_color().unwrap_err();
+        assert_eq!(
+            crate::error::classify_anyhow(&err),
+            crate::error::ExitKind::Usage
+        );
+        assert_eq!(
+            Config {
+                color: Some("never".to_owned()),
+                ..Default::default()
+            }
+            .parsed_color()
+            .unwrap(),
+            Some(ColorChoice::Never)
+        );
+        assert_eq!(
+            Config {
+                color: Some("always".to_owned()),
+                ..Default::default()
+            }
+            .parsed_color()
+            .unwrap(),
+            Some(ColorChoice::Always)
+        );
+        assert_eq!(Config::default().parsed_color().unwrap(), None);
     }
 
     #[test]

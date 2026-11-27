@@ -3744,3 +3744,666 @@ async fn active_scope_consistency_across_doctor_media_reset_status_and_pull_rech
         "inactive missing media must remain untouched by pull --recheck"
     );
 }
+
+#[tokio::test]
+async fn pull_consistent_filters_and_safe_bulk_force() {
+    let tmp = tempfile::tempdir().unwrap();
+    let sample_dir = tmp.path().join("samples");
+    std::fs::create_dir_all(&sample_dir).unwrap();
+    let (sample_video, sample_audio) = generate_tiny_av_streams(&sample_dir);
+    let v_bytes = std::fs::read(&sample_video).unwrap();
+    let a_bytes = std::fs::read(&sample_audio).unwrap();
+
+    let mut state = MockState::default();
+    state
+        .accounts_by_sessdata
+        .insert("sess_a".to_owned(), MockAccount::active(1001, "Alice"));
+
+    // Medias 1..=9 for combined filter & bulk --force tests
+    for aid in [1i64, 2, 3, 4, 5, 6, 7, 8, 9] {
+        let cid = aid * 100 + 1;
+        let vp = format!("/cdn/bf_v_{aid}.mp4");
+        let ap = format!("/cdn/bf_a_{aid}.m4a");
+        state.views.insert(
+            aid,
+            MockViewResponse::Ok {
+                aid,
+                bvid: aid_to_bvid(aid).unwrap(),
+                title: format!("Video{aid}"),
+                owner: MockUp {
+                    mid: 100,
+                    name: "Up".to_owned(),
+                },
+                pages: vec![MockPage {
+                    cid,
+                    page: 1,
+                    part: "P1".to_owned(),
+                }],
+            },
+        );
+        state.playurls.insert(
+            (aid, cid),
+            MockPlayurlResponse::Dash {
+                videos: vec![make_dash_spec(80, &vp, 7, 1_000_000)],
+                audios: Some(vec![make_audio_spec(&ap)]),
+            },
+        );
+        state
+            .cdn_assets
+            .insert(vp, MockCdnAsset::ok(v_bytes.clone()));
+        state
+            .cdn_assets
+            .insert(ap, MockCdnAsset::ok(a_bytes.clone()));
+    }
+    let server = MockBiliServer::start(state).await;
+
+    let ws_dir = tmp.path().join("ws");
+    let out_dir = tmp.path().join("out");
+    std::fs::create_dir_all(&out_dir).unwrap();
+    let ws = Workspace::new(ws_dir);
+    ws.ensure_dirs().unwrap();
+    let db = Db::open_in_memory().await.unwrap();
+
+    db.upsert_account(account::Model {
+        account_id: 1001,
+        name: "Alice".to_owned(),
+        cookies: "SESSDATA=sess_a; bili_jct=csrf_a".to_owned(),
+        state: AccountState::Active.to_string(),
+        refresh_token: None,
+    })
+    .await
+    .unwrap();
+    db.upsert_sets([
+        set::Model {
+            set_id: 10,
+            name: "Set10".to_owned(),
+            count: 5,
+            state: SetState::Active.to_string(),
+            kind: SetKind::Created.to_string(),
+            owner_mid: Some(1001),
+            sync_complete: true,
+            resume_page: None,
+        },
+        set::Model {
+            set_id: 20,
+            name: "Set20".to_owned(),
+            count: 5,
+            state: SetState::Active.to_string(),
+            kind: SetKind::Created.to_string(),
+            owner_mid: Some(1001),
+            sync_complete: true,
+            resume_page: None,
+        },
+    ])
+    .await
+    .unwrap();
+    db.upsert_set_accounts([
+        set_account::Model {
+            set_id: 10,
+            account_id: 1001,
+        },
+        set_account::Model {
+            set_id: 20,
+            account_id: 1001,
+        },
+    ])
+    .await
+    .unwrap();
+    db.upsert_ups([
+        up::Model {
+            up_id: 100,
+            name: "Up100".to_owned(),
+            state: UpState::Active.to_string(),
+            sync_complete: true,
+            resume_page: None,
+        },
+        up::Model {
+            up_id: 200,
+            name: "Up200".to_owned(),
+            state: UpState::Active.to_string(),
+            sync_complete: true,
+            resume_page: None,
+        },
+    ])
+    .await
+    .unwrap();
+    db.upsert_up_accounts([
+        up_account::Model {
+            up_id: 100,
+            account_id: 1001,
+        },
+        up_account::Model {
+            up_id: 200,
+            account_id: 1001,
+        },
+    ])
+    .await
+    .unwrap();
+
+    // 1: Pending (Set 10, Up 100)
+    // 2: Pending (Set 10, Up 200)
+    // 3: Pending (Set 20, Up 100)
+    // 4: Pending (Up 100 only)
+    // 5: Completed (Set 20)
+    // 6: Failed (Set 20)
+    // 7: Expired (Set 20)
+    // 8: PermissionDenied (Set 20)
+    // 9: Skipped (Set 20)
+    let make_row = |id: i64, st: MediaState| media::Model {
+        id,
+        bv_id: aid_to_bvid(id).unwrap(),
+        title: format!("Video{id}"),
+        r#type: MediaType::Video.to_string(),
+        state: st.to_string(),
+        retry_count: 0,
+        last_error: None,
+        updated_at: None,
+    };
+    db.upsert_medias([
+        make_row(1, MediaState::Pending),
+        make_row(2, MediaState::Pending),
+        make_row(3, MediaState::Pending),
+        make_row(4, MediaState::Pending),
+        make_row(5, MediaState::Completed),
+        make_row(6, MediaState::Failed),
+        make_row(7, MediaState::Expired),
+        make_row(8, MediaState::PermissionDenied),
+        make_row(9, MediaState::Skipped),
+    ])
+    .await
+    .unwrap();
+    db.upsert_media_sets([
+        media_set::Model { id: 1, set_id: 10 },
+        media_set::Model { id: 2, set_id: 10 },
+        media_set::Model { id: 3, set_id: 20 },
+        media_set::Model { id: 5, set_id: 20 },
+        media_set::Model { id: 6, set_id: 20 },
+        media_set::Model { id: 7, set_id: 20 },
+        media_set::Model { id: 8, set_id: 20 },
+        media_set::Model { id: 9, set_id: 20 },
+    ])
+    .await
+    .unwrap();
+    db.upsert_media_ups([
+        fav_bili::entity::media_up::Model { id: 1, up_id: 100 },
+        fav_bili::entity::media_up::Model { id: 2, up_id: 200 },
+        fav_bili::entity::media_up::Model { id: 3, up_id: 100 },
+        fav_bili::entity::media_up::Model { id: 4, up_id: 100 },
+    ])
+    .await
+    .unwrap();
+
+    let ctx = AppContext::for_test(
+        ws,
+        Config::default(),
+        db,
+        Arc::new(MockMuxer::succeeding()),
+        server.client_config(),
+    );
+
+    // 1. Multiple `--set` AND `--up` intersects dimensions instead of unioning!
+    pull(
+        &ctx,
+        PullOptions {
+            set_ids: vec![10, 20],
+            up_ids: vec![100],
+            output_dir: Some(out_dir.clone()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(server.cdn_hits("/cdn/bf_v_1.mp4"), 1);
+    assert_eq!(server.cdn_hits("/cdn/bf_v_3.mp4"), 1);
+    assert_eq!(server.cdn_hits("/cdn/bf_v_2.mp4"), 0);
+    assert_eq!(server.cdn_hits("/cdn/bf_v_4.mp4"), 0);
+
+    // 2. Positional targets + `--set` intersects instead of ignoring `--set`!
+    pull(
+        &ctx,
+        PullOptions {
+            targets: vec![aid_to_bvid(2).unwrap(), aid_to_bvid(4).unwrap()],
+            set_ids: vec![10],
+            output_dir: Some(out_dir.clone()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(server.cdn_hits("/cdn/bf_v_2.mp4"), 1);
+    assert_eq!(server.cdn_hits("/cdn/bf_v_4.mp4"), 0);
+
+    // 3. Bulk `--force` on Set 20 re-downloads Completed (3, 5) ONLY; leaves Failed (6),
+    //    Expired (7), PermissionDenied (8), Skipped (9) untouched!
+    pull(
+        &ctx,
+        PullOptions {
+            set_ids: vec![20],
+            force: true,
+            output_dir: Some(out_dir.clone()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(server.cdn_hits("/cdn/bf_v_3.mp4"), 2);
+    assert_eq!(server.cdn_hits("/cdn/bf_v_5.mp4"), 1);
+    assert_eq!(server.cdn_hits("/cdn/bf_v_6.mp4"), 0);
+    assert_eq!(server.cdn_hits("/cdn/bf_v_7.mp4"), 0);
+    assert_eq!(server.cdn_hits("/cdn/bf_v_8.mp4"), 0);
+    assert_eq!(server.cdn_hits("/cdn/bf_v_9.mp4"), 0);
+
+    // 4. Bulk `--force --retry-failed` also retries Failed (6), still excludes 7/8/9!
+    pull(
+        &ctx,
+        PullOptions {
+            set_ids: vec![20],
+            force: true,
+            retry_failed: true,
+            output_dir: Some(out_dir.clone()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(server.cdn_hits("/cdn/bf_v_6.mp4"), 1);
+    assert_eq!(server.cdn_hits("/cdn/bf_v_7.mp4"), 0);
+    assert_eq!(server.cdn_hits("/cdn/bf_v_8.mp4"), 0);
+    assert_eq!(server.cdn_hits("/cdn/bf_v_9.mp4"), 0);
+
+    // 5. Explicit positional target + `--force` allows retrying Expired (7)!
+    pull(
+        &ctx,
+        PullOptions {
+            targets: vec![aid_to_bvid(7).unwrap()],
+            force: true,
+            output_dir: Some(out_dir),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(server.cdn_hits("/cdn/bf_v_7.mp4"), 1);
+    assert_eq!(
+        ctx.db.get_media(7).await.unwrap().state,
+        MediaState::Completed.as_str()
+    );
+}
+
+#[tokio::test]
+async fn pull_multi_account_scoping_and_shared_permission_denied_handoff() {
+    let tmp = tempfile::tempdir().unwrap();
+    let sample_dir = tmp.path().join("samples");
+    std::fs::create_dir_all(&sample_dir).unwrap();
+    let (sample_video, sample_audio) = generate_tiny_av_streams(&sample_dir);
+    let v_bytes = std::fs::read(&sample_video).unwrap();
+    let a_bytes = std::fs::read(&sample_audio).unwrap();
+
+    let mut state = MockState::default();
+    state
+        .accounts_by_sessdata
+        .insert("sess_a".to_owned(), MockAccount::active(1001, "Alice"));
+    state
+        .accounts_by_sessdata
+        .insert("sess_b".to_owned(), MockAccount::active(1002, "Bob"));
+
+    // 501: exclusive to Alice
+    // 502: exclusive to Bob
+    // 503: shared between Alice and Bob; Alice gets -10403 (PermissionDenied) on playurl, Bob succeeds!
+    // 504: exclusive to Alice; Alice gets -403 (PermissionDenied) on view -> must NOT defer to Bob!
+    // 505: shared between Alice and Bob; BOTH Alice and Bob get -403 -> Alice defers, Bob marks PermissionDenied!
+    // 506: exclusive to Alice (extra for --limit test)
+    // 507: exclusive to Bob (extra for --limit test)
+    for aid in [501i64, 502, 503, 504, 505, 506, 507] {
+        let cid = aid * 10 + 1;
+        let vp = format!("/cdn/ma_v_{aid}.mp4");
+        let ap = format!("/cdn/ma_a_{aid}.m4a");
+        state.views.insert(
+            aid,
+            MockViewResponse::Ok {
+                aid,
+                bvid: aid_to_bvid(aid).unwrap(),
+                title: format!("MultiAcct{aid}"),
+                owner: MockUp {
+                    mid: 99,
+                    name: "Creator".to_owned(),
+                },
+                pages: vec![MockPage {
+                    cid,
+                    page: 1,
+                    part: "P1".to_owned(),
+                }],
+            },
+        );
+        state.playurls.insert(
+            (aid, cid),
+            MockPlayurlResponse::Dash {
+                videos: vec![make_dash_spec(80, &vp, 7, 1_000_000)],
+                audios: Some(vec![make_audio_spec(&ap)]),
+            },
+        );
+        state
+            .cdn_assets
+            .insert(vp, MockCdnAsset::ok(v_bytes.clone()));
+        state
+            .cdn_assets
+            .insert(ap, MockCdnAsset::ok(a_bytes.clone()));
+    }
+    state.playurls_by_sessdata.insert(
+        ("sess_a".to_owned(), 503, 5031),
+        MockPlayurlResponse::Error {
+            code: -10403,
+            message: "VIP required".to_owned(),
+        },
+    );
+    state.views_by_sessdata.insert(
+        ("sess_a".to_owned(), 504),
+        MockViewResponse::Error {
+            code: -403,
+            message: "access denied".to_owned(),
+        },
+    );
+    state.views_by_sessdata.insert(
+        ("sess_a".to_owned(), 505),
+        MockViewResponse::Error {
+            code: -403,
+            message: "access denied for A".to_owned(),
+        },
+    );
+    state.views_by_sessdata.insert(
+        ("sess_b".to_owned(), 505),
+        MockViewResponse::Error {
+            code: -403,
+            message: "access denied for B".to_owned(),
+        },
+    );
+
+    let server = MockBiliServer::start(state).await;
+
+    let ws_dir = tmp.path().join("ws");
+    let out_dir = tmp.path().join("out");
+    std::fs::create_dir_all(&out_dir).unwrap();
+    let ws = Workspace::new(ws_dir);
+    ws.ensure_dirs().unwrap();
+    let db = Db::open_in_memory().await.unwrap();
+
+    db.upsert_account(account::Model {
+        account_id: 1001,
+        name: "Alice".to_owned(),
+        cookies: "SESSDATA=sess_a; bili_jct=csrf_a".to_owned(),
+        state: AccountState::Active.to_string(),
+        refresh_token: None,
+    })
+    .await
+    .unwrap();
+    db.upsert_account(account::Model {
+        account_id: 1002,
+        name: "Bob".to_owned(),
+        cookies: "SESSDATA=sess_b; bili_jct=csrf_b".to_owned(),
+        state: AccountState::Active.to_string(),
+        refresh_token: None,
+    })
+    .await
+    .unwrap();
+    db.upsert_sets([
+        set::Model {
+            set_id: 1,
+            name: "AliceSet".to_owned(),
+            count: 5,
+            state: SetState::Active.to_string(),
+            kind: SetKind::Created.to_string(),
+            owner_mid: Some(1001),
+            sync_complete: true,
+            resume_page: None,
+        },
+        set::Model {
+            set_id: 2,
+            name: "BobSet".to_owned(),
+            count: 4,
+            state: SetState::Active.to_string(),
+            kind: SetKind::Created.to_string(),
+            owner_mid: Some(1002),
+            sync_complete: true,
+            resume_page: None,
+        },
+    ])
+    .await
+    .unwrap();
+    db.upsert_set_accounts([
+        set_account::Model {
+            set_id: 1,
+            account_id: 1001,
+        },
+        set_account::Model {
+            set_id: 2,
+            account_id: 1002,
+        },
+    ])
+    .await
+    .unwrap();
+
+    let make_row = |id: i64| media::Model {
+        id,
+        bv_id: aid_to_bvid(id).unwrap(),
+        title: format!("MultiAcct{id}"),
+        r#type: MediaType::Video.to_string(),
+        state: MediaState::Pending.to_string(),
+        retry_count: 0,
+        last_error: None,
+        updated_at: None,
+    };
+    db.upsert_medias([make_row(501), make_row(502), make_row(503)])
+        .await
+        .unwrap();
+    db.upsert_media_sets([
+        media_set::Model { id: 501, set_id: 1 },
+        media_set::Model { id: 502, set_id: 2 },
+        media_set::Model { id: 503, set_id: 1 },
+        media_set::Model { id: 503, set_id: 2 },
+    ])
+    .await
+    .unwrap();
+
+    let ctx = AppContext::for_test(
+        ws,
+        Config::default(),
+        db,
+        Arc::new(MockMuxer::succeeding()),
+        server.client_config(),
+    );
+
+    // 1. Pull across both accounts:
+    //    - Alice downloads 501 (never attempts 502!)
+    //    - Alice gets -10403 on shared 503 -> restores to Pending & defers to Bob
+    //    - Bob downloads 502 and 503 (never attempts 501!)
+    pull(
+        &ctx,
+        PullOptions {
+            output_dir: Some(out_dir.clone()),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("shared PermissionDenied deferred to Bob should result in full success");
+
+    for aid in [501, 502, 503] {
+        assert_eq!(
+            ctx.db.get_media(aid).await.unwrap().state,
+            MediaState::Completed.as_str(),
+            "media {aid} should be Completed"
+        );
+    }
+
+    let view_reqs = server.requests_for("/x/web-interface/wbi/view");
+    let has_view = |sess: &str, aid: i64| {
+        let needle = format!("aid={aid}");
+        view_reqs.iter().any(|r| {
+            r.headers
+                .get("cookie")
+                .is_some_and(|c| c.contains(&format!("SESSDATA={sess}")))
+                && r.query.split('&').any(|kv| kv == needle)
+        })
+    };
+    assert!(has_view("sess_a", 501), "Alice must pull her exclusive 501");
+    assert!(
+        !has_view("sess_a", 502),
+        "Alice must NEVER request Bob's exclusive 502"
+    );
+    assert!(has_view("sess_a", 503), "Alice tries shared 503 first");
+    assert!(has_view("sess_b", 502), "Bob must pull his exclusive 502");
+    assert!(
+        !has_view("sess_b", 501),
+        "Bob must NEVER request Alice's exclusive 501"
+    );
+    assert!(
+        has_view("sess_b", 503),
+        "Bob must pick up deferred shared 503"
+    );
+
+    // 2. Pull `--set 2 --force` (belongs ONLY to Bob, while Alice is first in active_accounts):
+    //    Alice has 0 candidates and must `continue` (not `break`) so Bob still runs!
+    //    Also verify shared 503 isn't double-downloaded when both accounts could succeed.
+    server.clear_requests();
+    pull(
+        &ctx,
+        PullOptions {
+            set_ids: vec![2],
+            force: true,
+            output_dir: Some(out_dir.clone()),
+            ..Default::default()
+        },
+    )
+    .await
+    .expect("pull --set 2 --force must reach Bob even when Alice has no exclusive matches");
+    assert_eq!(server.cdn_hits("/cdn/ma_v_502.mp4"), 2);
+    assert_eq!(server.cdn_hits("/cdn/ma_v_503.mp4"), 2);
+
+    // 3. Exclusive PermissionDenied (504, Alice only) -> marked PermissionDenied immediately;
+    //    Shared PermissionDenied on ALL accounts (505) -> deferred by Alice, marked PermissionDenied by Bob.
+    ctx.db
+        .upsert_medias([make_row(504), make_row(505)])
+        .await
+        .unwrap();
+    ctx.db
+        .upsert_media_sets([
+            media_set::Model { id: 504, set_id: 1 },
+            media_set::Model { id: 505, set_id: 1 },
+            media_set::Model { id: 505, set_id: 2 },
+        ])
+        .await
+        .unwrap();
+    server.clear_requests();
+
+    let err = pull(
+        &ctx,
+        PullOptions {
+            output_dir: Some(out_dir.clone()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(err.kind(), ExitKind::PartialFailure);
+    assert_eq!(
+        ctx.db.get_media(504).await.unwrap().state,
+        MediaState::PermissionDenied.as_str()
+    );
+    assert_eq!(
+        ctx.db.get_media(505).await.unwrap().state,
+        MediaState::PermissionDenied.as_str()
+    );
+    let view_reqs2 = server.requests_for("/x/web-interface/wbi/view");
+    let has_view2 = |sess: &str, aid: i64| {
+        let needle = format!("aid={aid}");
+        view_reqs2.iter().any(|r| {
+            r.headers
+                .get("cookie")
+                .is_some_and(|c| c.contains(&format!("SESSDATA={sess}")))
+                && r.query.split('&').any(|kv| kv == needle)
+        })
+    };
+    assert!(has_view2("sess_a", 504));
+    assert!(
+        !has_view2("sess_b", 504),
+        "Bob must NOT attempt Alice's exclusive 504"
+    );
+    assert!(has_view2("sess_a", 505));
+    assert!(
+        has_view2("sess_b", 505),
+        "Bob must attempt shared 505 after Alice deferred it"
+    );
+
+    // 4. `--limit 1` across multiple accounts stops globally after 1 download (does not download 1 per account).
+    ctx.db
+        .upsert_medias([make_row(506), make_row(507)])
+        .await
+        .unwrap();
+    ctx.db
+        .upsert_media_sets([
+            media_set::Model { id: 506, set_id: 1 },
+            media_set::Model { id: 507, set_id: 2 },
+        ])
+        .await
+        .unwrap();
+    pull(
+        &ctx,
+        PullOptions {
+            limit: Some(1),
+            output_dir: Some(out_dir.clone()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        ctx.db.get_media(506).await.unwrap().state,
+        MediaState::Completed.as_str()
+    );
+    assert_eq!(
+        ctx.db.get_media(507).await.unwrap().state,
+        MediaState::Pending.as_str()
+    );
+
+    // 5. Alice now has 0 pending candidates, while Bob has exclusive Pending 507 in Set 2.
+    //    `pull --set 2` must skip Alice (`continue`, not `break`) and download 507 with Bob!
+    pull(
+        &ctx,
+        PullOptions {
+            set_ids: vec![2],
+            output_dir: Some(out_dir.clone()),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        ctx.db.get_media(507).await.unwrap().state,
+        MediaState::Completed.as_str()
+    );
+
+    // 6. Shared Completed media 503 under `--force` when BOTH Alice and Bob succeed must be
+    //    downloaded ONCE (by Alice), never re-downloaded a second time by Bob!
+    server
+        .state
+        .lock()
+        .unwrap()
+        .playurls_by_sessdata
+        .remove(&("sess_a".to_owned(), 503, 5031));
+    let before_503 = server.cdn_hits("/cdn/ma_v_503.mp4");
+    pull(
+        &ctx,
+        PullOptions {
+            targets: vec![aid_to_bvid(503).unwrap()],
+            force: true,
+            output_dir: Some(out_dir),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        server.cdn_hits("/cdn/ma_v_503.mp4"),
+        before_503 + 1,
+        "shared media under --force must not be downloaded twice across accounts"
+    );
+}

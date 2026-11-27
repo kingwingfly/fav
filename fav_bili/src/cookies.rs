@@ -81,9 +81,8 @@ pub fn parse_netscape_cookies_at(content: &str, now_unix: u64) -> BTreeMap<Strin
         if domain != "bilibili.com" && !domain.ends_with(".bilibili.com") {
             continue;
         }
-        if let Ok(exp) = fields[4].trim().parse::<u64>()
-            && exp > 0
-            && exp <= now_unix
+        if let Ok(exp) = fields[4].trim().parse::<i64>()
+            && (exp < 0 || (exp > 0 && (exp as u64) <= now_unix))
         {
             continue;
         }
@@ -214,6 +213,7 @@ api.bilibili.com\tFALSE\t/\tFALSE\t0\tbuvid3\tBUV-1
 # Netscape HTTP Cookie File
 .bilibili.com\tTRUE\t/\tTRUE\t1699999999\tSESSDATA\texpired_sess
 .bilibili.com\tTRUE\t/\tTRUE\t1700000000\tbili_jct\texact_now_expired
+.bilibili.com\tTRUE\t/\tTRUE\t-1\tneg_cookie\tnegative_expiry_expired
 #HttpOnly_.bilibili.com\tTRUE\t/\tTRUE\t1700000001\tDedeUserID\tfuture_uid
 .bilibili.com\tTRUE\t/\tFALSE\t0\tbuvid3\tsession_buvid
 .bilibili.com\tTRUE\t/\tTRUE\t1600000000\tDedeUserID\texpired_duplicate_must_not_overwrite
@@ -221,6 +221,7 @@ api.bilibili.com\tFALSE\t/\tFALSE\t0\tbuvid3\tBUV-1
         let map = parse_netscape_cookies_at(txt, now);
         assert!(!map.contains_key("SESSDATA"));
         assert!(!map.contains_key("bili_jct"));
+        assert!(!map.contains_key("neg_cookie"));
         assert_eq!(
             map.get("DedeUserID").map(String::as_str),
             Some("future_uid")
