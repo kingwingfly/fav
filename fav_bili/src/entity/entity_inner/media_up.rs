@@ -16,12 +16,14 @@ impl EntityName for Entity {
 pub struct Model {
     pub id: i64,
     pub up_id: i64,
+    pub from_up_feed: bool,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DeriveColumn)]
 pub enum Column {
     Id,
     UpId,
+    FromUpFeed,
 }
 
 #[derive(Copy, Clone, Debug, EnumIter, DerivePrimaryKey)]
@@ -49,6 +51,7 @@ impl ColumnTrait for Column {
         match self {
             Self::Id => ColumnType::BigInteger.def(),
             Self::UpId => ColumnType::BigInteger.def(),
+            Self::FromUpFeed => ColumnType::Boolean.def(),
         }
     }
 }

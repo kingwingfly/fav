@@ -1,5 +1,5 @@
 use std::{
-    collections::{BTreeSet, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -141,13 +141,25 @@ pub async fn download_with_env(
     let cfg_clarity = config.parsed_clarity()?;
     let cfg_codec = config.parsed_codec()?;
     let cfg_audio_fmt = config.parsed_audio_format()?;
+    let cfg_color = config.parsed_color()?;
     if config.no_progress == Some(true) {
         runtime.no_progress = true;
+    }
+    if !runtime.color_explicit
+        && let Some(color) = cfg_color
+    {
+        runtime.color = color;
     }
 
     if opts.all_pages && opts.pages.is_some() {
         return Err(AppError::usage(anyhow!(
             "Cannot combine `--all-pages` with `--page <SPEC>`."
+        )));
+    }
+    let sound_only = opts.sound_only || config.sound_only.unwrap_or(false);
+    if opts.audio_format.is_some() && !sound_only {
+        return Err(AppError::usage(anyhow!(
+            "--audio-format requires --sound-only (or `sound_only = true` in config.toml)."
         )));
     }
     let explicit_pages: Option<BTreeSet<i64>> = opts
@@ -172,7 +184,6 @@ pub async fn download_with_env(
 
     let jobs = opts.jobs.or(config.jobs).unwrap_or(DEFAULT_JOBS).max(1);
     let limit_rate = opts.limit_rate.or(cfg_rate);
-    let sound_only = opts.sound_only || config.sound_only.unwrap_or(false);
     let audio_format = opts.audio_format.or(cfg_audio_fmt).unwrap_or_default();
     let clarity = opts.clarity.or(cfg_clarity).unwrap_or_default();
     let codec = opts.codec.or(cfg_codec);
@@ -297,6 +308,7 @@ pub async fn download_with_env(
             codec,
             limit_rate,
             try_look: *try_look,
+            ephemeral_staging: true,
         });
         let session_cancel = global_cancel.child_token();
         let output_dir_arc = Arc::new(output_dir.clone());
@@ -444,6 +456,9 @@ async fn download_single_target(
             {
                 return TargetOutcome::AccountExpired(api_err.to_string());
             }
+            if cancel.is_cancelled() {
+                return TargetOutcome::Cancelled;
+            }
             return TargetOutcome::Failed(format!(
                 "Failed fetching metadata for '{}' (av{}): {e:#}",
                 target.raw, target.aid
@@ -522,6 +537,9 @@ async fn download_single_target(
                     && api_err.is_auth_expired()
                 {
                     return TargetOutcome::AccountExpired(api_err.to_string());
+                }
+                if cancel.is_cancelled() {
+                    return TargetOutcome::Cancelled;
                 }
                 return TargetOutcome::Failed(format!(
                     "Failed fetching playurl for '{}' page {page}: {e:#}",
@@ -714,7 +732,7 @@ async fn collect_targets(
     }
 
     let resolved_pairs = resolve_short_link_tokens(&raw_tokens, api_config).await?;
-    parse_and_dedup_resolved_tokens(&resolved_pairs)
+    parse_and_dedup_resolved_tokens(&resolved_pairs, opts.all_pages, opts.pages.is_some())
 }
 
 async fn resolve_short_link_tokens(
@@ -744,9 +762,10 @@ async fn resolve_short_link_tokens(
 
 fn parse_and_dedup_resolved_tokens(
     token_pairs: &[(String, String)],
+    all_pages: bool,
+    has_explicit_pages: bool,
 ) -> AppResult<Vec<ResolvedTarget>> {
-    let mut targets = Vec::with_capacity(token_pairs.len());
-    let mut seen: HashSet<(i64, Option<i64>)> = HashSet::new();
+    let mut parsed_targets = Vec::with_capacity(token_pairs.len());
     for (raw, effective) in token_pairs {
         let parsed = if raw == effective {
             parse_media_target(effective).map_err(AppError::usage)?
@@ -760,22 +779,61 @@ fn parse_and_dedup_resolved_tokens(
             .to_aid()
             .ok_or_else(|| AppError::usage(anyhow!("Cannot convert '{raw}' to numeric AID")))?;
         let bv_id = parsed.ident.to_bvid().unwrap_or_else(|| format!("av{aid}"));
-        if seen.insert((aid, parsed.page)) {
-            targets.push(ResolvedTarget {
-                aid,
-                bv_id,
-                url_page: parsed.page,
-                raw: raw.clone(),
-            });
+        parsed_targets.push(ResolvedTarget {
+            aid,
+            bv_id,
+            url_page: parsed.page,
+            raw: raw.clone(),
+        });
+    }
+
+    let mut targets = Vec::with_capacity(parsed_targets.len());
+    if all_pages || has_explicit_pages {
+        // `--all-pages` and `--page` override URL `?p=N`, so deduplicate strictly by `aid`.
+        let mut seen_aids: HashSet<i64> = HashSet::new();
+        for target in parsed_targets {
+            if seen_aids.insert(target.aid) {
+                targets.push(target);
+            }
+        }
+        return Ok(targets);
+    }
+
+    // Without `--all-pages`/`--page`, a bare target (`url_page: None`) downloads all pages of
+    // that `aid`. Collapse any overlapping `?p=N` entries for the same `aid` (in any order) to
+    // the single `url_page: None` target so no page is ever downloaded concurrently twice.
+    let mut full_target_by_aid: HashMap<i64, ResolvedTarget> = HashMap::new();
+    for target in &parsed_targets {
+        if target.url_page.is_none() {
+            full_target_by_aid
+                .entry(target.aid)
+                .or_insert_with(|| target.clone());
+        }
+    }
+
+    let mut emitted_full_aids: HashSet<i64> = HashSet::new();
+    let mut seen_pages: HashSet<(i64, Option<i64>)> = HashSet::new();
+    for target in parsed_targets {
+        if let Some(full_target) = full_target_by_aid.remove(&target.aid) {
+            emitted_full_aids.insert(target.aid);
+            targets.push(full_target);
+        } else if emitted_full_aids.contains(&target.aid) {
+            continue;
+        } else if seen_pages.insert((target.aid, target.url_page)) {
+            targets.push(target);
         }
     }
     Ok(targets)
 }
 
 #[cfg(test)]
-fn parse_and_dedup_targets(raw_tokens: &[String]) -> AppResult<Vec<ResolvedTarget>> {
+fn parse_and_dedup_targets(
+    raw_tokens: &[String],
+    all_pages: bool,
+    has_explicit_pages: bool,
+) -> AppResult<Vec<ResolvedTarget>> {
     let pairs: Vec<(String, String)> = raw_tokens.iter().map(|t| (t.clone(), t.clone())).collect();
-    parse_and_dedup_resolved_tokens(&pairs)
+    parse_and_dedup_resolved_tokens(&pairs, all_pages, has_explicit_pages)
 }
 
 fn build_multi_progress(runtime: &RuntimeOptions) -> Option<MultiProgress> {
@@ -788,7 +846,20 @@ fn build_multi_progress(runtime: &RuntimeOptions) -> Option<MultiProgress> {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Duration;
+
+    use serde_json::{Value, json};
+    use tokio::{
+        io::{AsyncReadExt as _, AsyncWriteExt as _},
+        net::{TcpListener, TcpStream},
+        sync::watch,
+    };
+    use url::Url;
+
     use super::*;
+    use crate::{
+        entity::account, error::ExitKind, muxer::test_support::MockMuxer, state::AccountState,
+    };
 
     fn mk_pages(n: i64) -> Vec<Page> {
         (1..=n)
@@ -801,20 +872,237 @@ mod tests {
             .collect()
     }
 
+    fn test_client_config(addr: std::net::SocketAddr) -> BiliClientConfig {
+        let url = Url::parse(&format!("http://{addr}")).unwrap();
+        BiliClientConfig {
+            api_base_url: url.clone(),
+            passport_base_url: url,
+            connect_timeout: Duration::from_secs(5),
+            read_timeout: Duration::from_secs(10),
+            api_request_timeout: Duration::from_secs(15),
+            max_retries: 0,
+            base_backoff: Duration::from_millis(1),
+            max_backoff: Duration::from_millis(5),
+            min_request_interval: Duration::ZERO,
+            wbi_ttl: Duration::from_secs(3600),
+        }
+    }
+
+    async fn read_http_req(stream: &mut TcpStream) -> Option<(String, String, String)> {
+        let mut buf = Vec::with_capacity(2048);
+        let mut tmp = [0u8; 2048];
+        let header_end = loop {
+            let n = stream.read(&mut tmp).await.ok()?;
+            if n == 0 {
+                return None;
+            }
+            buf.extend_from_slice(&tmp[..n]);
+            if let Some(pos) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+                break pos + 4;
+            }
+        };
+        let head = String::from_utf8_lossy(&buf[..header_end]);
+        let mut lines = head.lines();
+        let target = lines.next()?.split_whitespace().nth(1)?;
+        let (path, query) = match target.split_once('?') {
+            Some((p, q)) => (p.to_owned(), q.to_owned()),
+            None => (target.to_owned(), String::new()),
+        };
+        let mut cookie = String::new();
+        for line in lines {
+            if let Some((k, v)) = line.split_once(':')
+                && k.trim().eq_ignore_ascii_case("cookie")
+            {
+                cookie = v.trim().to_owned();
+            }
+        }
+        Some((path, query, cookie))
+    }
+
+    fn query_i64(query: &str, key: &str) -> Option<i64> {
+        query.split('&').find_map(|pair| {
+            let (k, v) = pair.split_once('=')?;
+            (k == key).then(|| v.parse().ok()).flatten()
+        })
+    }
+
+    async fn write_json_resp(stream: &mut TcpStream, body: &Value) {
+        let bytes = serde_json::to_vec(body).unwrap();
+        let head = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            bytes.len()
+        );
+        let _ = stream.write_all(head.as_bytes()).await;
+        let _ = stream.write_all(&bytes).await;
+        let _ = stream.flush().await;
+    }
+
+    async fn write_bytes_resp(stream: &mut TcpStream, bytes: &[u8]) {
+        let head = format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+            bytes.len()
+        );
+        let _ = stream.write_all(head.as_bytes()).await;
+        let _ = stream.write_all(bytes).await;
+        let _ = stream.flush().await;
+    }
+
+    fn common_bootstrap_resp(path: &str) -> Option<Value> {
+        match path {
+            "/x/web-interface/nav" => Some(json!({
+                "code": 0,
+                "message": "0",
+                "data": {
+                    "isLogin": true,
+                    "mid": 1001,
+                    "uname": "Tester",
+                    "wbi_img": {
+                        "img_url": "https://i0.hdslb.com/bfs/wbi/7cd084941338484aae1ad9425b84077c.png",
+                        "sub_url": "https://i0.hdslb.com/bfs/wbi/4932caff0ff746eab6f01bf08b70ac45.png",
+                    }
+                }
+            })),
+            "/x/web-frontend/getbuvid" | "/x/frontend/finger/spi" => Some(json!({
+                "code": 0,
+                "message": "0",
+                "data": { "buvid": "MOCK-BUVID" }
+            })),
+            "/bapis/bilibili.api.ticket.v1.Ticket/GenWebTicket" => Some(json!({
+                "code": 0,
+                "message": "0",
+                "data": {
+                    "ticket": "mock_ticket",
+                    "created_at": 4_102_444_800u64,
+                    "ttl": 259200u64,
+                }
+            })),
+            _ => None,
+        }
+    }
+
+    fn view_ok_json(aid: i64, cid: i64) -> Value {
+        json!({
+            "code": 0,
+            "message": "0",
+            "data": {
+                "aid": aid,
+                "bvid": format!("BVmock{aid}"),
+                "title": format!("Title {aid}"),
+                "owner": { "mid": 1, "name": "UP" },
+                "pages": [{ "cid": cid, "page": 1, "part": "P1" }]
+            }
+        })
+    }
+
+    fn playurl_dash_json(origin: &str, aid: i64, cid: i64) -> Value {
+        json!({
+            "code": 0,
+            "message": "0",
+            "data": {
+                "quality": 80,
+                "dash": {
+                    "video": [{
+                        "id": 80,
+                        "baseUrl": format!("{origin}/cdn/v_{aid}_{cid}.m4s"),
+                        "backupUrl": [],
+                        "mimeType": "video/mp4",
+                        "codecs": "avc1.64001f",
+                        "bandwidth": 1000,
+                        "codecid": 7
+                    }],
+                    "audio": [{
+                        "id": 30280,
+                        "baseUrl": format!("{origin}/cdn/a_{aid}_{cid}.m4s"),
+                        "backupUrl": [],
+                        "mimeType": "audio/mp4",
+                        "codecs": "mp4a.40.2",
+                        "bandwidth": 500,
+                        "codecid": 0
+                    }]
+                },
+                "durl": null
+            }
+        })
+    }
+
     #[test]
-    fn target_dedup_preserves_distinct_url_pages_and_dedups_duplicates() {
+    fn target_dedup_preserves_distinct_url_pages_without_bare_overlap() {
         let raw = vec![
+            "https://www.bilibili.com/video/BV1Q541167Qg/?p=1".to_owned(),
+            "https://www.bilibili.com/video/BV1Q541167Qg/?p=3".to_owned(),
+            "https://www.bilibili.com/video/BV1Q541167Qg/?p=1".to_owned(),
+        ];
+        let parsed = parse_and_dedup_targets(&raw, false, false).unwrap();
+        assert_eq!(parsed.len(), 2);
+        assert_eq!(parsed[0].url_page, Some(1));
+        assert_eq!(parsed[1].url_page, Some(3));
+    }
+
+    #[test]
+    fn target_dedup_collapses_overlapping_bare_and_url_pages_in_any_order() {
+        // Bare target AFTER `?p=N` entries collapses to single `url_page: None`.
+        let bare_after = vec![
             "https://www.bilibili.com/video/BV1Q541167Qg/?p=1".to_owned(),
             "https://www.bilibili.com/video/BV1Q541167Qg/?p=3".to_owned(),
             "https://www.bilibili.com/video/BV1Q541167Qg/?p=1".to_owned(),
             "av455017605".to_owned(),
             "BV1Q541167Qg".to_owned(),
         ];
-        let parsed = parse_and_dedup_targets(&raw).unwrap();
+        let parsed = parse_and_dedup_targets(&bare_after, false, false).unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].aid, 455_017_605);
+        assert_eq!(parsed[0].url_page, None);
+        assert_eq!(parsed[0].raw, "av455017605");
+
+        // Bare target BEFORE `?p=N` entries collapses to single `url_page: None`.
+        let bare_before = vec![
+            "BV1Q541167Qg".to_owned(),
+            "https://www.bilibili.com/video/BV1Q541167Qg/?p=2".to_owned(),
+            "https://www.bilibili.com/video/BV1Q541167Qg/?p=1".to_owned(),
+        ];
+        let parsed = parse_and_dedup_targets(&bare_before, false, false).unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].aid, 455_017_605);
+        assert_eq!(parsed[0].url_page, None);
+        assert_eq!(parsed[0].raw, "BV1Q541167Qg");
+
+        // Interleaved across multiple AIDs: overlapping AID collapses while distinct pages on
+        // another AID remain separate.
+        let mixed = vec![
+            "https://www.bilibili.com/video/BV1Q541167Qg/?p=1".to_owned(),
+            "https://www.bilibili.com/video/av170001/?p=2".to_owned(),
+            "https://www.bilibili.com/video/av170001/?p=4".to_owned(),
+            "av455017605".to_owned(),
+            "https://www.bilibili.com/video/BV1Q541167Qg/?p=3".to_owned(),
+        ];
+        let parsed = parse_and_dedup_targets(&mixed, false, false).unwrap();
         assert_eq!(parsed.len(), 3);
-        assert_eq!(parsed[0].url_page, Some(1));
-        assert_eq!(parsed[1].url_page, Some(3));
-        assert_eq!(parsed[2].url_page, None);
+        assert_eq!(parsed[0].aid, 455_017_605);
+        assert_eq!(parsed[0].url_page, None);
+        assert_eq!(parsed[1].aid, 170_001);
+        assert_eq!(parsed[1].url_page, Some(2));
+        assert_eq!(parsed[2].aid, 170_001);
+        assert_eq!(parsed[2].url_page, Some(4));
+    }
+
+    #[test]
+    fn target_dedup_deduplicates_strictly_by_aid_when_all_pages_or_explicit_pages() {
+        let raw = vec![
+            "https://www.bilibili.com/video/BV1Q541167Qg/?p=1".to_owned(),
+            "https://www.bilibili.com/video/BV1Q541167Qg/?p=3".to_owned(),
+            "av455017605".to_owned(),
+            "https://www.bilibili.com/video/av170001/?p=2".to_owned(),
+            "https://www.bilibili.com/video/av170001/?p=4".to_owned(),
+        ];
+
+        for (all_pages, has_explicit_pages) in [(true, false), (false, true)] {
+            let parsed = parse_and_dedup_targets(&raw, all_pages, has_explicit_pages).unwrap();
+            assert_eq!(parsed.len(), 2);
+            assert_eq!(parsed[0].aid, 455_017_605);
+            assert_eq!(parsed[0].raw, raw[0]);
+            assert_eq!(parsed[1].aid, 170_001);
+            assert_eq!(parsed[1].raw, raw[3]);
+        }
     }
 
     #[test]
@@ -831,18 +1119,35 @@ mod tests {
                 "https://www.bilibili.com/video/BV1Q541167Qg/?p=2".to_owned(),
             ),
         ];
-        let parsed = parse_and_dedup_resolved_tokens(&pairs).unwrap();
+        let parsed = parse_and_dedup_resolved_tokens(&pairs, false, false).unwrap();
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].aid, 455_017_605);
         assert_eq!(parsed[0].bv_id, "BV1Q541167Qg");
         assert_eq!(parsed[0].url_page, Some(2));
         assert_eq!(parsed[0].raw, "https://b23.tv/abc123");
 
+        // Resolved short link with `?p=2` overlaps with bare target for the same AID -> collapses to bare.
+        let overlap_pairs = vec![
+            (
+                "https://b23.tv/abc123".to_owned(),
+                "https://www.bilibili.com/video/BV1Q541167Qg/?p=2".to_owned(),
+            ),
+            (
+                "https://b23.tv/full".to_owned(),
+                "https://www.bilibili.com/video/BV1Q541167Qg".to_owned(),
+            ),
+        ];
+        let collapsed = parse_and_dedup_resolved_tokens(&overlap_pairs, false, false).unwrap();
+        assert_eq!(collapsed.len(), 1);
+        assert_eq!(collapsed[0].aid, 455_017_605);
+        assert_eq!(collapsed[0].url_page, None);
+        assert_eq!(collapsed[0].raw, "https://b23.tv/full");
+
         let bad_pairs = vec![(
             "https://b23.tv/notvid".to_owned(),
             "https://live.bilibili.com/12345".to_owned(),
         )];
-        let err = parse_and_dedup_resolved_tokens(&bad_pairs).unwrap_err();
+        let err = parse_and_dedup_resolved_tokens(&bad_pairs, false, false).unwrap_err();
         assert_eq!(err.kind(), ExitKind::Usage);
         let msg = format!("{err:#}");
         assert!(
@@ -919,8 +1224,6 @@ mod tests {
 
     #[tokio::test]
     async fn download_with_env_validates_conflicts_and_dry_run_touches_no_db() {
-        use crate::{error::ExitKind, muxer::test_support::MockMuxer};
-
         let db = Db::open_in_memory().await.unwrap();
         let muxer: Arc<dyn Muxer> = Arc::new(MockMuxer::succeeding());
 
@@ -971,5 +1274,628 @@ mod tests {
         .unwrap();
         assert!(db.all_medias().await.unwrap().is_empty());
         assert!(!tmp.path().join("out").exists());
+    }
+
+    #[tokio::test]
+    async fn download_with_env_cleans_up_ephemeral_parts_and_fav_tmp_on_mux_failure() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let origin = format!("http://{addr}");
+        let server = tokio::spawn(async move {
+            loop {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    break;
+                };
+                let origin = origin.clone();
+                tokio::spawn(async move {
+                    let Some((path, query, _)) = read_http_req(&mut stream).await else {
+                        return;
+                    };
+                    if let Some(resp) = common_bootstrap_resp(&path) {
+                        write_json_resp(&mut stream, &resp).await;
+                    } else if path == "/x/web-interface/wbi/view" {
+                        let aid = query_i64(&query, "aid").unwrap_or(0);
+                        write_json_resp(&mut stream, &view_ok_json(aid, 501)).await;
+                    } else if path == "/x/player/wbi/playurl" {
+                        let avid = query_i64(&query, "avid").unwrap_or(0);
+                        let cid = query_i64(&query, "cid").unwrap_or(0);
+                        write_json_resp(&mut stream, &playurl_dash_json(&origin, avid, cid)).await;
+                    } else if path.starts_with("/cdn/") {
+                        write_bytes_resp(&mut stream, b"mock-stream-bytes").await;
+                    }
+                });
+            }
+        });
+
+        let tmp = tempfile::tempdir().unwrap();
+        let out = tmp.path().join("out");
+        let muxer = MockMuxer::failing("simulated mux failure");
+
+        let err = download_with_env(
+            None,
+            Config::default(),
+            Arc::new(muxer.clone()),
+            test_client_config(addr),
+            RuntimeOptions {
+                no_progress: true,
+                non_interactive: true,
+                ..Default::default()
+            },
+            DownloadOptions {
+                targets: vec!["av455017605".to_owned()],
+                output_dir: Some(out.clone()),
+                anonymous: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.kind(), ExitKind::PartialFailure);
+
+        let reqs = muxer.requests();
+        assert_eq!(reqs.len(), 1);
+        let pid_tag = format!("_{}_", std::process::id());
+        let v_part = reqs[0].video.as_ref().unwrap();
+        let a_part = reqs[0].audio.as_ref().unwrap();
+        assert!(
+            v_part
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .contains(&pid_tag)
+        );
+        assert!(
+            a_part
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .contains(&pid_tag)
+        );
+        assert!(
+            !v_part.exists(),
+            "ephemeral video .part must be removed on mux failure"
+        );
+        assert!(
+            !a_part.exists(),
+            "ephemeral audio .part must be removed on mux failure"
+        );
+        assert!(
+            !out.join(".fav-tmp").exists(),
+            ".fav-tmp/ must be removed after ephemeral .part cleanup on mux failure"
+        );
+
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn download_with_env_cleans_up_ephemeral_parts_and_fav_tmp_on_cancellation() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let origin = format!("http://{addr}");
+        let server = tokio::spawn(async move {
+            loop {
+                let Ok((mut stream, _)) = listener.accept().await else {
+                    break;
+                };
+                let origin = origin.clone();
+                tokio::spawn(async move {
+                    let Some((path, query, _)) = read_http_req(&mut stream).await else {
+                        return;
+                    };
+                    if let Some(resp) = common_bootstrap_resp(&path) {
+                        write_json_resp(&mut stream, &resp).await;
+                    } else if path == "/x/web-interface/wbi/view" {
+                        let aid = query_i64(&query, "aid").unwrap_or(0);
+                        write_json_resp(&mut stream, &view_ok_json(aid, 501)).await;
+                    } else if path == "/x/player/wbi/playurl" {
+                        let avid = query_i64(&query, "avid").unwrap_or(0);
+                        let cid = query_i64(&query, "cid").unwrap_or(0);
+                        write_json_resp(&mut stream, &playurl_dash_json(&origin, avid, cid)).await;
+                    } else if path.starts_with("/cdn/") {
+                        // Send partial body and hold open so staging `.part` files exist on disk.
+                        let head = "HTTP/1.1 200 OK\r\nContent-Length: 1000000\r\nConnection: close\r\n\r\n";
+                        let _ = stream.write_all(head.as_bytes()).await;
+                        let _ = stream.write_all(&[b'x'; 128]).await;
+                        let _ = stream.flush().await;
+                        std::future::pending::<()>().await;
+                    }
+                });
+            }
+        });
+
+        let tmp = tempfile::tempdir().unwrap();
+        let out = tmp.path().join("out");
+        let tmp_dir = out.join(".fav-tmp");
+
+        let mut dl_fut = Box::pin(download_with_env(
+            None,
+            Config::default(),
+            Arc::new(MockMuxer::succeeding()),
+            test_client_config(addr),
+            RuntimeOptions {
+                no_progress: true,
+                non_interactive: true,
+                ..Default::default()
+            },
+            DownloadOptions {
+                targets: vec!["av455017605".to_owned()],
+                output_dir: Some(out.clone()),
+                anonymous: true,
+                ..Default::default()
+            },
+        ));
+
+        let mut saw_part = false;
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+        while tokio::time::Instant::now() < deadline {
+            tokio::select! {
+                res = &mut dl_fut => panic!("download exited unexpectedly before cancel: {res:?}"),
+                _ = tokio::time::sleep(Duration::from_millis(10)) => {
+                    if let Ok(rd) = std::fs::read_dir(&tmp_dir)
+                        && rd.filter_map(Result::ok).any(|e| {
+                            e.path().extension().and_then(|s| s.to_str()) == Some("part")
+                        })
+                    {
+                        saw_part = true;
+                        break;
+                    }
+                }
+            }
+        }
+        assert!(
+            saw_part,
+            "expected in-flight staging .part file inside .fav-tmp/"
+        );
+
+        // Dropping the future simulates Ctrl-C cancellation & unwind of RAII guards.
+        drop(dl_fut);
+
+        assert!(
+            !tmp_dir.exists(),
+            ".fav-tmp/ and all ephemeral .part files must be removed upon cancellation"
+        );
+
+        server.abort();
+    }
+
+    #[tokio::test]
+    async fn cancelled_media_info_and_playurl_errors_yield_cancelled_and_retry_next_session() {
+        // Part 1: Direct unit verification of `download_single_target` cancellation precedence.
+        let (pu_err_reached_tx, mut pu_err_reached_rx) = watch::channel(false);
+        let (pu_err_release_tx, pu_err_release_rx) = watch::channel(false);
+        let (pu_auth_reached_tx, mut pu_auth_reached_rx) = watch::channel(false);
+        let (pu_auth_release_tx, pu_auth_release_rx) = watch::channel(false);
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let unit_server =
+            tokio::spawn(async move {
+                loop {
+                    let Ok((mut stream, _)) = listener.accept().await else {
+                        break;
+                    };
+                    let pu_err_reached_tx = pu_err_reached_tx.clone();
+                    let mut pu_err_release_rx = pu_err_release_rx.clone();
+                    let pu_auth_reached_tx = pu_auth_reached_tx.clone();
+                    let mut pu_auth_release_rx = pu_auth_release_rx.clone();
+                    tokio::spawn(async move {
+                        let Some((path, query, _)) = read_http_req(&mut stream).await else {
+                            return;
+                        };
+                        if let Some(resp) = common_bootstrap_resp(&path) {
+                            write_json_resp(&mut stream, &resp).await;
+                        } else if path == "/x/web-interface/wbi/view" {
+                            match query_i64(&query, "aid").unwrap_or(0) {
+                                1 => {
+                                    write_json_resp(
+                                        &mut stream,
+                                        &json!({"code": -400, "message": "bad req", "data": null}),
+                                    )
+                                    .await
+                                }
+                                2 => {
+                                    write_json_resp(
+                                        &mut stream,
+                                        &json!({"code": -101, "message": "expired", "data": null}),
+                                    )
+                                    .await
+                                }
+                                3 => write_json_resp(&mut stream, &view_ok_json(3, 301)).await,
+                                4 => write_json_resp(&mut stream, &view_ok_json(4, 401)).await,
+                                _ => write_json_resp(
+                                    &mut stream,
+                                    &json!({"code": -404, "message": "not found", "data": null}),
+                                )
+                                .await,
+                            }
+                        } else if path == "/x/player/wbi/playurl" {
+                            match query_i64(&query, "avid").unwrap_or(0) {
+                                3 => {
+                                    let _ = pu_err_reached_tx.send(true);
+                                    let _ = pu_err_release_rx.wait_for(|&v| v).await;
+                                    write_json_resp(
+                                    &mut stream,
+                                    &json!({"code": -400, "message": "playurl err", "data": null}),
+                                )
+                                .await;
+                                }
+                                4 => {
+                                    let _ = pu_auth_reached_tx.send(true);
+                                    let _ = pu_auth_release_rx.wait_for(|&v| v).await;
+                                    write_json_resp(
+                                        &mut stream,
+                                        &json!({"code": -101, "message": "expired", "data": null}),
+                                    )
+                                    .await;
+                                }
+                                _ => write_json_resp(
+                                    &mut stream,
+                                    &json!({"code": -404, "message": "no playurl", "data": null}),
+                                )
+                                .await,
+                            }
+                        }
+                    });
+                }
+            });
+
+        let tmp = tempfile::tempdir().unwrap();
+        let out = tmp.path().join("unit_out");
+        let stage = tmp.path().join("unit_tmp");
+        std::fs::create_dir_all(&out).unwrap();
+        std::fs::create_dir_all(&stage).unwrap();
+
+        let client = BiliClient::with_config("SESSDATA=s1", test_client_config(addr)).unwrap();
+        let muxer = MockMuxer::succeeding();
+        let params = StreamDownloadParams {
+            ephemeral_staging: true,
+            ..Default::default()
+        };
+
+        let mk_target = |aid: i64| ResolvedTarget {
+            aid,
+            bv_id: format!("av{aid}"),
+            url_page: None,
+            raw: format!("av{aid}"),
+        };
+
+        // Non-cancelled media_info error -> Failed
+        let outcome = download_single_target(
+            &client,
+            &muxer,
+            &mk_target(1),
+            &out,
+            &stage,
+            &params,
+            None,
+            false,
+            false,
+            true,
+            None,
+            CancellationToken::new(),
+        )
+        .await;
+        assert!(matches!(outcome, TargetOutcome::Failed(_)));
+
+        // Cancelled media_info non-auth error -> Cancelled
+        let cancelled = CancellationToken::new();
+        cancelled.cancel();
+        let outcome = download_single_target(
+            &client,
+            &muxer,
+            &mk_target(1),
+            &out,
+            &stage,
+            &params,
+            None,
+            false,
+            false,
+            true,
+            None,
+            cancelled.clone(),
+        )
+        .await;
+        assert!(matches!(outcome, TargetOutcome::Cancelled));
+
+        // Auth-expired media_info error takes precedence over cancellation when authenticated
+        let outcome = download_single_target(
+            &client,
+            &muxer,
+            &mk_target(2),
+            &out,
+            &stage,
+            &params,
+            None,
+            false,
+            false,
+            true,
+            None,
+            cancelled,
+        )
+        .await;
+        assert!(matches!(outcome, TargetOutcome::AccountExpired(_)));
+
+        // In-flight cancelled fetch_page_playurl non-auth error -> Cancelled
+        let playurl_cancel = CancellationToken::new();
+        let playurl_cancel_c = playurl_cancel.clone();
+        let cancel_task = tokio::spawn(async move {
+            let _ = pu_err_reached_rx.wait_for(|&v| v).await;
+            playurl_cancel_c.cancel();
+            let _ = pu_err_release_tx.send(true);
+        });
+        let outcome = download_single_target(
+            &client,
+            &muxer,
+            &mk_target(3),
+            &out,
+            &stage,
+            &params,
+            None,
+            false,
+            false,
+            true,
+            None,
+            playurl_cancel,
+        )
+        .await;
+        cancel_task.await.unwrap();
+        assert!(matches!(outcome, TargetOutcome::Cancelled));
+
+        // In-flight cancelled fetch_page_playurl auth-expired error -> AccountExpired
+        let playurl_auth_cancel = CancellationToken::new();
+        let playurl_auth_cancel_c = playurl_auth_cancel.clone();
+        let cancel_auth_task = tokio::spawn(async move {
+            let _ = pu_auth_reached_rx.wait_for(|&v| v).await;
+            playurl_auth_cancel_c.cancel();
+            let _ = pu_auth_release_tx.send(true);
+        });
+        let outcome = download_single_target(
+            &client,
+            &muxer,
+            &mk_target(4),
+            &out,
+            &stage,
+            &params,
+            None,
+            false,
+            false,
+            true,
+            None,
+            playurl_auth_cancel,
+        )
+        .await;
+        cancel_auth_task.await.unwrap();
+        assert!(matches!(outcome, TargetOutcome::AccountExpired(_)));
+
+        unit_server.abort();
+
+        // Part 2: End-to-end session failover in `download_with_env` retries cancelled
+        // `media_info` (av102) and `fetch_page_playurl` (av103) siblings on session 2.
+        let (t2_in_view_tx, t2_in_view_rx) = watch::channel(false);
+        let (t3_in_playurl_tx, t3_in_playurl_rx) = watch::channel(false);
+        let (t1_expired_tx, t1_expired_rx) = watch::channel(false);
+
+        let listener2 = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr2 = listener2.local_addr().unwrap();
+        let origin2 = format!("http://{addr2}");
+        let failover_server = tokio::spawn(async move {
+            loop {
+                let Ok((mut stream, _)) = listener2.accept().await else {
+                    break;
+                };
+                let origin = origin2.clone();
+                let t2_in_view_tx = t2_in_view_tx.clone();
+                let mut t2_in_view_rx = t2_in_view_rx.clone();
+                let t3_in_playurl_tx = t3_in_playurl_tx.clone();
+                let mut t3_in_playurl_rx = t3_in_playurl_rx.clone();
+                let t1_expired_tx = t1_expired_tx.clone();
+                let mut t1_expired_rx = t1_expired_rx.clone();
+                tokio::spawn(async move {
+                    let Some((path, query, cookie)) = read_http_req(&mut stream).await else {
+                        return;
+                    };
+                    if let Some(resp) = common_bootstrap_resp(&path) {
+                        write_json_resp(&mut stream, &resp).await;
+                        return;
+                    }
+                    let is_expired_session = cookie.contains("SESSDATA=sess_expired");
+                    if path == "/x/web-interface/wbi/view" {
+                        let aid = query_i64(&query, "aid").unwrap_or(0);
+                        if is_expired_session {
+                            match aid {
+                                101 => {
+                                    let _ = tokio::time::timeout(Duration::from_secs(5), async {
+                                        let _ = t2_in_view_rx.wait_for(|&v| v).await;
+                                        let _ = t3_in_playurl_rx.wait_for(|&v| v).await;
+                                    })
+                                    .await;
+                                    write_json_resp(
+                                        &mut stream,
+                                        &json!({"code": -101, "message": "account expired", "data": null}),
+                                    )
+                                    .await;
+                                    let _ = t1_expired_tx.send(true);
+                                }
+                                102 => {
+                                    let _ = t2_in_view_tx.send(true);
+                                    let _ = tokio::time::timeout(
+                                        Duration::from_secs(5),
+                                        t1_expired_rx.wait_for(|&v| v),
+                                    )
+                                    .await;
+                                    tokio::time::sleep(Duration::from_millis(50)).await;
+                                    write_json_resp(
+                                        &mut stream,
+                                        &json!({"code": -400, "message": "aborted sibling view", "data": null}),
+                                    )
+                                    .await;
+                                }
+                                103 => {
+                                    write_json_resp(&mut stream, &view_ok_json(103, 1030)).await;
+                                }
+                                _ => unreachable!(),
+                            }
+                        } else {
+                            write_json_resp(&mut stream, &view_ok_json(aid, aid * 10)).await;
+                        }
+                    } else if path == "/x/player/wbi/playurl" {
+                        let avid = query_i64(&query, "avid").unwrap_or(0);
+                        let cid = query_i64(&query, "cid").unwrap_or(0);
+                        if is_expired_session && avid == 103 {
+                            let _ = t3_in_playurl_tx.send(true);
+                            let _ = tokio::time::timeout(
+                                Duration::from_secs(5),
+                                t1_expired_rx.wait_for(|&v| v),
+                            )
+                            .await;
+                            tokio::time::sleep(Duration::from_millis(50)).await;
+                            write_json_resp(
+                                &mut stream,
+                                &json!({"code": -400, "message": "aborted sibling playurl", "data": null}),
+                            )
+                            .await;
+                        } else {
+                            write_json_resp(&mut stream, &playurl_dash_json(&origin, avid, cid))
+                                .await;
+                        }
+                    } else if path.starts_with("/cdn/") {
+                        write_bytes_resp(&mut stream, b"mock-bytes").await;
+                    }
+                });
+            }
+        });
+
+        let db = Db::open_in_memory().await.unwrap();
+        db.upsert_account(account::Model {
+            account_id: 1,
+            name: "AliceExpired".to_owned(),
+            cookies: "SESSDATA=sess_expired; bili_jct=csrf1".to_owned(),
+            state: AccountState::Active.to_string(),
+            refresh_token: None,
+        })
+        .await
+        .unwrap();
+        db.upsert_account(account::Model {
+            account_id: 2,
+            name: "BobValid".to_owned(),
+            cookies: "SESSDATA=sess_valid; bili_jct=csrf2".to_owned(),
+            state: AccountState::Active.to_string(),
+            refresh_token: None,
+        })
+        .await
+        .unwrap();
+
+        let failover_out = tmp.path().join("failover_out");
+        let failover_muxer = MockMuxer::succeeding();
+        download_with_env(
+            Some(&db),
+            Config::default(),
+            Arc::new(failover_muxer.clone()),
+            test_client_config(addr2),
+            RuntimeOptions {
+                no_progress: true,
+                non_interactive: true,
+                ..Default::default()
+            },
+            DownloadOptions {
+                targets: vec!["av101".to_owned(), "av102".to_owned(), "av103".to_owned()],
+                output_dir: Some(failover_out.clone()),
+                jobs: Some(3),
+                ..Default::default()
+            },
+        )
+        .await
+        .expect("all targets including cancelled siblings must succeed on session 2");
+
+        let mux_reqs = failover_muxer.requests();
+        assert_eq!(mux_reqs.len(), 3);
+        let outputs: BTreeSet<String> = mux_reqs
+            .iter()
+            .map(|r| r.output.file_name().unwrap().to_string_lossy().to_string())
+            .collect();
+        assert!(outputs.iter().any(|n| n.starts_with("101-")));
+        assert!(outputs.iter().any(|n| n.starts_with("102-")));
+        assert!(outputs.iter().any(|n| n.starts_with("103-")));
+        assert!(!failover_out.join(".fav-tmp").exists());
+
+        failover_server.abort();
+    }
+
+    #[tokio::test]
+    async fn download_with_env_validates_audio_format_and_config_color() {
+        use crate::{error::ExitKind, muxer::test_support::MockMuxer, table::ColorChoice};
+
+        let muxer: Arc<dyn Muxer> = Arc::new(MockMuxer::succeeding());
+        let base_rt = RuntimeOptions {
+            no_progress: true,
+            non_interactive: true,
+            ..Default::default()
+        };
+
+        // `--audio-format` without `--sound-only` or `config.sound_only = true` is rejected.
+        let err = download_with_env(
+            None,
+            Config::default(),
+            muxer.clone(),
+            BiliClientConfig::default(),
+            base_rt.clone(),
+            DownloadOptions {
+                targets: vec!["BV1Q541167Qg".to_owned()],
+                audio_format: Some(AudioFormat::Flac),
+                dry_run: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.kind(), ExitKind::Usage);
+        assert!(err.to_string().contains("--sound-only"));
+        assert!(err.to_string().contains("sound_only = true"));
+
+        // `--audio-format` without CLI `--sound-only` succeeds when `config.sound_only = Some(true)`.
+        let tmp = tempfile::tempdir().unwrap();
+        download_with_env(
+            None,
+            Config {
+                sound_only: Some(true),
+                ..Default::default()
+            },
+            muxer.clone(),
+            BiliClientConfig::default(),
+            base_rt.clone(),
+            DownloadOptions {
+                targets: vec!["BV1Q541167Qg".to_owned()],
+                output_dir: Some(tmp.path().join("out")),
+                audio_format: Some(AudioFormat::Mp3),
+                dry_run: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+
+        // Invalid `config.color` fails eagerly with ExitKind::Usage (even if `--color` was explicit).
+        let err = download_with_env(
+            None,
+            Config {
+                color: Some("invalid".to_owned()),
+                ..Default::default()
+            },
+            muxer,
+            BiliClientConfig::default(),
+            RuntimeOptions {
+                color: ColorChoice::Auto,
+                color_explicit: true,
+                ..base_rt
+            },
+            DownloadOptions {
+                targets: vec!["BV1Q541167Qg".to_owned()],
+                dry_run: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.kind(), ExitKind::Usage);
     }
 }

@@ -219,7 +219,8 @@ fn format_args() -> [Arg; 2] {
         Arg::new("json")
             .long("json")
             .help("Shorthand for --format json")
-            .action(ArgAction::SetTrue),
+            .action(ArgAction::SetTrue)
+            .conflicts_with("format"),
     ]
 }
 
@@ -231,6 +232,28 @@ fn resolve_format(matches: &ArgMatches) -> OutputFormat {
             .get_one::<OutputFormat>("format")
             .copied()
             .unwrap_or(OutputFormat::Table)
+    }
+}
+
+fn explicit_format(matches: &ArgMatches) -> Option<OutputFormat> {
+    if matches.value_source("json") == Some(clap::parser::ValueSource::CommandLine)
+        && matches.get_flag("json")
+    {
+        return Some(OutputFormat::Json);
+    }
+    if matches.value_source("format") == Some(clap::parser::ValueSource::CommandLine) {
+        return matches.get_one::<OutputFormat>("format").copied();
+    }
+    None
+}
+
+fn resolve_subcommand_format(parent: &ArgMatches, child: &ArgMatches) -> AppResult<OutputFormat> {
+    match (explicit_format(parent), explicit_format(child)) {
+        (Some(_), Some(_)) => Err(AppError::usage(anyhow!(
+            "Cannot specify output format flags (--format / --json) both before and after the subcommand."
+        ))),
+        (Some(fmt), None) | (None, Some(fmt)) => Ok(fmt),
+        (None, None) => Ok(resolve_format(child)),
     }
 }
 
@@ -373,9 +396,8 @@ fn pull_flags(include_shared_scope: bool) -> Vec<Arg> {
         Arg::new("audio-format")
             .long("audio-format")
             .value_name("FMT")
-            .help("Audio output format when using --sound-only")
-            .value_parser(value_parser!(AudioFormat))
-            .requires("sound-only"),
+            .help("Audio output format when using --sound-only (or sound_only = true in config.toml)")
+            .value_parser(value_parser!(AudioFormat)),
         Arg::new("clarity")
             .long("clarity")
             .alias("quality")
@@ -584,12 +606,16 @@ pub fn build_command() -> Command {
                         .aliases(["upper", "u"])
                         .args({
                             let mut args = list_common_args();
-                            args.push(
+                            args.extend([
                                 Arg::new("account")
                                     .long("account")
                                     .help("Filter UPs followed by account ID")
                                     .value_parser(value_parser!(i64)),
-                            );
+                                Arg::new("followed")
+                                    .long("followed")
+                                    .help("Show only UPs followed by an active account")
+                                    .action(ArgAction::SetTrue),
+                            ]);
                             args
                         }),
                     Command::new("media")
@@ -785,9 +811,8 @@ pub fn build_command() -> Command {
                     Arg::new("audio-format")
                         .long("audio-format")
                         .value_name("FMT")
-                        .help("Audio output format when using --sound-only")
-                        .value_parser(value_parser!(AudioFormat))
-                        .requires("sound-only"),
+                        .help("Audio output format when using --sound-only (or sound_only = true in config.toml)")
+                        .value_parser(value_parser!(AudioFormat)),
                     Arg::new("clarity")
                         .long("clarity")
                         .alias("quality")
@@ -953,6 +978,11 @@ pub fn build_command() -> Command {
                                 .long("dry-run")
                                 .help("Preview how many medias would be reset")
                                 .action(ArgAction::SetTrue),
+                            Arg::new("yes")
+                                .long("yes")
+                                .short('y')
+                                .help("Skip interactive confirmation when using --all or --completed")
+                                .action(ArgAction::SetTrue),
                         ]),
                     Command::new("skip")
                         .about("Mark medias as Skipped so `fav pull` ignores them")
@@ -1037,6 +1067,8 @@ fn runtime_from_matches(matches: &ArgMatches) -> RuntimeOptions {
             .get_one::<ColorChoice>("color")
             .copied()
             .unwrap_or(ColorChoice::Auto),
+        color_explicit: matches.value_source("color")
+            == Some(clap::parser::ValueSource::CommandLine),
         no_progress: matches.get_flag("no-progress"),
         non_interactive: matches.get_flag("non-interactive"),
     }
@@ -1075,6 +1107,12 @@ fn parse_list_options(matches: &ArgMatches) -> ListOptions {
             .copied(),
         active_only: matches.get_flag("active"),
         inactive_only: matches.get_flag("inactive"),
+        followed_only: matches
+            .try_get_one::<bool>("followed")
+            .ok()
+            .flatten()
+            .copied()
+            .unwrap_or(false),
         media_type: matches
             .try_get_one::<String>("type")
             .ok()
@@ -1211,24 +1249,89 @@ fn dynamic_completion_snippet(shell: CompletionShell, bin_name: &str) -> String 
                  {bin_name} $dir_args __complete $kind (commandline -ct) 2>/dev/null\n\
              end\n\
              \n\
-             function __fish_{fn_ident}_not_expecting_opt_val\n\
+             function __fish_{fn_ident}_subcmd_is\n\
+                 set -l expected $argv[1]\n\
+                 set -l cur (commandline -ct)\n\
+                 if string match -q -- '-*' \"$cur\"\n\
+                     return 1\n\
+                 end\n\
                  set -l tokens (commandline -opc)\n\
-                 if test (count $tokens) -lt 2\n\
-                     return 0\n\
+                 set -l n (count $tokens)\n\
+                 if test $n -lt 2\n\
+                     return 1\n\
                  end\n\
                  switch $tokens[-1]\n\
                      case {VALUE_TAKING_FLAGS_FISH}\n\
                          return 1\n\
                  end\n\
-                 return 0\n\
+                 set -l sub1 \"\"\n\
+                 set -l sub2 \"\"\n\
+                 set -l i 2\n\
+                 while test $i -le $n\n\
+                     set -l w $tokens[$i]\n\
+                     switch $w\n\
+                         case {VALUE_TAKING_FLAGS_FISH}\n\
+                             set i (math $i + 2)\n\
+                             continue\n\
+                         case '-*'\n\
+                             set i (math $i + 1)\n\
+                             continue\n\
+                     end\n\
+                     if test -z \"$sub1\"\n\
+                         set sub1 $w\n\
+                     else if test -z \"$sub2\"\n\
+                         set sub2 $w\n\
+                     end\n\
+                     set i (math $i + 1)\n\
+                 end\n\
+                 switch $expected\n\
+                     case sets\n\
+                         switch $sub1\n\
+                             case activate active a deactivate deactive d\n\
+                                 switch $sub2\n\
+                                     case set s list collection l c\n\
+                                         return 0\n\
+                                 end\n\
+                         end\n\
+                     case ups\n\
+                         switch $sub1\n\
+                             case activate active a deactivate deactive d\n\
+                                 switch $sub2\n\
+                                     case up upper u\n\
+                                         return 0\n\
+                                 end\n\
+                         end\n\
+                     case accounts\n\
+                         switch $sub1\n\
+                             case activate active a deactivate deactive d\n\
+                                 switch $sub2\n\
+                                     case account a\n\
+                                         return 0\n\
+                                 end\n\
+                             case auth\n\
+                                 switch $sub2\n\
+                                     case logout check\n\
+                                         return 0\n\
+                                 end\n\
+                         end\n\
+                     case medias\n\
+                         switch $sub1\n\
+                             case pull p like\n\
+                                 return 0\n\
+                             case media\n\
+                                 switch $sub2\n\
+                                     case reset skip\n\
+                                         return 0\n\
+                                 end\n\
+                         end\n\
+                 end\n\
+                 return 1\n\
              end\n\
              \n\
-             complete -c {bin_name} -n '__fish_seen_subcommand_from activate active a deactivate deactive d; and __fish_seen_subcommand_from set s list collection l c; and __fish_{fn_ident}_not_expecting_opt_val' -f -a '(__fish_{fn_ident}_complete sets)'\n\
-             complete -c {bin_name} -n '__fish_seen_subcommand_from activate active a deactivate deactive d; and __fish_seen_subcommand_from up upper u; and __fish_{fn_ident}_not_expecting_opt_val' -f -a '(__fish_{fn_ident}_complete ups)'\n\
-             complete -c {bin_name} -n '__fish_seen_subcommand_from activate active a deactivate deactive d; and __fish_seen_subcommand_from account a; and __fish_{fn_ident}_not_expecting_opt_val' -f -a '(__fish_{fn_ident}_complete accounts)'\n\
-             complete -c {bin_name} -n '__fish_seen_subcommand_from auth; and __fish_seen_subcommand_from logout check; and __fish_{fn_ident}_not_expecting_opt_val' -f -a '(__fish_{fn_ident}_complete accounts)'\n\
-             complete -c {bin_name} -n '__fish_seen_subcommand_from pull p like; and __fish_{fn_ident}_not_expecting_opt_val' -f -a '(__fish_{fn_ident}_complete medias)'\n\
-             complete -c {bin_name} -n '__fish_seen_subcommand_from media; and __fish_seen_subcommand_from reset skip; and __fish_{fn_ident}_not_expecting_opt_val' -f -a '(__fish_{fn_ident}_complete medias)'\n\
+             complete -c {bin_name} -n '__fish_{fn_ident}_subcmd_is sets' -f -a '(__fish_{fn_ident}_complete sets)'\n\
+             complete -c {bin_name} -n '__fish_{fn_ident}_subcmd_is ups' -f -a '(__fish_{fn_ident}_complete ups)'\n\
+             complete -c {bin_name} -n '__fish_{fn_ident}_subcmd_is accounts' -f -a '(__fish_{fn_ident}_complete accounts)'\n\
+             complete -c {bin_name} -n '__fish_{fn_ident}_subcmd_is medias' -f -a '(__fish_{fn_ident}_complete medias)'\n\
              complete -c {bin_name} -l set -r -f -a '(__fish_{fn_ident}_complete sets)'\n\
              complete -c {bin_name} -l up -r -f -a '(__fish_{fn_ident}_complete ups)'\n\
              complete -c {bin_name} -l account -r -f -a '(__fish_{fn_ident}_complete accounts)'\n"
@@ -1784,6 +1887,18 @@ pub fn generate_completion_script(
     script
 }
 
+fn sanitize_completion_desc(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    for c in raw.chars() {
+        match c {
+            '\t' | '\r' | '\n' => out.push(' '),
+            c if c.is_control() => {}
+            other => out.push(other),
+        }
+    }
+    out
+}
+
 /// Query dynamic completion lines (`id\tdescription`) from `db` for `kind` filtered by `prefix`.
 pub async fn dynamic_complete_lines(db: &Db, kind: &str, prefix: &str) -> Vec<String> {
     let needle = prefix.trim().to_ascii_lowercase();
@@ -1802,7 +1917,7 @@ pub async fn dynamic_complete_lines(db: &Db, kind: &str, prefix: &str) -> Vec<St
                     if matches_prefix(&id, &s.name) {
                         out.push(format!(
                             "{id}\t{} ({}, {})",
-                            s.name.replace(['\t', '\r', '\n'], " "),
+                            sanitize_completion_desc(&s.name),
                             s.kind,
                             s.state
                         ));
@@ -1817,7 +1932,7 @@ pub async fn dynamic_complete_lines(db: &Db, kind: &str, prefix: &str) -> Vec<St
                     if matches_prefix(&id, &u.name) {
                         out.push(format!(
                             "{id}\t{} ({})",
-                            u.name.replace(['\t', '\r', '\n'], " "),
+                            sanitize_completion_desc(&u.name),
                             u.state
                         ));
                     }
@@ -1831,7 +1946,7 @@ pub async fn dynamic_complete_lines(db: &Db, kind: &str, prefix: &str) -> Vec<St
                     if matches_prefix(&id, &a.name) {
                         out.push(format!(
                             "{id}\t{} ({})",
-                            a.name.replace(['\t', '\r', '\n'], " "),
+                            sanitize_completion_desc(&a.name),
                             a.state
                         ));
                     }
@@ -1851,7 +1966,7 @@ pub async fn dynamic_complete_lines(db: &Db, kind: &str, prefix: &str) -> Vec<St
                     out.push(format!(
                         "{}\t{}",
                         m.bv_id,
-                        m.title.replace(['\t', '\r', '\n'], " ")
+                        sanitize_completion_desc(&m.title)
                     ));
                 }
             }
@@ -1954,8 +2069,8 @@ async fn dispatch(cmd: &mut Command, matches: ArgMatches) -> AppResult<()> {
         }
         Some(("config", sub)) => match sub.subcommand() {
             None => config_show(&runtime, resolve_format(sub)),
-            Some(("show", s)) => config_show(&runtime, resolve_format(s)),
-            Some(("path", s)) => config_path(&runtime, resolve_format(s)),
+            Some(("show", s)) => config_show(&runtime, resolve_subcommand_format(sub, s)?),
+            Some(("path", s)) => config_path(&runtime, resolve_subcommand_format(sub, s)?),
             _ => Err(AppError::usage(anyhow!("unknown config subcommand"))),
         },
         Some(("auth", sub)) => match sub.subcommand() {
@@ -2227,6 +2342,7 @@ async fn dispatch(cmd: &mut Command, matches: ArgMatches) -> AppResult<()> {
                             output_dir: s.get_one::<PathBuf>("output").cloned(),
                             all: s.get_flag("all"),
                             dry_run: s.get_flag("dry-run"),
+                            yes: s.get_flag("yes"),
                         },
                     )
                     .await
@@ -2370,17 +2486,28 @@ mod tests {
                 .is_err()
         );
 
-        // `--audio-format` requires `--sound-only`
-        assert!(
-            build_command()
-                .try_get_matches_from(["fav", "download", "BV1Q541167Qg", "--audio-format", "flac"])
-                .is_err()
-        );
-        assert!(
-            build_command()
-                .try_get_matches_from(["fav", "pull", "--audio-format", "opus"])
-                .is_err()
-        );
+        // `--audio-format` parses without `--sound-only` so `sound_only = true` in config.toml
+        // works; runtime validation enforces that effective sound_only is enabled.
+        let m = build_command()
+            .try_get_matches_from(["fav", "download", "BV1Q541167Qg", "--audio-format", "flac"])
+            .unwrap();
+        let dl_opts = parse_download_options(m.subcommand_matches("download").unwrap()).unwrap();
+        assert!(!dl_opts.sound_only);
+        assert_eq!(dl_opts.audio_format, Some(AudioFormat::Flac));
+
+        let m = build_command()
+            .try_get_matches_from(["fav", "pull", "--audio-format", "opus"])
+            .unwrap();
+        let p_opts = parse_pull_options(m.subcommand_matches("pull").unwrap(), true).unwrap();
+        assert!(!p_opts.sound_only);
+        assert_eq!(p_opts.audio_format, Some(AudioFormat::Opus));
+
+        let m = build_command()
+            .try_get_matches_from(["fav", "sync", "--audio-format", "mp3"])
+            .unwrap();
+        let s_opts = parse_pull_options(m.subcommand_matches("sync").unwrap(), false).unwrap();
+        assert!(!s_opts.sound_only);
+        assert_eq!(s_opts.audio_format, Some(AudioFormat::Mp3));
 
         // `--all-pages` + canonical clarity name
         let m = build_command()
@@ -2449,13 +2576,38 @@ mod tests {
                 .unwrap(),
         );
         assert_eq!(list_opts.kind.as_deref(), Some("season"));
+        assert!(!list_opts.followed_only);
         assert!(
             build_command()
                 .try_get_matches_from(["fav", "ls", "set", "--kind", "invalid"])
                 .is_err()
         );
 
-        // `doctor -o` and `media reset -o`
+        // `ls up --followed`
+        let m = build_command()
+            .try_get_matches_from(["fav", "ls", "up", "--followed"])
+            .unwrap();
+        let up_opts = parse_list_options(
+            m.subcommand_matches("list")
+                .unwrap()
+                .subcommand_matches("up")
+                .unwrap(),
+        );
+        assert!(up_opts.followed_only);
+        assert!(up_opts.has_filters());
+
+        let m = build_command()
+            .try_get_matches_from(["fav", "ls", "up"])
+            .unwrap();
+        let up_opts_default = parse_list_options(
+            m.subcommand_matches("list")
+                .unwrap()
+                .subcommand_matches("up")
+                .unwrap(),
+        );
+        assert!(!up_opts_default.followed_only);
+
+        // `doctor -o` and `media reset -o` / `-y` / `--yes`
         let m = build_command()
             .try_get_matches_from(["fav", "doctor", "--offline", "-o", "/tmp/videos"])
             .unwrap();
@@ -2475,6 +2627,7 @@ mod tests {
                 "--include-inactive",
                 "-o",
                 "/tmp/videos",
+                "-y",
             ])
             .unwrap();
         let reset_m = m
@@ -2487,6 +2640,18 @@ mod tests {
             Some(&PathBuf::from("/tmp/videos"))
         );
         assert!(reset_m.get_flag("include-inactive"));
+        assert!(reset_m.get_flag("yes"));
+
+        let m = build_command()
+            .try_get_matches_from(["fav", "media", "reset", "--completed", "--yes"])
+            .unwrap();
+        let reset_yes = m
+            .subcommand_matches("media")
+            .unwrap()
+            .subcommand_matches("reset")
+            .unwrap();
+        assert!(reset_yes.get_flag("completed"));
+        assert!(reset_yes.get_flag("yes"));
 
         // `completion nushell` and alias `nu` and `powershell`
         for (arg, expected) in [
@@ -2575,17 +2740,34 @@ mod tests {
         assert!(!zsh_static.contains("_fav_with_dynamic"));
         assert!(zsh_static.contains("compdef _fav fav"));
 
-        // Fish dynamic & static + -C forwarding
+        // Fish dynamic & static + -C forwarding + positional subcommand matching (no `a` alias collision)
         let fish_dyn = generate_completion_script(&mut cmd, CompletionShell::Fish, "fav", false);
         assert!(fish_dyn.contains("function __fish_fav_complete"));
+        assert!(fish_dyn.contains("function __fish_fav_subcmd_is"));
         assert!(fish_dyn.contains("set dir_args -C"));
         assert!(fish_dyn.contains("fav $dir_args __complete $kind"));
         assert!(fish_dyn.contains("__fish_fav_complete sets"));
+        assert!(fish_dyn.contains("__fish_fav_subcmd_is sets"));
+        assert!(fish_dyn.contains("__fish_fav_subcmd_is ups"));
+        assert!(fish_dyn.contains("__fish_fav_subcmd_is accounts"));
+        assert!(fish_dyn.contains("__fish_fav_subcmd_is medias"));
         assert!(fish_dyn.contains("--clarity --quality --codec --audio-format --page"));
         assert!(fish_dyn.contains("-l set"));
+        // Dynamic snippet must NOT use unordered `__fish_seen_subcommand_from` (which caused `a` collision)
+        let fish_dynamic_section = fish_dyn
+            .split_once("# Dynamic workspace DB completions")
+            .map(|(_, rest)| rest)
+            .expect("missing Fish dynamic completion section");
+        assert!(
+            !fish_dynamic_section.contains("__fish_seen_subcommand_from"),
+            "Fish dynamic completions must use positional sub1/sub2 checks instead of __fish_seen_subcommand_from"
+        );
+        assert!(fish_dynamic_section.contains("set -l sub1"));
+        assert!(fish_dynamic_section.contains("set -l sub2"));
 
         let fish_static = generate_completion_script(&mut cmd, CompletionShell::Fish, "fav", true);
         assert!(!fish_static.contains("__fish_fav_complete"));
+        assert!(!fish_static.contains("__fish_fav_subcmd_is"));
 
         // PowerShell genuine dynamic Register-ArgumentCompleter + -C forwarding + static fallback
         let ps_dyn =
@@ -2670,5 +2852,229 @@ mod tests {
         let by_title = dynamic_complete_lines(&db, "medias", "needle special").await;
         assert_eq!(by_title.len(), 1);
         assert_eq!(by_title[0], "BV1test000245\tNeedle Special Target WithTab");
+    }
+
+    #[tokio::test]
+    async fn dynamic_complete_lines_strips_nul_and_control_chars() {
+        use crate::{
+            entity::{account, media, set, up},
+            state::{AccountState, MediaState, MediaType, SetKind, SetState, UpState},
+        };
+
+        assert_eq!(
+            sanitize_completion_desc("A\0B\x1b[31mC\x07\x7f\u{0085}\tD\r\nE"),
+            "AB[31mC D  E"
+        );
+
+        let db = Db::open_in_memory().await.unwrap();
+        db.upsert_sets([set::Model {
+            set_id: 1,
+            name: "Set\0Bad\x1bTitle\tTab\nNL".to_owned(),
+            count: 1,
+            state: SetState::Active.to_string(),
+            kind: SetKind::Created.to_string(),
+            owner_mid: Some(1),
+            sync_complete: true,
+            resume_page: None,
+        }])
+        .await
+        .unwrap();
+        db.upsert_ups([up::Model {
+            up_id: 2,
+            name: "Up\0Name\x07Bell\rCR".to_owned(),
+            state: UpState::Active.to_string(),
+            sync_complete: true,
+            resume_page: None,
+        }])
+        .await
+        .unwrap();
+        db.upsert_account(account::Model {
+            account_id: 3,
+            name: "Acct\0User\x7fDel\tTab".to_owned(),
+            cookies: String::new(),
+            state: AccountState::Active.to_string(),
+            refresh_token: None,
+        })
+        .await
+        .unwrap();
+        db.upsert_medias([media::Model {
+            id: 4,
+            bv_id: "BV17x411w7KC".to_owned(),
+            title: "Vid\0Title\x1bEsc\u{0085}Nel\nLine".to_owned(),
+            r#type: MediaType::Video.to_string(),
+            state: MediaState::Pending.to_string(),
+            retry_count: 0,
+            last_error: None,
+            updated_at: None,
+        }])
+        .await
+        .unwrap();
+
+        let sets = dynamic_complete_lines(&db, "sets", "").await;
+        assert_eq!(sets, vec!["1\tSetBadTitle Tab NL (Created, Active)"]);
+
+        let ups = dynamic_complete_lines(&db, "ups", "").await;
+        assert_eq!(ups, vec!["2\tUpNameBell CR (Active)"]);
+
+        let accounts = dynamic_complete_lines(&db, "accounts", "").await;
+        assert_eq!(accounts, vec!["3\tAcctUserDel Tab (Active)"]);
+
+        let medias = dynamic_complete_lines(&db, "medias", "").await;
+        assert_eq!(medias, vec!["BV17x411w7KC\tVidTitleEscNel Line"]);
+    }
+
+    #[test]
+    fn json_flag_works_with_default_format_but_conflicts_with_explicit_format() {
+        // `--json` alone succeeds even though `--format` has default_value("table").
+        let m = build_command()
+            .try_get_matches_from(["fav", "ls", "media", "--json"])
+            .unwrap();
+        let media_m = m
+            .subcommand_matches("list")
+            .unwrap()
+            .subcommand_matches("media")
+            .unwrap();
+        assert_eq!(resolve_format(media_m), OutputFormat::Json);
+
+        let m = build_command()
+            .try_get_matches_from(["fav", "status", "--json"])
+            .unwrap();
+        assert_eq!(
+            resolve_format(m.subcommand_matches("status").unwrap()),
+            OutputFormat::Json
+        );
+
+        let m = build_command()
+            .try_get_matches_from(["fav", "doctor", "--json"])
+            .unwrap();
+        assert_eq!(
+            resolve_format(m.subcommand_matches("doctor").unwrap()),
+            OutputFormat::Json
+        );
+
+        let m = build_command()
+            .try_get_matches_from(["fav", "auth", "check", "--json"])
+            .unwrap();
+        let check_m = m
+            .subcommand_matches("auth")
+            .unwrap()
+            .subcommand_matches("check")
+            .unwrap();
+        assert_eq!(resolve_format(check_m), OutputFormat::Json);
+
+        // Explicit `--format` + `--json` conflicts across all format-supporting commands.
+        for args in [
+            vec!["fav", "ls", "media", "--format", "tsv", "--json"],
+            vec!["fav", "status", "--format", "table", "--json"],
+            vec!["fav", "status", "--json", "--format", "json"],
+            vec!["fav", "doctor", "--format", "jsonl", "--json"],
+            vec!["fav", "auth", "check", "--format", "ids", "--json"],
+            vec!["fav", "ls", "--format", "table", "--json"],
+        ] {
+            let err = build_command()
+                .try_get_matches_from(args.clone())
+                .expect_err(&format!("expected conflict for {args:?}"));
+            assert_eq!(
+                err.kind(),
+                clap::error::ErrorKind::ArgumentConflict,
+                "expected ArgumentConflict for {args:?}, got: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn runtime_from_matches_tracks_explicit_color_flag() {
+        let m_default = build_command()
+            .try_get_matches_from(["fav", "status"])
+            .unwrap();
+        let rt_default = runtime_from_matches(&m_default);
+        assert_eq!(rt_default.color, ColorChoice::Auto);
+        assert!(!rt_default.color_explicit);
+
+        let m_explicit_before = build_command()
+            .try_get_matches_from(["fav", "--color", "auto", "status"])
+            .unwrap();
+        let rt_explicit_before = runtime_from_matches(&m_explicit_before);
+        assert_eq!(rt_explicit_before.color, ColorChoice::Auto);
+        assert!(rt_explicit_before.color_explicit);
+
+        let m_explicit_after = build_command()
+            .try_get_matches_from(["fav", "status", "--color", "auto"])
+            .unwrap();
+        let rt_explicit_after = runtime_from_matches(&m_explicit_after);
+        assert_eq!(rt_explicit_after.color, ColorChoice::Auto);
+        assert!(rt_explicit_after.color_explicit);
+
+        let m_explicit_never = build_command()
+            .try_get_matches_from(["fav", "ls", "media", "--color", "never"])
+            .unwrap();
+        let rt_explicit_never = runtime_from_matches(&m_explicit_never);
+        assert_eq!(rt_explicit_never.color, ColorChoice::Never);
+        assert!(rt_explicit_never.color_explicit);
+    }
+
+    #[test]
+    fn config_parent_format_flags_forward_to_subcommands_and_reject_conflicts() {
+        use crate::error::ExitKind;
+
+        // Parent `--json` forwards into `show` and `path`.
+        let m = build_command()
+            .try_get_matches_from(["fav", "config", "--json", "show"])
+            .unwrap();
+        let cfg_m = m.subcommand_matches("config").unwrap();
+        let show_m = cfg_m.subcommand_matches("show").unwrap();
+        assert_eq!(
+            resolve_subcommand_format(cfg_m, show_m).unwrap(),
+            OutputFormat::Json
+        );
+
+        let m = build_command()
+            .try_get_matches_from(["fav", "config", "--format", "tsv", "path"])
+            .unwrap();
+        let cfg_m = m.subcommand_matches("config").unwrap();
+        let path_m = cfg_m.subcommand_matches("path").unwrap();
+        assert_eq!(
+            resolve_subcommand_format(cfg_m, path_m).unwrap(),
+            OutputFormat::Tsv
+        );
+
+        // Child format works when parent did not explicitly specify one.
+        let m = build_command()
+            .try_get_matches_from(["fav", "config", "show", "--format", "jsonl"])
+            .unwrap();
+        let cfg_m = m.subcommand_matches("config").unwrap();
+        let show_m = cfg_m.subcommand_matches("show").unwrap();
+        assert_eq!(
+            resolve_subcommand_format(cfg_m, show_m).unwrap(),
+            OutputFormat::Jsonl
+        );
+
+        // Default when neither parent nor child specifies format.
+        let m = build_command()
+            .try_get_matches_from(["fav", "config", "path"])
+            .unwrap();
+        let cfg_m = m.subcommand_matches("config").unwrap();
+        let path_m = cfg_m.subcommand_matches("path").unwrap();
+        assert_eq!(
+            resolve_subcommand_format(cfg_m, path_m).unwrap(),
+            OutputFormat::Table
+        );
+
+        // Specifying format flags on BOTH parent and child is rejected with Usage error.
+        for args in [
+            vec!["fav", "config", "--json", "show", "--format", "tsv"],
+            vec!["fav", "config", "--format", "tsv", "path", "--json"],
+            vec![
+                "fav", "config", "--format", "table", "show", "--format", "json",
+            ],
+            vec!["fav", "config", "--json", "path", "--json"],
+        ] {
+            let m = build_command().try_get_matches_from(args.clone()).unwrap();
+            let cfg_m = m.subcommand_matches("config").unwrap();
+            let (_, child_m) = cfg_m.subcommand().unwrap();
+            let err = resolve_subcommand_format(cfg_m, child_m)
+                .expect_err(&format!("expected conflict error for {args:?}"));
+            assert_eq!(err.kind(), ExitKind::Usage);
+        }
     }
 }

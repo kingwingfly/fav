@@ -1,6 +1,7 @@
 use std::str::FromStr as _;
 
 use anyhow::anyhow;
+use serde::Serialize;
 
 use crate::{
     context::AppContext,
@@ -32,10 +33,19 @@ pub struct ListOptions {
     pub account_id: Option<i64>,
     pub active_only: bool,
     pub inactive_only: bool,
+    pub followed_only: bool,
     pub media_type: Option<String>,
     pub search: Option<String>,
     pub sort: Option<String>,
     pub limit: Option<u64>,
+}
+
+#[derive(Debug, Serialize)]
+struct UpRow {
+    up_id: i64,
+    name: String,
+    state: String,
+    followed: bool,
 }
 
 impl ListOptions {
@@ -48,6 +58,7 @@ impl ListOptions {
             || self.account_id.is_some()
             || self.active_only
             || self.inactive_only
+            || self.followed_only
             || self
                 .media_type
                 .as_deref()
@@ -95,6 +106,17 @@ pub async fn render_list(
     if opts.active_only && opts.inactive_only {
         return Err(AppError::usage(anyhow!(
             "--active and --inactive cannot be used together"
+        )));
+    }
+    let has_state = opts.state.as_deref().is_some_and(|s| !s.trim().is_empty());
+    if !matches!(kind, ListKind::Media) && has_state && (opts.active_only || opts.inactive_only) {
+        let flag = if opts.active_only {
+            "--active"
+        } else {
+            "--inactive"
+        };
+        return Err(AppError::usage(anyhow!(
+            "--state cannot be combined with {flag}"
         )));
     }
     let table_opts = TableOptions::detect(opts.wide, ctx.runtime.color);
@@ -264,11 +286,13 @@ pub async fn render_list(
                 .query_ups(&UpFilter {
                     states,
                     active_only: opts.active_only,
+                    followed_only: opts.followed_only,
                     account_id: opts.account_id,
                     search: opts.search.clone(),
                     limit: if sort.is_none() { opts.limit } else { None },
                 })
                 .await?;
+            let followed_ids = ctx.db.active_account_up_ids().await?;
             if let Some((field, desc)) = sort {
                 match field.as_str() {
                     "id" | "up_id" => rows.sort_by_key(|u| u.up_id),
@@ -280,9 +304,15 @@ pub async fn render_list(
                     }),
                     "state" => rows
                         .sort_by(|a, b| a.state.cmp(&b.state).then_with(|| a.up_id.cmp(&b.up_id))),
+                    "followed" => rows.sort_by(|a, b| {
+                        followed_ids
+                            .contains(&a.up_id)
+                            .cmp(&followed_ids.contains(&b.up_id))
+                            .then_with(|| a.up_id.cmp(&b.up_id))
+                    }),
                     other => {
                         return Err(AppError::usage(anyhow!(
-                            "invalid sort field '{other}' for ups (expected: id, name, state)"
+                            "invalid sort field '{other}' for ups (expected: id, name, state, followed)"
                         )));
                     }
                 }
@@ -294,26 +324,42 @@ pub async fn render_list(
                 }
             }
             let count = rows.len();
+            let up_rows: Vec<UpRow> = rows
+                .iter()
+                .map(|u| UpRow {
+                    up_id: u.up_id,
+                    name: u.name.clone(),
+                    state: u.state.clone(),
+                    followed: followed_ids.contains(&u.up_id),
+                })
+                .collect();
             let rendered = match opts.format {
                 OutputFormat::Table => render_table(
-                    ["up_id", "name", "state"],
-                    rows.iter().map(|u| {
+                    ["up_id", "name", "state", "followed"],
+                    up_rows.iter().map(|u| {
                         [
                             u.up_id.to_string(),
                             table_opts.format_cell(&u.name, 30),
                             format_state_badge(&u.state, table_opts.colored),
+                            if u.followed { "yes" } else { "no" }.to_owned(),
                         ]
                     }),
                     table_opts,
                 ),
-                OutputFormat::Json => render_json(&rows)?,
-                OutputFormat::Jsonl => render_jsonl(&rows)?,
+                OutputFormat::Json => render_json(&up_rows)?,
+                OutputFormat::Jsonl => render_jsonl(&up_rows)?,
                 OutputFormat::Tsv => render_tsv(
-                    ["up_id", "name", "state"],
-                    rows.iter()
-                        .map(|u| [u.up_id.to_string(), u.name.clone(), u.state.clone()]),
+                    ["up_id", "name", "state", "followed"],
+                    up_rows.iter().map(|u| {
+                        [
+                            u.up_id.to_string(),
+                            u.name.clone(),
+                            u.state.clone(),
+                            if u.followed { "yes" } else { "no" }.to_owned(),
+                        ]
+                    }),
                 ),
-                OutputFormat::Ids => render_ids(rows.iter().map(|u| u.up_id.to_string())),
+                OutputFormat::Ids => render_ids(up_rows.iter().map(|u| u.up_id.to_string())),
             };
             Ok((rendered, count))
         }
@@ -516,6 +562,10 @@ mod tests {
                 ..Default::default()
             },
             ListOptions {
+                followed_only: true,
+                ..Default::default()
+            },
+            ListOptions {
                 media_type: Some("video".to_owned()),
                 ..Default::default()
             },
@@ -659,5 +709,466 @@ mod tests {
         .await
         .unwrap_err();
         assert_eq!(err.kind(), ExitKind::Usage);
+    }
+
+    #[tokio::test]
+    async fn list_ups_shows_followed_status_and_filters_by_followed() {
+        use crate::entity::{account, up, up_account};
+
+        let tmp = tempfile::tempdir().unwrap();
+        let ws = Workspace::new(tmp.path().to_path_buf());
+        ws.ensure_dirs().unwrap();
+        let db = Db::open_in_memory().await.unwrap();
+
+        db.upsert_account(account::Model {
+            account_id: 1,
+            name: "ActiveUser".to_owned(),
+            cookies: "SESSDATA=a".to_owned(),
+            state: AccountState::Active.to_string(),
+            refresh_token: None,
+        })
+        .await
+        .unwrap();
+        db.upsert_account(account::Model {
+            account_id: 2,
+            name: "InactiveUser".to_owned(),
+            cookies: "SESSDATA=b".to_owned(),
+            state: AccountState::Inactive.to_string(),
+            refresh_token: None,
+        })
+        .await
+        .unwrap();
+
+        db.upsert_ups([
+            up::Model {
+                up_id: 10,
+                name: "FollowedCreator".to_owned(),
+                state: UpState::Active.to_string(),
+                sync_complete: false,
+                resume_page: None,
+            },
+            up::Model {
+                up_id: 20,
+                name: "InactiveAcctFollowed".to_owned(),
+                state: UpState::Inactive.to_string(),
+                sync_complete: false,
+                resume_page: None,
+            },
+            up::Model {
+                up_id: 30,
+                name: "UnfollowedFavCreator".to_owned(),
+                state: UpState::Inactive.to_string(),
+                sync_complete: false,
+                resume_page: None,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_up_accounts([
+            up_account::Model {
+                up_id: 10,
+                account_id: 1,
+            },
+            up_account::Model {
+                up_id: 20,
+                account_id: 2,
+            },
+        ])
+        .await
+        .unwrap();
+
+        let ctx = AppContext::for_test(
+            ws,
+            Config::default(),
+            db,
+            Arc::new(MockMuxer::succeeding()),
+            BiliClientConfig::default(),
+        );
+
+        // Unfiltered TSV shows all 3 with followed yes/no column
+        let (tsv, count) = render_list(
+            &ctx,
+            ListKind::Up,
+            &ListOptions {
+                format: OutputFormat::Tsv,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(count, 3);
+        let lines: Vec<&str> = tsv.lines().collect();
+        assert_eq!(lines[0], "up_id\tname\tstate\tfollowed");
+        assert_eq!(lines[1], "10\tFollowedCreator\tActive\tyes");
+        assert_eq!(lines[2], "20\tInactiveAcctFollowed\tInactive\tno");
+        assert_eq!(lines[3], "30\tUnfollowedFavCreator\tInactive\tno");
+
+        // Unfiltered Table shows followed header and yes/no values
+        let (table, table_count) = render_list(
+            &ctx,
+            ListKind::Up,
+            &ListOptions {
+                format: OutputFormat::Table,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(table_count, 3);
+        assert!(table.contains("followed"));
+        assert!(table.contains("FollowedCreator"));
+        assert!(table.contains("UnfollowedFavCreator"));
+        assert!(table.contains("yes"));
+        assert!(table.contains("no"));
+
+        // JSON and JSONL serialize followed: bool alongside up_id/name/state
+        let (json_str, _) = render_list(
+            &ctx,
+            ListKind::Up,
+            &ListOptions {
+                format: OutputFormat::Json,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let json_val: serde_json::Value = serde_json::from_str(&json_str).unwrap();
+        let arr = json_val.as_array().unwrap();
+        assert_eq!(arr.len(), 3);
+        assert_eq!(arr[0]["up_id"], 10);
+        assert_eq!(arr[0]["name"], "FollowedCreator");
+        assert_eq!(arr[0]["state"], "Active");
+        assert_eq!(arr[0]["followed"], true);
+        assert_eq!(arr[1]["up_id"], 20);
+        assert_eq!(arr[1]["followed"], false);
+        assert_eq!(arr[2]["up_id"], 30);
+        assert_eq!(arr[2]["followed"], false);
+
+        let (jsonl_str, _) = render_list(
+            &ctx,
+            ListKind::Up,
+            &ListOptions {
+                format: OutputFormat::Jsonl,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        let jsonl_rows: Vec<serde_json::Value> = jsonl_str
+            .lines()
+            .map(|l| serde_json::from_str(l).unwrap())
+            .collect();
+        assert_eq!(jsonl_rows.len(), 3);
+        assert_eq!(jsonl_rows[0]["followed"], true);
+        assert_eq!(jsonl_rows[2]["followed"], false);
+
+        // --followed filters out unfollowed favorite-set creators and inactive-account follows
+        let (followed_tsv, followed_count) = render_list(
+            &ctx,
+            ListKind::Up,
+            &ListOptions {
+                format: OutputFormat::Tsv,
+                followed_only: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(followed_count, 1);
+        let f_lines: Vec<&str> = followed_tsv.lines().collect();
+        assert_eq!(f_lines.len(), 2);
+        assert_eq!(f_lines[0], "up_id\tname\tstate\tfollowed");
+        assert_eq!(f_lines[1], "10\tFollowedCreator\tActive\tyes");
+
+        // --sort followed puts unfollowed (false) first, then followed (true)
+        let (sort_asc_ids, sort_asc_count) = render_list(
+            &ctx,
+            ListKind::Up,
+            &ListOptions {
+                format: OutputFormat::Ids,
+                sort: Some("followed".to_owned()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(sort_asc_count, 3);
+        assert_eq!(sort_asc_ids, "20\n30\n10");
+
+        // --sort -followed puts followed (true) first, then unfollowed (false)
+        let (sort_desc_ids, sort_desc_count) = render_list(
+            &ctx,
+            ListKind::Up,
+            &ListOptions {
+                format: OutputFormat::Ids,
+                sort: Some("-followed".to_owned()),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(sort_desc_count, 3);
+        assert_eq!(sort_desc_ids, "10\n30\n20");
+    }
+
+    #[tokio::test]
+    async fn list_rejects_state_combined_with_active_or_inactive_except_media_active() {
+        use crate::{
+            entity::{account, media, media_set, set_account, up},
+            state::MediaType,
+        };
+
+        let tmp = tempfile::tempdir().unwrap();
+        let ws = Workspace::new(tmp.path().to_path_buf());
+        ws.ensure_dirs().unwrap();
+        let db = Db::open_in_memory().await.unwrap();
+
+        db.upsert_account(account::Model {
+            account_id: 1,
+            name: "ActiveUser".to_owned(),
+            cookies: "SESSDATA=a".to_owned(),
+            state: AccountState::Active.to_string(),
+            refresh_token: None,
+        })
+        .await
+        .unwrap();
+        db.upsert_account(account::Model {
+            account_id: 2,
+            name: "InactiveUser".to_owned(),
+            cookies: "SESSDATA=b".to_owned(),
+            state: AccountState::Inactive.to_string(),
+            refresh_token: None,
+        })
+        .await
+        .unwrap();
+
+        db.upsert_sets([
+            set::Model {
+                set_id: 10,
+                name: "ActiveSet".to_owned(),
+                count: 2,
+                state: SetState::Active.to_string(),
+                kind: SetKind::Created.to_string(),
+                owner_mid: Some(1),
+                sync_complete: true,
+                resume_page: None,
+            },
+            set::Model {
+                set_id: 11,
+                name: "InactiveSet".to_owned(),
+                count: 1,
+                state: SetState::Inactive.to_string(),
+                kind: SetKind::Created.to_string(),
+                owner_mid: Some(1),
+                sync_complete: true,
+                resume_page: None,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_set_accounts([
+            set_account::Model {
+                set_id: 10,
+                account_id: 1,
+            },
+            set_account::Model {
+                set_id: 11,
+                account_id: 1,
+            },
+        ])
+        .await
+        .unwrap();
+
+        db.upsert_ups([
+            up::Model {
+                up_id: 100,
+                name: "ActiveUp".to_owned(),
+                state: UpState::Active.to_string(),
+                sync_complete: false,
+                resume_page: None,
+            },
+            up::Model {
+                up_id: 101,
+                name: "InactiveUp".to_owned(),
+                state: UpState::Inactive.to_string(),
+                sync_complete: false,
+                resume_page: None,
+            },
+        ])
+        .await
+        .unwrap();
+
+        db.upsert_medias([
+            media::Model {
+                id: 1000,
+                bv_id: "BV1activePend".to_owned(),
+                title: "Active Pending".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Pending.to_string(),
+                retry_count: 0,
+                last_error: None,
+                updated_at: None,
+            },
+            media::Model {
+                id: 1001,
+                bv_id: "BV1activeDone".to_owned(),
+                title: "Active Completed".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Completed.to_string(),
+                retry_count: 0,
+                last_error: None,
+                updated_at: None,
+            },
+            media::Model {
+                id: 1002,
+                bv_id: "BV1inactPend".to_owned(),
+                title: "Inactive Pending".to_owned(),
+                r#type: MediaType::Video.to_string(),
+                state: MediaState::Pending.to_string(),
+                retry_count: 0,
+                last_error: None,
+                updated_at: None,
+            },
+        ])
+        .await
+        .unwrap();
+        db.upsert_media_sets([
+            media_set::Model {
+                id: 1000,
+                set_id: 10,
+            },
+            media_set::Model {
+                id: 1001,
+                set_id: 10,
+            },
+            media_set::Model {
+                id: 1002,
+                set_id: 11,
+            },
+        ])
+        .await
+        .unwrap();
+
+        let ctx = AppContext::for_test(
+            ws,
+            Config::default(),
+            db,
+            Arc::new(MockMuxer::succeeding()),
+            BiliClientConfig::default(),
+        );
+
+        // Account, Set, Up: combining --state with --active or --inactive MUST fail with ExitKind::Usage.
+        for (kind, sample_state) in [
+            (ListKind::Account, "expired"),
+            (ListKind::Set, "unreachable"),
+            (ListKind::Up, "deactivated"),
+        ] {
+            let err_active = render_list(
+                &ctx,
+                kind,
+                &ListOptions {
+                    state: Some(sample_state.to_owned()),
+                    active_only: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(err_active.kind(), ExitKind::Usage);
+            assert!(
+                err_active.to_string().contains("--state")
+                    && err_active.to_string().contains("--active"),
+                "unexpected error for {kind:?} --state --active: {err_active}"
+            );
+
+            let err_inactive = render_list(
+                &ctx,
+                kind,
+                &ListOptions {
+                    state: Some("active".to_owned()),
+                    inactive_only: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap_err();
+            assert_eq!(err_inactive.kind(), ExitKind::Usage);
+            assert!(
+                err_inactive.to_string().contains("--state")
+                    && err_inactive.to_string().contains("--inactive"),
+                "unexpected error for {kind:?} --state --inactive: {err_inactive}"
+            );
+
+            // Non-conflicting filters continue to work cleanly.
+            let (_, active_count) = render_list(
+                &ctx,
+                kind,
+                &ListOptions {
+                    format: OutputFormat::Ids,
+                    active_only: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            assert_eq!(active_count, 1, "active filter for {kind:?}");
+
+            let (_, inactive_count) = render_list(
+                &ctx,
+                kind,
+                &ListOptions {
+                    format: OutputFormat::Ids,
+                    inactive_only: true,
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            assert_eq!(inactive_count, 1, "inactive filter for {kind:?}");
+
+            let (_, state_count) = render_list(
+                &ctx,
+                kind,
+                &ListOptions {
+                    format: OutputFormat::Ids,
+                    state: Some("active".to_owned()),
+                    ..Default::default()
+                },
+            )
+            .await
+            .unwrap();
+            assert_eq!(state_count, 1, "state filter for {kind:?}");
+        }
+
+        // Media: --state pending --active MUST succeed and intersect MediaState with active-source scope!
+        let (ids, count) = render_list(
+            &ctx,
+            ListKind::Media,
+            &ListOptions {
+                format: OutputFormat::Ids,
+                state: Some("pending".to_owned()),
+                active_only: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(count, 1);
+        assert_eq!(ids, "1000");
+
+        // Media: --inactive remains rejected with ExitKind::Usage even alongside --state.
+        let media_inactive_err = render_list(
+            &ctx,
+            ListKind::Media,
+            &ListOptions {
+                state: Some("pending".to_owned()),
+                inactive_only: true,
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(media_inactive_err.kind(), ExitKind::Usage);
+        assert!(media_inactive_err.to_string().contains("--inactive"));
     }
 }

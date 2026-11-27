@@ -2,6 +2,7 @@ use std::collections::HashSet;
 
 use anyhow::{Context as _, anyhow};
 use futures::StreamExt as _;
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
 use crate::{
@@ -118,16 +119,31 @@ pub async fn like(ctx: &AppContext, opts: LikeOptions) -> AppResult<()> {
         }
 
         let like_flag = !opts.unlike;
+        let account_cancel = CancellationToken::new();
         let mut tasks = futures::stream::iter(target_aids.iter().copied())
             .map(|aid| {
                 let client = client.clone();
                 let csrf = csrf.clone();
-                async move { (aid, client.like_media(aid, like_flag, &csrf).await) }
+                let cancel = account_cancel.clone();
+                async move {
+                    if cancel.is_cancelled() {
+                        return (aid, None);
+                    }
+                    let res = tokio::select! {
+                        biased;
+                        _ = cancel.cancelled() => return (aid, None),
+                        res = client.like_media(aid, like_flag, &csrf) => res,
+                    };
+                    (aid, Some(res))
+                }
             })
             .buffer_unordered(api_concurrency);
 
         let mut account_expired = false;
-        while let Some((aid, res)) = tasks.next().await {
+        while let Some((aid, maybe_res)) = tasks.next().await {
+            let Some(res) = maybe_res else {
+                continue;
+            };
             match res {
                 Ok(()) => {
                     succeeded += 1;
@@ -140,14 +156,20 @@ pub async fn like(ctx: &AppContext, opts: LikeOptions) -> AppResult<()> {
                 Err(e) => {
                     if e.downcast_ref::<BiliApiError>()
                         .is_some_and(BiliApiError::is_auth_expired)
-                        && !account_expired
                     {
-                        account_expired = true;
-                        auth_expired_accounts += 1;
-                        let _ = ctx
-                            .db
-                            .set_account_state(acct.account_id, AccountState::Expired)
-                            .await;
+                        account_cancel.cancel();
+                        if !account_expired {
+                            account_expired = true;
+                            auth_expired_accounts += 1;
+                            let _ = ctx
+                                .db
+                                .set_account_state(acct.account_id, AccountState::Expired)
+                                .await;
+                            warn!(
+                                "Account {} ({}) session expired; cancelling remaining {verb} target(s) for this account.",
+                                acct.name, acct.account_id
+                            );
+                        }
                     }
                     let msg = format!(
                         "Failed to {verb} media<{aid}> with account<{}>: {e:#}",
@@ -179,18 +201,13 @@ pub async fn like(ctx: &AppContext, opts: LikeOptions) -> AppResult<()> {
     Ok(())
 }
 
-async fn resolve_and_parse_aid(
-    token: &str,
-    ctx: &AppContext,
-    anon_client: &mut Option<BiliClient>,
-) -> AppResult<i64> {
+async fn resolve_and_parse_aid_with<F, Fut>(token: &str, resolve_fn: F) -> AppResult<i64>
+where
+    F: FnOnce(url::Url) -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<url::Url>>,
+{
     let effective = if let Some(short_url) = parse_short_link(token) {
-        let client = match anon_client {
-            Some(c) => c,
-            None => anon_client.insert(ctx.anonymous_client()?),
-        };
-        let resolved = client
-            .resolve_short_link(&short_url)
+        let resolved = resolve_fn(short_url)
             .await
             .with_context(|| format!("Failed to resolve short link '{token}'"))?;
         info!("Resolved short link '{token}' -> '{resolved}'");
@@ -209,6 +226,38 @@ async fn resolve_and_parse_aid(
     ident
         .to_aid()
         .ok_or_else(|| AppError::usage(anyhow!("Cannot convert '{token}' to numeric AID")))
+}
+
+async fn resolve_and_parse_aid(
+    token: &str,
+    ctx: &AppContext,
+    anon_client: &mut Option<BiliClient>,
+) -> AppResult<i64> {
+    resolve_and_parse_aid_with(token, |short_url| async move {
+        let client = match anon_client {
+            Some(c) => c,
+            None => anon_client.insert(ctx.anonymous_client()?),
+        };
+        client.resolve_short_link(&short_url).await
+    })
+    .await
+}
+
+fn extract_stdin_tokens(buf: &str) -> Vec<&str> {
+    let mut tokens = Vec::new();
+    for line in buf.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        for token in trimmed.split_whitespace() {
+            if token.starts_with('#') {
+                break;
+            }
+            tokens.push(token);
+        }
+    }
+    tokens
 }
 
 async fn collect_target_aids(ctx: &AppContext, opts: &LikeOptions) -> AppResult<Vec<i64>> {
@@ -241,10 +290,7 @@ async fn collect_target_aids(ctx: &AppContext, opts: &LikeOptions) -> AppResult<
         .await
         .context("Failed joining stdin reader task")?
         .context("Failed reading target IDs from stdin")?;
-        for token in buf.split_whitespace() {
-            if token.starts_with('#') {
-                continue;
-            }
+        for token in extract_stdin_tokens(&buf) {
             let aid = resolve_and_parse_aid(token, ctx, &mut anon_client).await?;
             if seen.insert(aid) {
                 aids.push(aid);
@@ -288,8 +334,36 @@ async fn collect_target_aids(ctx: &AppContext, opts: &LikeOptions) -> AppResult<
 }
 
 #[cfg(test)]
+fn parse_stdin_targets(buf: &str) -> AppResult<Vec<i64>> {
+    let mut aids = Vec::new();
+    let mut seen = HashSet::new();
+    for token in extract_stdin_tokens(buf) {
+        let ident = parse_media_ident(token).map_err(AppError::usage)?;
+        let aid = ident
+            .to_aid()
+            .ok_or_else(|| AppError::usage(anyhow!("Cannot convert '{token}' to numeric AID")))?;
+        if seen.insert(aid) {
+            aids.push(aid);
+        }
+    }
+    Ok(aids)
+}
+
+#[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::{
+        sync::{
+            Arc,
+            atomic::{AtomicUsize, Ordering},
+        },
+        time::Duration,
+    };
+
+    use tokio::{
+        io::{AsyncReadExt as _, AsyncWriteExt as _},
+        net::TcpListener,
+    };
+    use url::Url;
 
     use super::*;
     use crate::{
@@ -491,5 +565,296 @@ mod tests {
         )
         .await
         .expect("active set owned by active account should succeed in dry-run");
+    }
+
+    #[test]
+    fn parse_stdin_targets_handles_comments_blank_lines_and_dedup() {
+        let input = "\
+# full-line comment with multiple words
+   # indented full-line comment
+
+av100 # inline comment with multiple words
+100 200 av200 # trailing inline comment
+   \t   
+BV17x411w7KC # classic test video (aid 170001)
+av170001
+";
+        let aids = parse_stdin_targets(input).unwrap();
+        assert_eq!(aids, vec![100, 200, 170001]);
+
+        let err = parse_stdin_targets("av100\nnot-a-valid-id\n").unwrap_err();
+        assert_eq!(err.kind(), ExitKind::Usage);
+    }
+
+    #[tokio::test]
+    async fn resolve_and_parse_aid_resolves_b23_short_links_and_handles_stdin_comments() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let mock_base = Url::parse(&format!("http://{addr}")).unwrap();
+        let srv = tokio::spawn(async move {
+            while let Ok((mut stream, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let mut buf = vec![0u8; 4096];
+                    let n = match stream.read(&mut buf).await {
+                        Ok(n) if n > 0 => n,
+                        _ => return,
+                    };
+                    let req = String::from_utf8_lossy(&buf[..n]);
+                    let path = req
+                        .lines()
+                        .next()
+                        .and_then(|l| l.split_whitespace().nth(1))
+                        .unwrap_or("/");
+                    let resp = match path {
+                        "/okvid" => {
+                            "HTTP/1.1 302 Found\r\nLocation: https://www.bilibili.com/video/BV1Q541167Qg/?p=2\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                        }
+                        "/notvid" => {
+                            "HTTP/1.1 302 Found\r\nLocation: https://live.bilibili.com/12345\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                        }
+                        _ => "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
+                    };
+                    let _ = stream.write_all(resp.as_bytes()).await;
+                });
+            }
+        });
+
+        let api_cfg = BiliClientConfig {
+            api_base_url: mock_base.clone(),
+            passport_base_url: mock_base.clone(),
+            max_retries: 0,
+            base_backoff: Duration::ZERO,
+            min_request_interval: Duration::ZERO,
+            ..Default::default()
+        };
+        let client = BiliClient::with_config("", api_cfg).unwrap();
+
+        // Resolving stdin tokens with `#` comments plus `b23.tv` short links (with & without scheme).
+        let stdin_buf = "\
+# comment with b23.tv/ignored
+https://b23.tv/okvid # inline comment with extra words
+b23.tv/okvid av100
+";
+        let tokens = extract_stdin_tokens(stdin_buf);
+        assert_eq!(
+            tokens,
+            vec!["https://b23.tv/okvid", "b23.tv/okvid", "av100"]
+        );
+
+        let mut aids = Vec::new();
+        let mut seen = HashSet::new();
+        let resolve_calls = Arc::new(AtomicUsize::new(0));
+        for token in tokens {
+            let client_c = client.clone();
+            let base_c = mock_base.clone();
+            let calls_c = resolve_calls.clone();
+            let aid = resolve_and_parse_aid_with(token, move |short_url| async move {
+                calls_c.fetch_add(1, Ordering::SeqCst);
+                let target = base_c.join(short_url.path())?;
+                client_c.resolve_short_link(&target).await
+            })
+            .await
+            .unwrap();
+            if seen.insert(aid) {
+                aids.push(aid);
+            }
+        }
+        assert_eq!(aids, vec![455_017_605, 100]);
+        assert_eq!(
+            resolve_calls.load(Ordering::SeqCst),
+            2,
+            "only b23.tv tokens should trigger short-link resolution"
+        );
+
+        // Short link redirecting to non-video bilibili URL -> ExitKind::Usage with resolved context.
+        let non_video_err = resolve_and_parse_aid_with("https://b23.tv/notvid", {
+            let client_c = client.clone();
+            let base_c = mock_base.clone();
+            move |short_url| async move {
+                let target = base_c.join(short_url.path())?;
+                client_c.resolve_short_link(&target).await
+            }
+        })
+        .await
+        .unwrap_err();
+        assert_eq!(non_video_err.kind(), ExitKind::Usage);
+        assert!(
+            format!("{non_video_err:#}").contains("Resolved short link 'https://b23.tv/notvid'")
+        );
+
+        // Non-redirecting HTTP 200 short link -> Runtime error (never treated as resolved video).
+        let no_redir_err = resolve_and_parse_aid_with("https://b23.tv/stuck", {
+            let client_c = client.clone();
+            let base_c = mock_base.clone();
+            move |short_url| async move {
+                let target = base_c.join(short_url.path())?;
+                client_c.resolve_short_link(&target).await
+            }
+        })
+        .await
+        .unwrap_err();
+        assert_eq!(no_redir_err.kind(), ExitKind::Runtime);
+        assert!(format!("{no_redir_err:#}").contains("did not redirect to bilibili.com"));
+
+        srv.abort();
+    }
+
+    async fn spawn_like_mock_server<F>(handler: F) -> Url
+    where
+        F: Fn(&str, &str) -> String + Send + Sync + 'static,
+    {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let handler = Arc::new(handler);
+        tokio::spawn(async move {
+            while let Ok((mut stream, _)) = listener.accept().await {
+                let handler = handler.clone();
+                tokio::spawn(async move {
+                    let mut buf = vec![0u8; 8192];
+                    let n = match stream.read(&mut buf).await {
+                        Ok(n) if n > 0 => n,
+                        _ => return,
+                    };
+                    let req = String::from_utf8_lossy(&buf[..n]);
+                    let path = req
+                        .lines()
+                        .next()
+                        .and_then(|l| l.split_whitespace().nth(1))
+                        .unwrap_or("/");
+                    let body = handler(path, &req);
+                    let resp = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    let _ = stream.write_all(resp.as_bytes()).await;
+                });
+            }
+        });
+        Url::parse(&format!("http://{addr}")).unwrap()
+    }
+
+    #[tokio::test]
+    async fn like_cancels_remaining_targets_and_marks_expired_on_auth_error() {
+        let acct1_calls = Arc::new(AtomicUsize::new(0));
+        let acct2_calls = Arc::new(AtomicUsize::new(0));
+        let c1 = acct1_calls.clone();
+        let c2 = acct2_calls.clone();
+
+        let base = spawn_like_mock_server(move |path, req| {
+            if path.starts_with("/x/web-interface/archive/like") {
+                if req.contains("SESSDATA=expired_tok") {
+                    c1.fetch_add(1, Ordering::SeqCst);
+                    return r#"{"code":-101,"message":"账号未登录"}"#.to_owned();
+                }
+                if req.contains("SESSDATA=valid_tok") {
+                    c2.fetch_add(1, Ordering::SeqCst);
+                    return r#"{"code":0,"message":"0"}"#.to_owned();
+                }
+            }
+            r#"{"code":0,"message":"0","data":{}}"#.to_owned()
+        })
+        .await;
+
+        let tmp = tempfile::tempdir().unwrap();
+        let ws = Workspace::new(tmp.path().to_path_buf());
+        ws.ensure_dirs().unwrap();
+        let db = Db::open_in_memory().await.unwrap();
+
+        db.upsert_account(account::Model {
+            account_id: 1,
+            name: "ExpiringUser".to_owned(),
+            cookies: "SESSDATA=expired_tok; bili_jct=csrf1; buvid3=b1; bili_ticket=t1; bili_ticket_expires=9999999999".to_owned(),
+            state: AccountState::Active.to_string(),
+            refresh_token: None,
+        })
+        .await
+        .unwrap();
+        db.upsert_account(account::Model {
+            account_id: 2,
+            name: "HealthyUser".to_owned(),
+            cookies: "SESSDATA=valid_tok; bili_jct=csrf2; buvid3=b2; bili_ticket=t2; bili_ticket_expires=9999999999".to_owned(),
+            state: AccountState::Active.to_string(),
+            refresh_token: None,
+        })
+        .await
+        .unwrap();
+
+        let cfg = Config {
+            api_concurrency: Some(1),
+            ..Default::default()
+        };
+        let api_cfg = BiliClientConfig {
+            api_base_url: base.clone(),
+            passport_base_url: base,
+            max_retries: 0,
+            base_backoff: Duration::ZERO,
+            min_request_interval: Duration::ZERO,
+            ..Default::default()
+        };
+        let ctx = AppContext::for_test(ws, cfg, db, Arc::new(MockMuxer::succeeding()), api_cfg);
+
+        // 1. Single expiring account: -101 stops after 1st target, marks Expired, returns Auth.
+        let err = like(
+            &ctx,
+            LikeOptions {
+                targets: vec![
+                    "av101".into(),
+                    "av102".into(),
+                    "av103".into(),
+                    "av104".into(),
+                    "av105".into(),
+                ],
+                account_ids: vec![1],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err.kind(), ExitKind::Auth);
+        assert_eq!(
+            acct1_calls.load(Ordering::SeqCst),
+            1,
+            "expected remaining targets for expired account to be cancelled"
+        );
+        assert_eq!(
+            ctx.db.get_account(1).await.unwrap().state,
+            AccountState::Expired.as_str()
+        );
+
+        // 2. Re-activate account 1 and run across both accounts:
+        //    Account 1 stops after 1 failure (cancelled targets not counted as extra failures),
+        //    while Account 2 completes all 3 targets.
+        ctx.db
+            .set_account_state(1, AccountState::Active)
+            .await
+            .unwrap();
+        acct1_calls.store(0, Ordering::SeqCst);
+
+        let err2 = like(
+            &ctx,
+            LikeOptions {
+                targets: vec!["av201".into(), "av202".into(), "av203".into()],
+                account_ids: vec![1, 2],
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap_err();
+        assert_eq!(err2.kind(), ExitKind::PartialFailure);
+        assert!(
+            err2.to_string().contains("1 operation(s) failed"),
+            "cancelled targets must not be counted as extra failures, got: {err2}"
+        );
+        assert_eq!(acct1_calls.load(Ordering::SeqCst), 1);
+        assert_eq!(acct2_calls.load(Ordering::SeqCst), 3);
+        assert_eq!(
+            ctx.db.get_account(1).await.unwrap().state,
+            AccountState::Expired.as_str()
+        );
+        assert_eq!(
+            ctx.db.get_account(2).await.unwrap().state,
+            AccountState::Active.as_str()
+        );
     }
 }

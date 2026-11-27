@@ -395,13 +395,8 @@ pub fn render_config_path(
     }
 }
 
-/// Entry point for `fav config` / `fav config show` (read-only, zero DB writes, zero lock).
-pub fn config_show(runtime: &RuntimeOptions, format: OutputFormat) -> AppResult<()> {
-    let workspace = discover_optional_workspace(runtime);
-    let global_path = global_config_path();
-    let report = build_config_show_report(global_path.as_deref(), workspace.as_ref())?;
-
-    let effective_color = if runtime.color == ColorChoice::Auto {
+fn effective_color_for_report(runtime: &RuntimeOptions, report: &ConfigShowReport) -> ColorChoice {
+    if !runtime.color_explicit {
         report
             .entries
             .iter()
@@ -410,7 +405,16 @@ pub fn config_show(runtime: &RuntimeOptions, format: OutputFormat) -> AppResult<
             .unwrap_or(runtime.color)
     } else {
         runtime.color
-    };
+    }
+}
+
+/// Entry point for `fav config` / `fav config show` (read-only, zero DB writes, zero lock).
+pub fn config_show(runtime: &RuntimeOptions, format: OutputFormat) -> AppResult<()> {
+    let workspace = discover_optional_workspace(runtime);
+    let global_path = global_config_path();
+    let report = build_config_show_report(global_path.as_deref(), workspace.as_ref())?;
+
+    let effective_color = effective_color_for_report(runtime, &report);
     let table_opts = TableOptions::detect(false, effective_color);
     let out = render_config_show(&report, format, table_opts)?;
     if !out.is_empty() {
@@ -698,5 +702,35 @@ no_progress = true
         let path_ids =
             render_config_path(&path_report, OutputFormat::Ids, plain_table_opts()).unwrap();
         assert_eq!(path_ids, global_path.display().to_string());
+    }
+
+    #[test]
+    fn config_show_color_respects_explicit_cli_auto_over_config() {
+        let tmp = tempfile::tempdir().unwrap();
+        let global_path = tmp.path().join("global.toml");
+        std::fs::write(&global_path, "color = \"always\"\n").unwrap();
+        let report = build_config_show_report(Some(&global_path), None).unwrap();
+
+        // Implicit default (`color_explicit == false`): inherits `config.color = "always"`.
+        let implicit_rt = RuntimeOptions {
+            color: ColorChoice::Auto,
+            color_explicit: false,
+            ..Default::default()
+        };
+        assert_eq!(
+            effective_color_for_report(&implicit_rt, &report),
+            ColorChoice::Always
+        );
+
+        // Explicit `--color auto` (`color_explicit == true`): overrides `config.color = "always"`.
+        let explicit_auto_rt = RuntimeOptions {
+            color: ColorChoice::Auto,
+            color_explicit: true,
+            ..Default::default()
+        };
+        assert_eq!(
+            effective_color_for_report(&explicit_auto_rt, &report),
+            ColorChoice::Auto
+        );
     }
 }

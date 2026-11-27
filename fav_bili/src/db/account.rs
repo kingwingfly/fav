@@ -160,6 +160,7 @@ impl Db {
                 account::Column::State,
                 Expr::value(AccountState::Active.as_str()),
             )
+            .filter(account::Column::State.eq(AccountState::Inactive))
             .exec(&self.conn)
             .await?;
         Ok(res.rows_affected)
@@ -198,6 +199,7 @@ impl Db {
                 account::Column::State,
                 Expr::value(AccountState::Inactive.as_str()),
             )
+            .filter(account::Column::State.eq(AccountState::Active))
             .exec(&self.conn)
             .await?;
         Ok(res.rows_affected)

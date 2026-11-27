@@ -7,7 +7,7 @@ use anyhow::{Context as _, Result, anyhow, bail};
 use clap::{ValueEnum, builder::PossibleValue};
 use tracing::warn;
 
-use crate::error::AppError;
+use crate::error::{AppError, AppResult};
 
 /// Supported OS scheduler backends for `fav schedule`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -190,10 +190,42 @@ fn escape_powershell_single(s: &str) -> String {
     s.replace('\'', "''")
 }
 
+/// Quote a single argument according to Windows `CommandLineToArgvW` rules.
+///
+/// Wraps `arg` in double quotes, doubling every run of `\` immediately preceding `"`
+/// (escaping `"` as `\"`) and doubling any trailing run of `\` before the closing `"`.
+fn escape_windows_argv(arg: &str) -> String {
+    let mut out = String::with_capacity(arg.len() + 2);
+    out.push('"');
+    let mut backslashes = 0usize;
+    for ch in arg.chars() {
+        if ch == '\\' {
+            backslashes += 1;
+        } else if ch == '"' {
+            for _ in 0..backslashes * 2 {
+                out.push('\\');
+            }
+            out.push_str("\\\"");
+            backslashes = 0;
+        } else {
+            for _ in 0..backslashes {
+                out.push('\\');
+            }
+            backslashes = 0;
+            out.push(ch);
+        }
+    }
+    for _ in 0..backslashes * 2 {
+        out.push('\\');
+    }
+    out.push('"');
+    out
+}
+
 /// Validate an optional `--name` suffix for `fav schedule`.
 ///
 /// Must match `^[A-Za-z0-9][A-Za-z0-9_-]{0,47}$` (1..=48 ASCII chars).
-pub fn validate_schedule_name(name: &str) -> Result<&str> {
+pub fn validate_schedule_name(name: &str) -> AppResult<&str> {
     let bytes = name.as_bytes();
     if bytes.is_empty()
         || bytes.len() > 48
@@ -204,8 +236,7 @@ pub fn validate_schedule_name(name: &str) -> Result<&str> {
     {
         return Err(AppError::usage(anyhow!(
             "invalid schedule --name '{name}' (must match ^[A-Za-z0-9][A-Za-z0-9_-]{{0,47}}$)"
-        ))
-        .into());
+        )));
     }
     Ok(name)
 }
@@ -216,7 +247,7 @@ pub fn generate_schedule(
     interval: &str,
     workspace_dir: &Path,
     fav_bin: &Path,
-) -> Result<GeneratedSchedule> {
+) -> AppResult<GeneratedSchedule> {
     generate_schedule_named(target, interval, workspace_dir, fav_bin, None)
 }
 
@@ -228,8 +259,8 @@ pub fn generate_schedule_named(
     workspace_dir: &Path,
     fav_bin: &Path,
     name: Option<&str>,
-) -> Result<GeneratedSchedule> {
-    let parsed = parse_interval(interval).map_err(|e| anyhow::Error::from(AppError::usage(e)))?;
+) -> AppResult<GeneratedSchedule> {
+    let parsed = parse_interval(interval).map_err(AppError::usage)?;
     let suffix = match name {
         Some(raw) => Some(validate_schedule_name(raw)?),
         None => None,
@@ -257,7 +288,7 @@ pub fn generate_schedule_named(
                  \n\
                  [Service]\n\
                  Type=oneshot\n\
-                 ExecStart={} -C {} sync\n",
+                 ExecStart={} -C {} --non-interactive --no-progress sync\n",
                 escape_systemd_arg(fav_bin),
                 escape_systemd_arg(workspace_dir),
             );
@@ -276,10 +307,13 @@ pub fn generate_schedule_named(
                 parsed.systemd_spec(),
             );
             let instructions = format!(
-                "Enable and start the user timer (user-level, no root privileges required):\n\
-                   systemctl --user daemon-reload\n\
-                   systemctl --user enable --now {unit_base}.timer\n\
-                   systemctl --user status {unit_base}.timer"
+                concat!(
+                    "Enable and start the user timer (user-level, no root privileges required):\n",
+                    "  systemctl --user daemon-reload\n",
+                    "  systemctl --user enable --now {unit_base}.timer\n",
+                    "  systemctl --user status {unit_base}.timer",
+                ),
+                unit_base = unit_base,
             );
             Ok(GeneratedSchedule {
                 files: vec![
@@ -317,6 +351,8 @@ pub fn generate_schedule_named(
                      <string>{bin_xml}</string>\n\
                      <string>-C</string>\n\
                      <string>{dir_xml}</string>\n\
+                     <string>--non-interactive</string>\n\
+                     <string>--no-progress</string>\n\
                      <string>sync</string>\n\
                    </array>\n\
                    <key>StartInterval</key>\n\
@@ -332,9 +368,13 @@ pub fn generate_schedule_named(
                 parsed.seconds,
             );
             let instructions = format!(
-                "Load the LaunchAgent (user-level, no root privileges required):\n\
-                   launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/{plist_name}\n\
-                   launchctl kickstart -k gui/$(id -u)/{label}"
+                concat!(
+                    "Load the LaunchAgent (user-level, no root privileges required):\n",
+                    "  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/{plist_name}\n",
+                    "  launchctl kickstart -k gui/$(id -u)/{label}",
+                ),
+                plist_name = plist_name,
+                label = label,
             );
             Ok(GeneratedSchedule {
                 files: vec![ScheduleFile {
@@ -354,19 +394,27 @@ pub fn generate_schedule_named(
                 None => "install-fav-task.ps1".to_owned(),
             };
             let bin_ps = escape_powershell_single(&fav_bin.to_string_lossy());
-            let dir_ps = escape_powershell_single(&workspace_dir.to_string_lossy());
+            let workspace_raw = workspace_dir.to_string_lossy();
+            let dir_ps = escape_powershell_single(&workspace_raw);
+            let arg_ps = escape_powershell_single(&format!(
+                "-C {} --non-interactive --no-progress sync",
+                escape_windows_argv(&workspace_raw),
+            ));
             let script = format!(
                 "$FavBin = '{bin_ps}'\n\
                  $WorkspaceDir = '{dir_ps}'\n\
-                 $Action = New-ScheduledTaskAction -Execute $FavBin -Argument \"-C `\"$WorkspaceDir`\" sync\"\n\
+                 $Action = New-ScheduledTaskAction -Execute $FavBin -Argument '{arg_ps}'\n\
                  $Trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) -RepetitionInterval ({})\n\
                  $Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable\n\
                  Register-ScheduledTask -TaskName '{task_name}' -Action $Action -Trigger $Trigger -Settings $Settings -Force\n",
                 parsed.powershell_timespan(),
             );
             let instructions = format!(
-                "Register the scheduled task in PowerShell:\n\
-                   powershell -ExecutionPolicy Bypass -File {script_name}"
+                concat!(
+                    "Register the scheduled task in PowerShell:\n",
+                    "  powershell -ExecutionPolicy Bypass -File {script_name}",
+                ),
+                script_name = script_name,
             );
             Ok(GeneratedSchedule {
                 files: vec![ScheduleFile {
@@ -410,7 +458,7 @@ fn content_mentions_workspace(content: &str, target: ScheduleTarget, workspace_d
         if prev_ok && next_ok {
             return true;
         }
-        offset = abs + 1;
+        offset = abs + raw.chars().next().map_or(1, char::len_utf8);
     }
     false
 }
@@ -485,7 +533,7 @@ pub fn schedule(
     workspace_dir: &Path,
     fav_bin: &Path,
     install: bool,
-) -> Result<String> {
+) -> AppResult<String> {
     schedule_named(target, interval, workspace_dir, fav_bin, install, None)
 }
 
@@ -498,7 +546,7 @@ pub fn schedule_named(
     fav_bin: &Path,
     install: bool,
     name: Option<&str>,
-) -> Result<String> {
+) -> AppResult<String> {
     let dest_dir = if install {
         Some(default_install_dir(target, workspace_dir)?)
     } else {
@@ -521,12 +569,22 @@ fn schedule_named_with_install_dir(
     fav_bin: &Path,
     install_dir: Option<&Path>,
     name: Option<&str>,
-) -> Result<String> {
+) -> AppResult<String> {
     let generated = generate_schedule_named(target, interval, workspace_dir, fav_bin, name)?;
     if let Some(dest_dir) = install_dir {
         let overwritten_other =
             detect_cross_workspace_overwrites(target, &generated, workspace_dir, dest_dir);
         let written = write_schedule_files(&generated, dest_dir)?;
+        let instructions = if target == ScheduleTarget::TaskScheduler
+            && let Some(script_path) = written.first()
+        {
+            let escaped = escape_powershell_single(&script_path.to_string_lossy());
+            format!(
+                "Register the scheduled task in PowerShell:\n  powershell -ExecutionPolicy Bypass -File '{escaped}'"
+            )
+        } else {
+            generated.instructions
+        };
         let mut out = String::new();
         out.push_str("Installed schedule files:\n");
         for path in written {
@@ -547,7 +605,7 @@ fn schedule_named_with_install_dir(
             ));
         }
         out.push('\n');
-        out.push_str(&generated.instructions);
+        out.push_str(&instructions);
         Ok(out)
     } else {
         let mut out = String::new();
@@ -567,6 +625,7 @@ fn schedule_named_with_install_dir(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::ExitKind;
 
     #[test]
     fn parse_interval_valid_and_invalid() {
@@ -618,15 +677,22 @@ mod tests {
         assert_eq!(sched.files.len(), 2);
         assert_eq!(sched.files[0].filename, "fav.service");
         assert!(sched.files[0].content.contains("Type=oneshot"));
-        assert!(
-            sched.files[0].content.contains(
-                "ExecStart=\"/usr/local/bin/fav\" -C \"/home/user/Videos/fav 100%%\" sync"
-            )
-        );
+        assert!(sched.files[0].content.contains(
+            "ExecStart=\"/usr/local/bin/fav\" -C \"/home/user/Videos/fav 100%%\" --non-interactive --no-progress sync"
+        ));
         assert_eq!(sched.files[1].filename, "fav.timer");
         assert!(sched.files[1].content.contains("OnUnitActiveSec=3h"));
         assert!(sched.files[1].content.contains("Persistent=true"));
-        assert!(sched.instructions.contains("systemctl --user"));
+        assert!(
+            sched
+                .instructions
+                .contains("\n  systemctl --user daemon-reload")
+        );
+        assert!(
+            sched
+                .instructions
+                .contains("\n  systemctl --user enable --now fav.timer")
+        );
         assert!(!sched.instructions.contains("sudo"));
     }
 
@@ -645,8 +711,10 @@ mod tests {
         assert!(xml.contains("<integer>1800</integer>"));
         assert!(xml.contains("<string>/opt/homebrew/bin/fav</string>"));
         assert!(xml.contains("<string>/Users/me/A &amp; B &lt;fav&gt;</string>"));
+        assert!(xml.contains("<string>--non-interactive</string>"));
+        assert!(xml.contains("<string>--no-progress</string>"));
         assert!(xml.contains("<string>sync</string>"));
-        assert!(sched.instructions.contains("launchctl"));
+        assert!(sched.instructions.contains("\n  launchctl bootstrap "));
         assert!(!sched.instructions.contains("sudo"));
     }
 
@@ -655,16 +723,111 @@ mod tests {
         let sched = generate_schedule(
             ScheduleTarget::TaskScheduler,
             "1d",
-            Path::new(r"C:\Users\O'Brien\Videos"),
+            Path::new(r#"C:\Users\O'Brien\$env`dir"quote\Videos"#),
             Path::new(r"C:\bin\fav.exe"),
         )
         .unwrap();
         assert_eq!(sched.files.len(), 1);
         assert_eq!(sched.files[0].filename, "install-fav-task.ps1");
         let ps = &sched.files[0].content;
-        assert!(ps.contains("O''Brien"));
+        assert!(ps.contains(r#"$WorkspaceDir = 'C:\Users\O''Brien\$env`dir"quote\Videos'"#));
+        assert!(ps.contains(
+            r#"$Action = New-ScheduledTaskAction -Execute $FavBin -Argument '-C "C:\Users\O''Brien\$env`dir\"quote\Videos" --non-interactive --no-progress sync'"#
+        ));
+        assert!(!ps.contains("\"-C"));
         assert!(ps.contains("New-TimeSpan -Days 1"));
         assert!(ps.contains("Register-ScheduledTask"));
+        assert!(
+            sched
+                .instructions
+                .contains("\n  powershell -ExecutionPolicy Bypass -File install-fav-task.ps1")
+        );
+    }
+
+    #[test]
+    fn generate_task_scheduler_windows_argv_trailing_backslashes_and_quotes() {
+        assert_eq!(escape_windows_argv(r"D:\"), r#""D:\\""#);
+        assert_eq!(escape_windows_argv(r"\\?\D:\"), r#""\\?\D:\\""#);
+        assert_eq!(
+            escape_windows_argv(r#"C:\dir\"sub\"#),
+            r#""C:\dir\\\"sub\\""#
+        );
+
+        for (dir, expected_quoted) in [
+            (r"D:\", r#""D:\\""#),
+            (r"\\?\D:\", r#""\\?\D:\\""#),
+            (r#"C:\Users\a\"b\"#, r#""C:\Users\a\\\"b\\""#),
+        ] {
+            let sched = generate_schedule(
+                ScheduleTarget::TaskScheduler,
+                "3h",
+                Path::new(dir),
+                Path::new(r"C:\bin\fav.exe"),
+            )
+            .unwrap();
+            let ps = &sched.files[0].content;
+            let dir_ps = escape_powershell_single(dir);
+            assert!(
+                ps.contains(&format!("$WorkspaceDir = '{dir_ps}'")),
+                "missing $WorkspaceDir for {dir}: {ps}"
+            );
+            assert!(
+                ps.contains(&format!(
+                    "-Argument '-C {expected_quoted} --non-interactive --no-progress sync'"
+                )),
+                "unexpected -Argument quoting for {dir}: {ps}"
+            );
+        }
+    }
+
+    #[test]
+    fn task_scheduler_install_instructions_use_escaped_installed_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let ws_dir = tmp.path().join("O'Brien $ws");
+        fs::create_dir_all(&ws_dir).unwrap();
+        let fav_bin = Path::new(r"C:\bin\fav.exe");
+
+        // install == false keeps bare filename
+        let dry_out =
+            schedule(ScheduleTarget::TaskScheduler, "3h", &ws_dir, fav_bin, false).unwrap();
+        assert!(dry_out.contains("powershell -ExecutionPolicy Bypass -File install-fav-task.ps1"));
+
+        // install == true emits the actual installed path, single-quote escaped
+        let installed_out =
+            schedule(ScheduleTarget::TaskScheduler, "3h", &ws_dir, fav_bin, true).unwrap();
+        let expected_path = ws_dir.join(".fav").join("install-fav-task.ps1");
+        assert!(expected_path.is_file());
+        let escaped = escape_powershell_single(&expected_path.to_string_lossy());
+        assert!(
+            installed_out.contains(&format!(
+                "powershell -ExecutionPolicy Bypass -File '{escaped}'"
+            )),
+            "expected installed PowerShell path in output, got:\n{installed_out}"
+        );
+        assert!(escaped.contains("O''Brien $ws"));
+    }
+
+    #[test]
+    fn schedule_classifies_bad_interval_as_usage_and_io_error_as_runtime() {
+        let tmp = tempfile::tempdir().unwrap();
+        let fav_bin = Path::new("/usr/bin/fav");
+
+        // Invalid --interval -> ExitKind::Usage
+        let bad_interval_err =
+            schedule(ScheduleTarget::Systemd, "0m", tmp.path(), fav_bin, false).unwrap_err();
+        assert_eq!(bad_interval_err.kind(), ExitKind::Usage);
+
+        // Filesystem I/O failure during --install (e.g. `.fav` is a regular file) -> ExitKind::Runtime
+        fs::write(tmp.path().join(".fav"), b"not a directory").unwrap();
+        let io_err = schedule(
+            ScheduleTarget::TaskScheduler,
+            "3h",
+            tmp.path(),
+            fav_bin,
+            true,
+        )
+        .unwrap_err();
+        assert_eq!(io_err.kind(), ExitKind::Runtime);
     }
 
     #[test]
@@ -746,8 +909,6 @@ mod tests {
 
     #[test]
     fn validate_schedule_name_accepts_valid_and_rejects_invalid_with_usage_error() {
-        use crate::error::{ExitKind, classify_anyhow};
-
         let max_len = "A".repeat(48);
         for ok in ["a", "0", "work", "my-ws_01", max_len.as_str()] {
             assert_eq!(validate_schedule_name(ok).unwrap(), ok);
@@ -774,7 +935,7 @@ mod tests {
             )
             .unwrap_err();
             assert_eq!(
-                classify_anyhow(&err),
+                err.kind(),
                 ExitKind::Usage,
                 "expected Usage error for --name '{bad}', got {err:#}"
             );
@@ -891,5 +1052,53 @@ mod tests {
         .unwrap();
         assert!(mac2.contains("Note:"));
         assert!(mac2.contains("--name <NAME>"));
+    }
+
+    #[test]
+    fn content_mentions_workspace_handles_non_ascii_prefix_without_utf8_panic() {
+        // Non-ASCII prefix `"视频"` appearing inside `"视频2"` must advance by char UTF-8 width
+        // (never slice inside a multi-byte character) and distinguish prefix vs exact match.
+        assert!(!content_mentions_workspace(
+            "ExecStart=/usr/bin/fav -C 视频2 sync",
+            ScheduleTarget::Systemd,
+            Path::new("视频"),
+        ));
+        assert!(content_mentions_workspace(
+            "ExecStart=/usr/bin/fav -C 视频2 && /usr/bin/fav -C 视频 sync",
+            ScheduleTarget::Systemd,
+            Path::new("视频"),
+        ));
+
+        let tmp = tempfile::tempdir().unwrap();
+        let install_dir = tmp.path().join("units_utf8");
+        let ws_short = tmp.path().join("视频");
+        let ws_long = tmp.path().join("视频2");
+        let bin = Path::new("/usr/local/bin/fav");
+
+        let out1 = schedule_named_with_install_dir(
+            ScheduleTarget::Systemd,
+            "3h",
+            &ws_long,
+            bin,
+            Some(&install_dir),
+            None,
+        )
+        .unwrap();
+        assert!(!out1.contains("Note:"));
+
+        // Overwriting `"视频2"` with `"视频"` must warn cleanly without panicking.
+        let out2 = schedule_named_with_install_dir(
+            ScheduleTarget::Systemd,
+            "3h",
+            &ws_short,
+            bin,
+            Some(&install_dir),
+            None,
+        )
+        .unwrap();
+        assert!(
+            out2.contains("Note:"),
+            "non-ASCII prefix path overwriting longer path must warn: {out2}"
+        );
     }
 }

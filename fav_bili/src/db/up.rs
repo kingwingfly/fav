@@ -18,6 +18,7 @@ use crate::{
 pub struct UpFilter {
     pub states: Vec<UpState>,
     pub active_only: bool,
+    pub followed_only: bool,
     pub account_id: Option<i64>,
     pub search: Option<String>,
     pub limit: Option<u64>,
@@ -182,6 +183,19 @@ impl Db {
             let states: Vec<String> = filter.states.iter().map(|s| s.to_string()).collect();
             query = query.filter(up::Column::State.is_in(states));
         }
+        if filter.followed_only {
+            let active_accounts = Query::select()
+                .column(account::Column::AccountId)
+                .from(account::Entity)
+                .and_where(Expr::col(account::Column::State).eq(AccountState::Active.as_str()))
+                .to_owned();
+            let sub = Query::select()
+                .column(up_account::Column::UpId)
+                .from(up_account::Entity)
+                .and_where(Expr::col(up_account::Column::AccountId).in_subquery(active_accounts))
+                .to_owned();
+            query = query.filter(up::Column::UpId.in_subquery(sub));
+        }
         if let Some(account_id) = filter.account_id {
             let sub = Query::select()
                 .column(up_account::Column::UpId)
@@ -238,8 +252,26 @@ impl Db {
     }
 
     pub async fn activate_all_ups(&self) -> Result<u64> {
+        let active_account_ups = Query::select()
+            .column((up_account::Entity, up_account::Column::UpId))
+            .from(up_account::Entity)
+            .inner_join(
+                account::Entity,
+                Expr::col((up_account::Entity, up_account::Column::AccountId))
+                    .equals((account::Entity, account::Column::AccountId)),
+            )
+            .and_where(
+                Expr::col((account::Entity, account::Column::State))
+                    .eq(AccountState::Active.as_str()),
+            )
+            .to_owned();
         let res = up::Entity::update_many()
             .col_expr(up::Column::State, Expr::value(UpState::Active.as_str()))
+            .filter(
+                Condition::all()
+                    .add(up::Column::State.eq(UpState::Inactive))
+                    .add(up::Column::UpId.in_subquery(active_account_ups)),
+            )
             .exec(&self.conn)
             .await?;
         Ok(res.rows_affected)
@@ -271,6 +303,7 @@ impl Db {
     pub async fn deactivate_all_ups(&self) -> Result<u64> {
         let res = up::Entity::update_many()
             .col_expr(up::Column::State, Expr::value(UpState::Inactive.as_str()))
+            .filter(up::Column::State.eq(UpState::Active))
             .exec(&self.conn)
             .await?;
         Ok(res.rows_affected)
