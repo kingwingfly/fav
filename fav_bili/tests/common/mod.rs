@@ -897,11 +897,20 @@ fn media_item_json(item: &MockMediaItem) -> Value {
 }
 
 fn stream_spec_json(origin: &str, s: &MockStreamSpec) -> Value {
+    let base_url = format!("{origin}{}", s.path);
+    let backup_urls: Vec<String> = s
+        .backup_paths
+        .iter()
+        .map(|p| format!("{origin}{p}"))
+        .collect();
     json!({
         "id": s.id,
-        "baseUrl": format!("{origin}{}", s.path),
-        "backupUrl": s.backup_paths.iter().map(|p| format!("{origin}{p}")).collect::<Vec<_>>(),
+        "baseUrl": base_url,
+        "base_url": base_url,
+        "backupUrl": backup_urls,
+        "backup_url": backup_urls,
         "mimeType": s.mime_type,
+        "mime_type": s.mime_type,
         "codecs": s.codecs,
         "bandwidth": s.bandwidth,
         "codecid": s.codecid,

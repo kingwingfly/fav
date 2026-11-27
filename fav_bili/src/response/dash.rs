@@ -3,7 +3,7 @@ use url::Url;
 
 use crate::state::VideoClarity;
 
-use super::null_as_default;
+use super::{null_as_default, pick_optional_str};
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct DashData {
@@ -32,25 +32,73 @@ pub struct Dash {
 }
 
 #[derive(Debug, Clone, Deserialize)]
+#[serde(try_from = "RawDashStream")]
 pub struct DashStream {
-    #[serde(default)]
     pub id: u32,
-    #[serde(alias = "baseUrl")]
     pub base_url: Url,
-    #[serde(default, alias = "backupUrl", deserialize_with = "null_as_default")]
     pub backup_url: Vec<Url>,
-    #[serde(default, alias = "mimeType")]
     pub mime_type: String,
-    #[serde(default)]
     pub codecs: String,
-    #[serde(default)]
     pub bandwidth: u64,
-    #[serde(default)]
     pub width: u32,
-    #[serde(default)]
     pub height: u32,
-    #[serde(default)]
     pub codecid: u32,
+}
+
+#[derive(Deserialize)]
+struct RawDashStream {
+    #[serde(default, deserialize_with = "null_as_default")]
+    id: u32,
+    #[serde(default)]
+    base_url: Option<Url>,
+    #[serde(default, rename = "baseUrl")]
+    base_url_camel: Option<Url>,
+    #[serde(default, deserialize_with = "null_as_default")]
+    backup_url: Vec<Url>,
+    #[serde(default, rename = "backupUrl", deserialize_with = "null_as_default")]
+    backup_url_camel: Vec<Url>,
+    #[serde(default)]
+    mime_type: Option<String>,
+    #[serde(default, rename = "mimeType")]
+    mime_type_camel: Option<String>,
+    #[serde(default, deserialize_with = "null_as_default")]
+    codecs: String,
+    #[serde(default, deserialize_with = "null_as_default")]
+    bandwidth: u64,
+    #[serde(default, deserialize_with = "null_as_default")]
+    width: u32,
+    #[serde(default, deserialize_with = "null_as_default")]
+    height: u32,
+    #[serde(default, deserialize_with = "null_as_default")]
+    codecid: u32,
+}
+
+impl TryFrom<RawDashStream> for DashStream {
+    type Error = &'static str;
+
+    fn try_from(raw: RawDashStream) -> Result<Self, Self::Error> {
+        let base_url = raw
+            .base_url
+            .or(raw.base_url_camel)
+            .ok_or("missing `base_url` / `baseUrl` field in DASH stream")?;
+        let backup_url = if !raw.backup_url.is_empty() {
+            raw.backup_url
+        } else {
+            raw.backup_url_camel
+        };
+        let mime_type = pick_optional_str(raw.mime_type, raw.mime_type_camel).unwrap_or_default();
+        Ok(Self {
+            id: raw.id,
+            base_url,
+            backup_url,
+            mime_type,
+            codecs: raw.codecs,
+            bandwidth: raw.bandwidth,
+            width: raw.width,
+            height: raw.height,
+            codecid: raw.codecid,
+        })
+    }
 }
 
 impl DashStream {
@@ -205,6 +253,115 @@ mod tests {
             height: 0,
             codecid,
         }
+    }
+
+    #[test]
+    fn dash_deserializes_dual_camel_and_snake_case_keys() {
+        // Real Bilibili `/x/player/wbi/playurl` DASH objects include BOTH camelCase and snake_case keys.
+        let dual_json = r#"{
+            "code": 0,
+            "message": "0",
+            "msg": "0",
+            "data": {
+                "quality": 80,
+                "dash": {
+                    "video": [{
+                        "id": 80,
+                        "baseUrl": "https://camel-cdn.example/v.m4s",
+                        "base_url": "https://snake-cdn.example/v.m4s",
+                        "backupUrl": ["https://camel-backup.example/v.m4s"],
+                        "backup_url": ["https://snake-backup.example/v.m4s"],
+                        "mimeType": "video/mp4",
+                        "mime_type": "video/mp4",
+                        "codecs": "avc1.640032",
+                        "bandwidth": 3000000,
+                        "width": 1920,
+                        "height": 1080,
+                        "frameRate": "30",
+                        "frame_rate": "30",
+                        "startWithSap": 1,
+                        "start_with_sap": 1,
+                        "codecid": 7
+                    }],
+                    "audio": [{
+                        "id": 30280,
+                        "baseUrl": "https://camel-cdn.example/a.m4s",
+                        "base_url": null,
+                        "backupUrl": ["https://camel-backup.example/a.m4s"],
+                        "backup_url": null,
+                        "mimeType": "audio/mp4",
+                        "mime_type": "",
+                        "codecs": "mp4a.40.2",
+                        "bandwidth": 192000,
+                        "codecid": 0
+                    }]
+                },
+                "durl": null
+            }
+        }"#;
+        let env: BiliEnvelope<DashData> = serde_json::from_str(dual_json).unwrap();
+        let dash = env.data.unwrap().dash.unwrap();
+
+        let video = &dash.video[0];
+        assert_eq!(video.id, 80);
+        assert_eq!(video.base_url.as_str(), "https://snake-cdn.example/v.m4s");
+        assert_eq!(
+            video.backup_url.iter().map(Url::as_str).collect::<Vec<_>>(),
+            vec!["https://snake-backup.example/v.m4s"]
+        );
+        assert_eq!(video.mime_type, "video/mp4");
+        assert_eq!(video.width, 1920);
+        assert_eq!(video.height, 1080);
+
+        let audio = &dash.audio[0];
+        assert_eq!(audio.id, 30280);
+        assert_eq!(audio.base_url.as_str(), "https://camel-cdn.example/a.m4s");
+        assert_eq!(
+            audio.backup_url.iter().map(Url::as_str).collect::<Vec<_>>(),
+            vec!["https://camel-backup.example/a.m4s"]
+        );
+        assert_eq!(audio.mime_type, "audio/mp4");
+
+        // camelCase-only stream
+        let camel_only = r#"{
+            "id": 64,
+            "baseUrl": "https://camel.example/v720.m4s",
+            "backupUrl": ["https://camel-b1.example/v720.m4s"],
+            "mimeType": "video/mp4",
+            "codecs": "hev1.1.6.L120.90",
+            "bandwidth": 1500000,
+            "codecid": 12
+        }"#;
+        let camel_stream: DashStream = serde_json::from_str(camel_only).unwrap();
+        assert_eq!(
+            camel_stream.base_url.as_str(),
+            "https://camel.example/v720.m4s"
+        );
+        assert_eq!(camel_stream.backup_url.len(), 1);
+        assert_eq!(camel_stream.mime_type, "video/mp4");
+
+        // snake_case-only stream
+        let snake_only = r#"{
+            "id": 30251,
+            "base_url": "https://snake.example/a.flac",
+            "backup_url": ["https://snake-b1.example/a.flac"],
+            "mime_type": "audio/flac",
+            "codecs": "fLaC",
+            "bandwidth": 1000000,
+            "codecid": 0
+        }"#;
+        let snake_stream: DashStream = serde_json::from_str(snake_only).unwrap();
+        assert_eq!(
+            snake_stream.base_url.as_str(),
+            "https://snake.example/a.flac"
+        );
+        assert_eq!(snake_stream.backup_url.len(), 1);
+        assert_eq!(snake_stream.mime_type, "audio/flac");
+        assert_eq!(snake_stream.preferred_audio_extension(), "flac");
+
+        // Missing both `base_url` and `baseUrl` must fail cleanly
+        let missing_base = r#"{"id": 80, "mime_type": "video/mp4"}"#;
+        assert!(serde_json::from_str::<DashStream>(missing_base).is_err());
     }
 
     #[test]
