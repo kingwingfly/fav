@@ -87,6 +87,16 @@ pub fn global_config_path() -> Option<PathBuf> {
     user_config_root().map(|dir| dir.join("fav").join(FAV_CONFIG_FILE))
 }
 
+/// How a [`Workspace`] location was resolved during discovery.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WorkspaceSource {
+    ExplicitFlag,
+    EnvVar,
+    UpwardWalk,
+    DefaultDataDir,
+    NewInCwd,
+}
+
 /// A `fav` workspace root containing `.fav/fav.db`, `.fav/config.toml`, `.fav/tmp`, and `.fav/fav.lock`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Workspace {
@@ -153,24 +163,46 @@ impl Workspace {
     /// Discover an existing workspace for read/sync commands.
     /// Precedence: `-C/--dir` -> `FAV_DIR` -> upward walk from CWD -> default XDG data dir.
     pub fn discover_existing(explicit_dir: Option<&Path>) -> Result<Self> {
+        Self::discover_existing_with_source(explicit_dir).map(|(ws, _)| ws)
+    }
+
+    /// Discover an existing workspace and report which discovery rule matched.
+    /// Precedence: `-C/--dir` -> `FAV_DIR` -> upward walk from CWD -> default XDG data dir.
+    pub fn discover_existing_with_source(
+        explicit_dir: Option<&Path>,
+    ) -> Result<(Self, WorkspaceSource)> {
         let env_dir = std::env::var_os(FAV_DIR_ENV)
             .filter(|v| !v.is_empty())
             .map(PathBuf::from);
         let cwd =
             std::env::current_dir().context("Failed to determine current working directory")?;
         let fallback = user_data_dir();
-        Self::discover_existing_from(explicit_dir, env_dir.as_deref(), &cwd, fallback.as_deref())
+        Self::discover_existing_from_with_source(
+            explicit_dir,
+            env_dir.as_deref(),
+            &cwd,
+            fallback.as_deref(),
+        )
     }
 
     /// Discover an existing workspace or pick a target root for `init` / `auth login` / `auth usecookies`.
     /// Precedence: `-C/--dir` -> `FAV_DIR` -> upward walk from CWD (if `.fav/fav.db` exists) -> CWD.
     pub fn discover_or_init(explicit_dir: Option<&Path>) -> Result<Self> {
+        Self::discover_or_init_with_source(explicit_dir).map(|(ws, _)| ws)
+    }
+
+    /// Discover an existing workspace or pick a target root for initialization,
+    /// reporting which discovery rule matched.
+    /// Precedence: `-C/--dir` -> `FAV_DIR` -> upward walk from CWD (if `.fav/fav.db` exists) -> CWD.
+    pub fn discover_or_init_with_source(
+        explicit_dir: Option<&Path>,
+    ) -> Result<(Self, WorkspaceSource)> {
         let env_dir = std::env::var_os(FAV_DIR_ENV)
             .filter(|v| !v.is_empty())
             .map(PathBuf::from);
         let cwd =
             std::env::current_dir().context("Failed to determine current working directory")?;
-        Self::discover_or_init_from(explicit_dir, env_dir.as_deref(), &cwd)
+        Self::discover_or_init_from_with_source(explicit_dir, env_dir.as_deref(), &cwd)
     }
 
     /// Alias for [`Workspace::discover_or_init`] when callers want a single entry point.
@@ -184,10 +216,20 @@ impl Workspace {
         start_dir: &Path,
         fallback_dir: Option<&Path>,
     ) -> Result<Self> {
+        Self::discover_existing_from_with_source(explicit_dir, env_dir, start_dir, fallback_dir)
+            .map(|(ws, _)| ws)
+    }
+
+    pub fn discover_existing_from_with_source(
+        explicit_dir: Option<&Path>,
+        env_dir: Option<&Path>,
+        start_dir: &Path,
+        fallback_dir: Option<&Path>,
+    ) -> Result<(Self, WorkspaceSource)> {
         if let Some(dir) = explicit_dir {
             let ws = Self::new(dir.to_path_buf());
             if ws.exists() {
-                return Ok(ws);
+                return Ok((ws, WorkspaceSource::ExplicitFlag));
             }
             return Err(AppError::usage(anyhow!(
                 "No fav database found in '{}' (expected '{}'). Run `fav -C {} init` or `fav -C {} auth login` first.",
@@ -202,7 +244,7 @@ impl Workspace {
         if let Some(dir) = env_dir {
             let ws = Self::new(dir.to_path_buf());
             if ws.exists() {
-                return Ok(ws);
+                return Ok((ws, WorkspaceSource::EnvVar));
             }
             return Err(AppError::usage(anyhow!(
                 "FAV_DIR='{}' does not contain '{}'. Run `fav init` or `fav auth login` there, or unset FAV_DIR.",
@@ -213,13 +255,13 @@ impl Workspace {
         }
 
         if let Some(ws) = find_upward(start_dir) {
-            return Ok(ws);
+            return Ok((ws, WorkspaceSource::UpwardWalk));
         }
 
         if let Some(dir) = fallback_dir {
             let ws = Self::new(dir.to_path_buf());
             if ws.exists() {
-                return Ok(ws);
+                return Ok((ws, WorkspaceSource::DefaultDataDir));
             }
         }
 
@@ -235,16 +277,27 @@ impl Workspace {
         env_dir: Option<&Path>,
         start_dir: &Path,
     ) -> Result<Self> {
+        Self::discover_or_init_from_with_source(explicit_dir, env_dir, start_dir).map(|(ws, _)| ws)
+    }
+
+    pub fn discover_or_init_from_with_source(
+        explicit_dir: Option<&Path>,
+        env_dir: Option<&Path>,
+        start_dir: &Path,
+    ) -> Result<(Self, WorkspaceSource)> {
         if let Some(dir) = explicit_dir {
-            return Ok(Self::new(dir.to_path_buf()));
+            return Ok((Self::new(dir.to_path_buf()), WorkspaceSource::ExplicitFlag));
         }
         if let Some(dir) = env_dir {
-            return Ok(Self::new(dir.to_path_buf()));
+            return Ok((Self::new(dir.to_path_buf()), WorkspaceSource::EnvVar));
         }
         if let Some(ws) = find_upward(start_dir) {
-            return Ok(ws);
+            return Ok((ws, WorkspaceSource::UpwardWalk));
         }
-        Ok(Self::new(start_dir.to_path_buf()))
+        Ok((
+            Self::new(start_dir.to_path_buf()),
+            WorkspaceSource::NewInCwd,
+        ))
     }
 }
 
@@ -655,6 +708,80 @@ mod tests {
         // discover_or_init falls back to start_dir when nothing exists
         let ws = Workspace::discover_or_init_from(None, None, &outside).unwrap();
         assert_eq!(ws.root, outside);
+    }
+
+    #[test]
+    fn workspace_discovery_reports_all_five_workspace_sources() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("archive");
+        let nested = root.join("sub").join("deep");
+        let explicit = tmp.path().join("explicit");
+        let env_dir = tmp.path().join("env");
+        let fallback = tmp.path().join("xdg");
+        let outside = tmp.path().join("outside");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+
+        for dir in [&root, &explicit, &env_dir, &fallback] {
+            std::fs::create_dir_all(dir.join(".fav")).unwrap();
+            std::fs::write(dir.join(".fav/fav.db"), b"").unwrap();
+        }
+
+        // 1. ExplicitFlag
+        let (ws, src) = Workspace::discover_existing_from_with_source(
+            Some(&explicit),
+            Some(&env_dir),
+            &nested,
+            Some(&fallback),
+        )
+        .unwrap();
+        assert_eq!(ws.root, explicit);
+        assert_eq!(src, WorkspaceSource::ExplicitFlag);
+
+        let (ws, src) =
+            Workspace::discover_or_init_from_with_source(Some(&outside), Some(&env_dir), &nested)
+                .unwrap();
+        assert_eq!(ws.root, outside);
+        assert_eq!(src, WorkspaceSource::ExplicitFlag);
+
+        // 2. EnvVar
+        let (ws, src) = Workspace::discover_existing_from_with_source(
+            None,
+            Some(&env_dir),
+            &nested,
+            Some(&fallback),
+        )
+        .unwrap();
+        assert_eq!(ws.root, env_dir);
+        assert_eq!(src, WorkspaceSource::EnvVar);
+
+        let (ws, src) =
+            Workspace::discover_or_init_from_with_source(None, Some(&outside), &nested).unwrap();
+        assert_eq!(ws.root, outside);
+        assert_eq!(src, WorkspaceSource::EnvVar);
+
+        // 3. UpwardWalk
+        let (ws, src) =
+            Workspace::discover_existing_from_with_source(None, None, &nested, Some(&fallback))
+                .unwrap();
+        assert_eq!(ws.root, root);
+        assert_eq!(src, WorkspaceSource::UpwardWalk);
+
+        let (ws, src) = Workspace::discover_or_init_from_with_source(None, None, &nested).unwrap();
+        assert_eq!(ws.root, root);
+        assert_eq!(src, WorkspaceSource::UpwardWalk);
+
+        // 4. DefaultDataDir
+        let (ws, src) =
+            Workspace::discover_existing_from_with_source(None, None, &outside, Some(&fallback))
+                .unwrap();
+        assert_eq!(ws.root, fallback);
+        assert_eq!(src, WorkspaceSource::DefaultDataDir);
+
+        // 5. NewInCwd
+        let (ws, src) = Workspace::discover_or_init_from_with_source(None, None, &outside).unwrap();
+        assert_eq!(ws.root, outside);
+        assert_eq!(src, WorkspaceSource::NewInCwd);
     }
 
     #[test]

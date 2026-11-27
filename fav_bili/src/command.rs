@@ -20,6 +20,7 @@ use crate::{
             CheckOptions, LoginOptions, LogoutOptions, UseCookiesOptions, check, login, logout,
             use_cookies,
         },
+        config_cmd::{config_path, config_show},
         deactivate::{DeactivateOptions, deactivate},
         doctor::{DoctorOptions, doctor_with_options},
         download::{DownloadOptions, download},
@@ -28,7 +29,7 @@ use crate::{
         list::{ListKind, ListOptions, list},
         media::{MediaResetOptions, reset as media_reset, skip as media_skip},
         pull::{PullOptions, pull},
-        schedule::{ScheduleTarget, schedule},
+        schedule::{ScheduleTarget, schedule_named},
         status::status,
         sync::{SyncOptions, sync},
     },
@@ -231,6 +232,28 @@ fn resolve_format(matches: &ArgMatches) -> OutputFormat {
             .get_one::<OutputFormat>("format")
             .copied()
             .unwrap_or(OutputFormat::Table)
+    }
+}
+
+fn explicit_format(matches: &ArgMatches) -> Option<OutputFormat> {
+    if matches.value_source("json") == Some(clap::parser::ValueSource::CommandLine)
+        && matches.get_flag("json")
+    {
+        return Some(OutputFormat::Json);
+    }
+    if matches.value_source("format") == Some(clap::parser::ValueSource::CommandLine) {
+        return matches.get_one::<OutputFormat>("format").copied();
+    }
+    None
+}
+
+fn resolve_subcommand_format(parent: &ArgMatches, child: &ArgMatches) -> AppResult<OutputFormat> {
+    match (explicit_format(parent), explicit_format(child)) {
+        (Some(_), Some(_)) => Err(AppError::usage(anyhow!(
+            "Cannot specify output format flags (--format / --json) both before and after the subcommand."
+        ))),
+        (Some(fmt), None) | (None, Some(fmt)) => Ok(fmt),
+        (None, None) => Ok(resolve_format(child)),
     }
 }
 
@@ -765,7 +788,7 @@ pub fn build_command() -> Command {
                 .arg_required_else_help(true)
                 .args([
                     Arg::new("targets")
-                        .help("BVID(s), avID(s), numeric AID(s), Bilibili video URL(s), or '-' to read from stdin")
+                        .help("BVID(s), avID(s), numeric AID(s), Bilibili/b23.tv URL(s), or '-' to read from stdin")
                         .action(ArgAction::Append),
                     Arg::new("stdin")
                         .long("stdin")
@@ -838,7 +861,7 @@ pub fn build_command() -> Command {
                 .about("Like (or unlike) Bilibili medias by BVID/AID/URL, set, or stdin")
                 .args([
                     Arg::new("targets")
-                        .help("BVID(s), avID(s), numeric AID(s), URL(s), or '-' to read from stdin")
+                        .help("BVID(s), avID(s), numeric AID(s), Bilibili/b23.tv URL(s), or '-' to read from stdin")
                         .action(ArgAction::Append),
                     Arg::new("stdin")
                         .long("stdin")
@@ -981,6 +1004,10 @@ pub fn build_command() -> Command {
                         .long("interval")
                         .help("Sync interval (e.g. 30m, 3h, 1d)")
                         .default_value("3h"),
+                    Arg::new("name")
+                        .long("name")
+                        .value_name("NAME")
+                        .help("Optional suffix for unit/task names to manage multiple workspaces"),
                     Arg::new("bin")
                         .long("bin")
                         .help("Path to the `fav` binary to invoke")
@@ -989,6 +1016,17 @@ pub fn build_command() -> Command {
                         .long("install")
                         .help("Write user-level schedule files directly (no sudo)")
                         .action(ArgAction::SetTrue),
+                ]),
+            Command::new("config")
+                .about("Inspect effective configuration and config file paths (bare `fav config` runs `show`)")
+                .args(format_args())
+                .subcommands([
+                    Command::new("show")
+                        .about("Show effective configuration values and their provenance")
+                        .args(format_args()),
+                    Command::new("path")
+                        .about("Show global and workspace config file paths")
+                        .args(format_args()),
                 ]),
             Command::new("completion")
                 .about("Generate shell completion scripts (with optional dynamic DB completion)")
@@ -1180,9 +1218,9 @@ fn sanitize_shell_fn_ident(bin_name: &str) -> String {
     out
 }
 
-const VALUE_TAKING_FLAGS_SH: &str = "-C|--dir|--color|--format|--state|--search|--sort|--limit|--type|--kind|--set|--up|--account|-j|--jobs|-o|--output|--limit-rate|--clarity|--quality|--codec|--audio-format|--page|--top|--target|--interval|--bin|--bin-name|--file";
+const VALUE_TAKING_FLAGS_SH: &str = "-C|--dir|--color|--format|--state|--search|--sort|--limit|--type|--kind|--set|--up|--account|-j|--jobs|-o|--output|--limit-rate|--clarity|--quality|--codec|--audio-format|--page|--top|--target|--interval|--name|--bin|--bin-name|--file";
 
-const VALUE_TAKING_FLAGS_FISH: &str = "-C --dir --color --format --state --search --sort --limit --type --kind --set --up --account -j --jobs -o --output --limit-rate --clarity --quality --codec --audio-format --page --top --target --interval --bin --bin-name --file";
+const VALUE_TAKING_FLAGS_FISH: &str = "-C --dir --color --format --state --search --sort --limit --type --kind --set --up --account -j --jobs -o --output --limit-rate --clarity --quality --codec --audio-format --page --top --target --interval --name --bin --bin-name --file";
 
 fn dynamic_completion_snippet(shell: CompletionShell, bin_name: &str) -> String {
     let fn_ident = sanitize_shell_fn_ident(bin_name);
@@ -1593,7 +1631,7 @@ Register-ArgumentCompleter -Native -CommandName '__PS_BIN__' -ScriptBlock ({
         '-C', '--dir', '--color', '--format', '--state', '--search', '--sort', '--limit',
         '--type', '--kind', '--set', '--up', '--account', '-j', '--jobs', '-o', '--output',
         '--limit-rate', '--clarity', '--quality', '--codec', '--audio-format', '--page',
-        '--top', '--target', '--interval', '--bin', '--bin-name', '--file'
+        '--top', '--target', '--interval', '--name', '--bin', '--bin-name', '--file'
     )
 
     switch ($prev) {
@@ -2015,6 +2053,7 @@ async fn dispatch(cmd: &mut Command, matches: ArgMatches) -> AppResult<()> {
                 .get_one::<String>("interval")
                 .map(String::as_str)
                 .unwrap_or("3h");
+            let name = sub.get_one::<String>("name").map(String::as_str);
             let install = sub.get_flag("install");
             let ws = Workspace::discover_or_init(runtime.explicit_dir.as_deref())?;
             let ws_root =
@@ -2024,10 +2063,16 @@ async fn dispatch(cmd: &mut Command, matches: ArgMatches) -> AppResult<()> {
                 .cloned()
                 .or_else(|| std::env::current_exe().ok())
                 .unwrap_or_else(|| PathBuf::from("fav"));
-            let output = schedule(target, interval, &ws_root, &fav_bin, install)?;
+            let output = schedule_named(target, interval, &ws_root, &fav_bin, install, name)?;
             write_stdout_line(&output).map_err(AppError::runtime)?;
             Ok(())
         }
+        Some(("config", sub)) => match sub.subcommand() {
+            None => config_show(&runtime, resolve_format(sub)),
+            Some(("show", s)) => config_show(&runtime, resolve_subcommand_format(sub, s)?),
+            Some(("path", s)) => config_path(&runtime, resolve_subcommand_format(sub, s)?),
+            _ => Err(AppError::usage(anyhow!("unknown config subcommand"))),
+        },
         Some(("auth", sub)) => match sub.subcommand() {
             Some(("login", s)) => {
                 let ctx = AppContext::open_read_write(runtime, true).await?;
@@ -2625,6 +2670,44 @@ mod tests {
                 .unwrap();
             assert_eq!(shell, expected);
         }
+
+        // `schedule --name`
+        let m = build_command()
+            .try_get_matches_from(["fav", "schedule", "--target", "systemd", "--name", "work"])
+            .unwrap();
+        let sched_m = m.subcommand_matches("schedule").unwrap();
+        assert_eq!(
+            sched_m.get_one::<String>("name").map(String::as_str),
+            Some("work")
+        );
+
+        // `config` (bare), `config show`, and `config path` with format flags
+        let m = build_command()
+            .try_get_matches_from(["fav", "config", "--json"])
+            .unwrap();
+        let cfg_m = m.subcommand_matches("config").unwrap();
+        assert!(cfg_m.subcommand().is_none());
+        assert_eq!(resolve_format(cfg_m), OutputFormat::Json);
+
+        let m = build_command()
+            .try_get_matches_from(["fav", "config", "show", "--format", "tsv"])
+            .unwrap();
+        let show_m = m
+            .subcommand_matches("config")
+            .unwrap()
+            .subcommand_matches("show")
+            .unwrap();
+        assert_eq!(resolve_format(show_m), OutputFormat::Tsv);
+
+        let m = build_command()
+            .try_get_matches_from(["fav", "config", "path", "--json"])
+            .unwrap();
+        let path_m = m
+            .subcommand_matches("config")
+            .unwrap()
+            .subcommand_matches("path")
+            .unwrap();
+        assert_eq!(resolve_format(path_m), OutputFormat::Json);
     }
 
     #[test]
@@ -2928,5 +3011,70 @@ mod tests {
         let rt_explicit_never = runtime_from_matches(&m_explicit_never);
         assert_eq!(rt_explicit_never.color, ColorChoice::Never);
         assert!(rt_explicit_never.color_explicit);
+    }
+
+    #[test]
+    fn config_parent_format_flags_forward_to_subcommands_and_reject_conflicts() {
+        use crate::error::ExitKind;
+
+        // Parent `--json` forwards into `show` and `path`.
+        let m = build_command()
+            .try_get_matches_from(["fav", "config", "--json", "show"])
+            .unwrap();
+        let cfg_m = m.subcommand_matches("config").unwrap();
+        let show_m = cfg_m.subcommand_matches("show").unwrap();
+        assert_eq!(
+            resolve_subcommand_format(cfg_m, show_m).unwrap(),
+            OutputFormat::Json
+        );
+
+        let m = build_command()
+            .try_get_matches_from(["fav", "config", "--format", "tsv", "path"])
+            .unwrap();
+        let cfg_m = m.subcommand_matches("config").unwrap();
+        let path_m = cfg_m.subcommand_matches("path").unwrap();
+        assert_eq!(
+            resolve_subcommand_format(cfg_m, path_m).unwrap(),
+            OutputFormat::Tsv
+        );
+
+        // Child format works when parent did not explicitly specify one.
+        let m = build_command()
+            .try_get_matches_from(["fav", "config", "show", "--format", "jsonl"])
+            .unwrap();
+        let cfg_m = m.subcommand_matches("config").unwrap();
+        let show_m = cfg_m.subcommand_matches("show").unwrap();
+        assert_eq!(
+            resolve_subcommand_format(cfg_m, show_m).unwrap(),
+            OutputFormat::Jsonl
+        );
+
+        // Default when neither parent nor child specifies format.
+        let m = build_command()
+            .try_get_matches_from(["fav", "config", "path"])
+            .unwrap();
+        let cfg_m = m.subcommand_matches("config").unwrap();
+        let path_m = cfg_m.subcommand_matches("path").unwrap();
+        assert_eq!(
+            resolve_subcommand_format(cfg_m, path_m).unwrap(),
+            OutputFormat::Table
+        );
+
+        // Specifying format flags on BOTH parent and child is rejected with Usage error.
+        for args in [
+            vec!["fav", "config", "--json", "show", "--format", "tsv"],
+            vec!["fav", "config", "--format", "tsv", "path", "--json"],
+            vec![
+                "fav", "config", "--format", "table", "show", "--format", "json",
+            ],
+            vec!["fav", "config", "--json", "path", "--json"],
+        ] {
+            let m = build_command().try_get_matches_from(args.clone()).unwrap();
+            let cfg_m = m.subcommand_matches("config").unwrap();
+            let (_, child_m) = cfg_m.subcommand().unwrap();
+            let err = resolve_subcommand_format(cfg_m, child_m)
+                .expect_err(&format!("expected conflict error for {args:?}"));
+            assert_eq!(err.kind(), ExitKind::Usage);
+        }
     }
 }

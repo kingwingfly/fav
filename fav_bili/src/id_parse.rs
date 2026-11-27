@@ -175,6 +175,46 @@ fn is_bilibili_host(host: &str) -> bool {
     lower == "bilibili.com" || lower.ends_with(".bilibili.com")
 }
 
+fn is_short_link_host(host: &str) -> bool {
+    let lower = host.to_ascii_lowercase();
+    lower == "b23.tv" || lower.ends_with(".b23.tv")
+}
+
+/// Recognize a Bilibili short link (`https://b23.tv/...`, `http://b23.tv/...`,
+/// schemeless `b23.tv/...`, or `*.b23.tv/...`) with a non-empty path.
+pub fn parse_short_link(input: &str) -> Option<Url> {
+    let trimmed = input.trim();
+    if trimmed.is_empty() || trimmed.chars().any(char::is_whitespace) {
+        return None;
+    }
+
+    let url = if trimmed.contains("://") {
+        let parsed = Url::parse(trimmed).ok()?;
+        if !matches!(parsed.scheme(), "http" | "https") {
+            return None;
+        }
+        parsed
+    } else if trimmed.contains('/') && trimmed.contains('.') {
+        Url::parse(&format!("https://{trimmed}")).ok()?
+    } else {
+        return None;
+    };
+
+    let host = url.host_str()?;
+    if !is_short_link_host(host) {
+        return None;
+    }
+
+    let has_non_empty_segment = url
+        .path_segments()
+        .is_some_and(|mut segs| segs.any(|s| !s.trim().is_empty()));
+    if !has_non_empty_segment {
+        return None;
+    }
+
+    Some(url)
+}
+
 /// Parsed video target with an optional 1-based page number extracted from `?p=N` in URLs.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct ParsedMediaTarget {
@@ -206,7 +246,7 @@ pub fn parse_media_target(input: &str) -> Result<ParsedMediaTarget> {
 
     if let Some(url) = maybe_url {
         let host = url.host_str().unwrap_or_default().to_ascii_lowercase();
-        if host == "b23.tv" || host.ends_with(".b23.tv") {
+        if is_short_link_host(&host) {
             bail!(
                 "short link '{trimmed}' cannot be resolved offline; pass a full bilibili.com/video/BV... URL or BV/av ID"
             );
@@ -481,6 +521,56 @@ mod tests {
             assert!(
                 parse_page_spec(bad).is_err(),
                 "expected page spec '{bad}' to be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn parse_short_link_recognizes_b23_variants_and_rejects_others() {
+        assert_eq!(
+            parse_short_link("https://b23.tv/abc123").unwrap().as_str(),
+            "https://b23.tv/abc123"
+        );
+        assert_eq!(
+            parse_short_link("http://b23.tv/abc123?p=2")
+                .unwrap()
+                .as_str(),
+            "http://b23.tv/abc123?p=2"
+        );
+        assert_eq!(
+            parse_short_link("b23.tv/abc123").unwrap().as_str(),
+            "https://b23.tv/abc123"
+        );
+        assert_eq!(
+            parse_short_link("  m.b23.tv/xyz/789  ").unwrap().as_str(),
+            "https://m.b23.tv/xyz/789"
+        );
+        assert_eq!(
+            parse_short_link("HTTPS://SUB.B23.TV/BV1Q541167Qg")
+                .unwrap()
+                .as_str(),
+            "https://sub.b23.tv/BV1Q541167Qg"
+        );
+
+        for rejected in [
+            "",
+            "   ",
+            "https://b23.tv",
+            "https://b23.tv/",
+            "https://b23.tv///",
+            "b23.tv",
+            "b23.tv/",
+            "ftp://b23.tv/abc123",
+            "https://notb23.tv/abc123",
+            "https://b23.tv.evil.com/abc123",
+            "https://www.bilibili.com/video/BV1Q541167Qg",
+            "BV1Q541167Qg",
+            "av170001",
+            "https://b23.tv/abc 123",
+        ] {
+            assert!(
+                parse_short_link(rejected).is_none(),
+                "expected '{rejected}' not to be treated as a b23.tv short link"
             );
         }
     }

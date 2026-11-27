@@ -6,11 +6,11 @@ use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
 use crate::{
-    api::BiliApiError,
+    api::{BiliApiError, BiliClient},
     context::AppContext,
     cookies::extract_csrf,
     error::{AppError, AppResult},
-    id_parse::parse_media_ident,
+    id_parse::{parse_media_ident, parse_short_link},
     state::{AccountState, SetState},
     table::write_stdout_line,
 };
@@ -201,10 +201,70 @@ pub async fn like(ctx: &AppContext, opts: LikeOptions) -> AppResult<()> {
     Ok(())
 }
 
+async fn resolve_and_parse_aid_with<F, Fut>(token: &str, resolve_fn: F) -> AppResult<i64>
+where
+    F: FnOnce(url::Url) -> Fut,
+    Fut: std::future::Future<Output = anyhow::Result<url::Url>>,
+{
+    let effective = if let Some(short_url) = parse_short_link(token) {
+        let resolved = resolve_fn(short_url)
+            .await
+            .with_context(|| format!("Failed to resolve short link '{token}'"))?;
+        info!("Resolved short link '{token}' -> '{resolved}'");
+        resolved.to_string()
+    } else {
+        token.to_owned()
+    };
+
+    let ident = if effective == token {
+        parse_media_ident(&effective).map_err(AppError::usage)?
+    } else {
+        parse_media_ident(&effective)
+            .with_context(|| format!("Resolved short link '{token}' to '{effective}'"))
+            .map_err(AppError::usage)?
+    };
+    ident
+        .to_aid()
+        .ok_or_else(|| AppError::usage(anyhow!("Cannot convert '{token}' to numeric AID")))
+}
+
+async fn resolve_and_parse_aid(
+    token: &str,
+    ctx: &AppContext,
+    anon_client: &mut Option<BiliClient>,
+) -> AppResult<i64> {
+    resolve_and_parse_aid_with(token, |short_url| async move {
+        let client = match anon_client {
+            Some(c) => c,
+            None => anon_client.insert(ctx.anonymous_client()?),
+        };
+        client.resolve_short_link(&short_url).await
+    })
+    .await
+}
+
+fn extract_stdin_tokens(buf: &str) -> Vec<&str> {
+    let mut tokens = Vec::new();
+    for line in buf.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+        for token in trimmed.split_whitespace() {
+            if token.starts_with('#') {
+                break;
+            }
+            tokens.push(token);
+        }
+    }
+    tokens
+}
+
 async fn collect_target_aids(ctx: &AppContext, opts: &LikeOptions) -> AppResult<Vec<i64>> {
     let mut aids = Vec::new();
     let mut seen = HashSet::new();
     let mut wants_stdin = opts.read_stdin;
+    let mut anon_client: Option<BiliClient> = None;
 
     for raw in &opts.targets {
         let trimmed = raw.trim();
@@ -215,10 +275,7 @@ async fn collect_target_aids(ctx: &AppContext, opts: &LikeOptions) -> AppResult<
         if trimmed.is_empty() {
             continue;
         }
-        let ident = parse_media_ident(trimmed).map_err(AppError::usage)?;
-        let aid = ident
-            .to_aid()
-            .ok_or_else(|| AppError::usage(anyhow!("Cannot convert '{trimmed}' to numeric AID")))?;
+        let aid = resolve_and_parse_aid(trimmed, ctx, &mut anon_client).await?;
         if seen.insert(aid) {
             aids.push(aid);
         }
@@ -233,7 +290,8 @@ async fn collect_target_aids(ctx: &AppContext, opts: &LikeOptions) -> AppResult<
         .await
         .context("Failed joining stdin reader task")?
         .context("Failed reading target IDs from stdin")?;
-        for aid in parse_stdin_targets(&buf)? {
+        for token in extract_stdin_tokens(&buf) {
+            let aid = resolve_and_parse_aid(token, ctx, &mut anon_client).await?;
             if seen.insert(aid) {
                 aids.push(aid);
             }
@@ -275,25 +333,17 @@ async fn collect_target_aids(ctx: &AppContext, opts: &LikeOptions) -> AppResult<
     Ok(aids)
 }
 
+#[cfg(test)]
 fn parse_stdin_targets(buf: &str) -> AppResult<Vec<i64>> {
     let mut aids = Vec::new();
     let mut seen = HashSet::new();
-    for line in buf.lines() {
-        let trimmed = line.trim();
-        if trimmed.is_empty() || trimmed.starts_with('#') {
-            continue;
-        }
-        for token in trimmed.split_whitespace() {
-            if token.starts_with('#') {
-                break;
-            }
-            let ident = parse_media_ident(token).map_err(AppError::usage)?;
-            let aid = ident.to_aid().ok_or_else(|| {
-                AppError::usage(anyhow!("Cannot convert '{token}' to numeric AID"))
-            })?;
-            if seen.insert(aid) {
-                aids.push(aid);
-            }
+    for token in extract_stdin_tokens(buf) {
+        let ident = parse_media_ident(token).map_err(AppError::usage)?;
+        let aid = ident
+            .to_aid()
+            .ok_or_else(|| AppError::usage(anyhow!("Cannot convert '{token}' to numeric AID")))?;
+        if seen.insert(aid) {
+            aids.push(aid);
         }
     }
     Ok(aids)
@@ -534,6 +584,119 @@ av170001
 
         let err = parse_stdin_targets("av100\nnot-a-valid-id\n").unwrap_err();
         assert_eq!(err.kind(), ExitKind::Usage);
+    }
+
+    #[tokio::test]
+    async fn resolve_and_parse_aid_resolves_b23_short_links_and_handles_stdin_comments() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let mock_base = Url::parse(&format!("http://{addr}")).unwrap();
+        let srv = tokio::spawn(async move {
+            while let Ok((mut stream, _)) = listener.accept().await {
+                tokio::spawn(async move {
+                    let mut buf = vec![0u8; 4096];
+                    let n = match stream.read(&mut buf).await {
+                        Ok(n) if n > 0 => n,
+                        _ => return,
+                    };
+                    let req = String::from_utf8_lossy(&buf[..n]);
+                    let path = req
+                        .lines()
+                        .next()
+                        .and_then(|l| l.split_whitespace().nth(1))
+                        .unwrap_or("/");
+                    let resp = match path {
+                        "/okvid" => {
+                            "HTTP/1.1 302 Found\r\nLocation: https://www.bilibili.com/video/BV1Q541167Qg/?p=2\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                        }
+                        "/notvid" => {
+                            "HTTP/1.1 302 Found\r\nLocation: https://live.bilibili.com/12345\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+                        }
+                        _ => "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
+                    };
+                    let _ = stream.write_all(resp.as_bytes()).await;
+                });
+            }
+        });
+
+        let api_cfg = BiliClientConfig {
+            api_base_url: mock_base.clone(),
+            passport_base_url: mock_base.clone(),
+            max_retries: 0,
+            base_backoff: Duration::ZERO,
+            min_request_interval: Duration::ZERO,
+            ..Default::default()
+        };
+        let client = BiliClient::with_config("", api_cfg).unwrap();
+
+        // Resolving stdin tokens with `#` comments plus `b23.tv` short links (with & without scheme).
+        let stdin_buf = "\
+# comment with b23.tv/ignored
+https://b23.tv/okvid # inline comment with extra words
+b23.tv/okvid av100
+";
+        let tokens = extract_stdin_tokens(stdin_buf);
+        assert_eq!(
+            tokens,
+            vec!["https://b23.tv/okvid", "b23.tv/okvid", "av100"]
+        );
+
+        let mut aids = Vec::new();
+        let mut seen = HashSet::new();
+        let resolve_calls = Arc::new(AtomicUsize::new(0));
+        for token in tokens {
+            let client_c = client.clone();
+            let base_c = mock_base.clone();
+            let calls_c = resolve_calls.clone();
+            let aid = resolve_and_parse_aid_with(token, move |short_url| async move {
+                calls_c.fetch_add(1, Ordering::SeqCst);
+                let target = base_c.join(short_url.path())?;
+                client_c.resolve_short_link(&target).await
+            })
+            .await
+            .unwrap();
+            if seen.insert(aid) {
+                aids.push(aid);
+            }
+        }
+        assert_eq!(aids, vec![455_017_605, 100]);
+        assert_eq!(
+            resolve_calls.load(Ordering::SeqCst),
+            2,
+            "only b23.tv tokens should trigger short-link resolution"
+        );
+
+        // Short link redirecting to non-video bilibili URL -> ExitKind::Usage with resolved context.
+        let non_video_err = resolve_and_parse_aid_with("https://b23.tv/notvid", {
+            let client_c = client.clone();
+            let base_c = mock_base.clone();
+            move |short_url| async move {
+                let target = base_c.join(short_url.path())?;
+                client_c.resolve_short_link(&target).await
+            }
+        })
+        .await
+        .unwrap_err();
+        assert_eq!(non_video_err.kind(), ExitKind::Usage);
+        assert!(
+            format!("{non_video_err:#}").contains("Resolved short link 'https://b23.tv/notvid'")
+        );
+
+        // Non-redirecting HTTP 200 short link -> Runtime error (never treated as resolved video).
+        let no_redir_err = resolve_and_parse_aid_with("https://b23.tv/stuck", {
+            let client_c = client.clone();
+            let base_c = mock_base.clone();
+            move |short_url| async move {
+                let target = base_c.join(short_url.path())?;
+                client_c.resolve_short_link(&target).await
+            }
+        })
+        .await
+        .unwrap_err();
+        assert_eq!(no_redir_err.kind(), ExitKind::Runtime);
+        assert!(format!("{no_redir_err:#}").contains("did not redirect to bilibili.com"));
+
+        srv.abort();
     }
 
     async fn spawn_like_mock_server<F>(handler: F) -> Url

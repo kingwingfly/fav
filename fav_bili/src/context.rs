@@ -7,10 +7,11 @@ use std::{
 use anyhow::Result;
 use console::Term;
 use indicatif::{MultiProgress, ProgressDrawTarget};
+use tracing::info;
 
 use crate::{
     api::{BiliClient, BiliClientConfig},
-    config::{Config, Workspace, WorkspaceLock},
+    config::{Config, Workspace, WorkspaceLock, WorkspaceSource, user_data_dir},
     db::Db,
     error::AppResult,
     muxer::{FfmpegMuxer, Muxer},
@@ -61,7 +62,14 @@ impl fmt::Debug for AppContext {
 impl AppContext {
     /// Open an existing workspace in read-only mode (no workspace lock, no `Migrator::up`).
     pub async fn open_read_only(mut runtime: RuntimeOptions) -> AppResult<Self> {
-        let workspace = Workspace::discover_existing(runtime.explicit_dir.as_deref())?;
+        let (workspace, source) =
+            Workspace::discover_existing_with_source(runtime.explicit_dir.as_deref())?;
+        if source == WorkspaceSource::DefaultDataDir {
+            info!(
+                "Using default workspace at '{}' (pass -C/--dir or set FAV_DIR to target another workspace).",
+                workspace.root().display()
+            );
+        }
         let config = Config::load(Some(&workspace))?;
         apply_config_defaults(&mut runtime, &config)?;
         let db = Db::open_existing(&workspace.db_path(), true).await?;
@@ -85,11 +93,31 @@ impl AppContext {
         mut runtime: RuntimeOptions,
         create_if_missing: bool,
     ) -> AppResult<Self> {
-        let workspace = if create_if_missing {
-            Workspace::discover_or_init(runtime.explicit_dir.as_deref())?
+        let (workspace, source) = if create_if_missing {
+            Workspace::discover_or_init_with_source(runtime.explicit_dir.as_deref())?
         } else {
-            Workspace::discover_existing(runtime.explicit_dir.as_deref())?
+            Workspace::discover_existing_with_source(runtime.explicit_dir.as_deref())?
         };
+
+        if source == WorkspaceSource::DefaultDataDir {
+            info!(
+                "Using default workspace at '{}' (pass -C/--dir or set FAV_DIR to target another workspace).",
+                workspace.root().display()
+            );
+        } else if create_if_missing
+            && source == WorkspaceSource::NewInCwd
+            && !workspace.exists()
+            && let Some(default_dir) = user_data_dir()
+        {
+            let default_ws = Workspace::new(default_dir);
+            if default_ws.exists() && default_ws.root() != workspace.root() {
+                info!(
+                    "Creating new workspace at '{}' (note: default workspace already exists at '{}'; pass -C to use it instead).",
+                    workspace.root().display(),
+                    default_ws.root().display()
+                );
+            }
+        }
 
         let config = Config::load(Some(&workspace))?;
         apply_config_defaults(&mut runtime, &config)?;

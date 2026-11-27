@@ -9,11 +9,11 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-use anyhow::{Context as _, Result, anyhow};
+use anyhow::{Context as _, Result, anyhow, bail};
 use reqwest::{
     Client, StatusCode,
     cookie::Jar,
-    header::{CONTENT_RANGE, HeaderMap, HeaderValue, RANGE, REFERER, USER_AGENT},
+    header::{CONTENT_RANGE, HeaderMap, HeaderValue, LOCATION, RANGE, REFERER, USER_AGENT},
 };
 use serde::{Serialize, de::DeserializeOwned};
 use tokio::{
@@ -596,6 +596,114 @@ impl BiliClient {
         Ok(())
     }
 
+    /// Resolve a `b23.tv` short link anonymously (never sending account cookies),
+    /// following up to 5 redirect hops (`HEAD`, falling back to `GET` on HTTP `405`/`501`)
+    /// while strictly restricting every hop to `b23.tv` / `bilibili.com` hosts
+    /// (plus the configured mock `api_base_url` host in tests).
+    pub async fn resolve_short_link(&self, url: &Url) -> Result<Url> {
+        const MAX_REDIRECT_HOPS: usize = 5;
+
+        if !is_allowed_short_link_host(url, &self.config.api_base_url) {
+            bail!(
+                "Refusing to resolve short link on disallowed host '{}' (only b23.tv and bilibili.com are allowed)",
+                url.host_str().unwrap_or("<none>")
+            );
+        }
+        if is_bilibili_host(url) {
+            return Ok(url.clone());
+        }
+
+        let mut default_headers = HeaderMap::new();
+        default_headers.insert(USER_AGENT, HeaderValue::from_static(DEFAULT_USER_AGENT));
+        let anon_client = Client::builder()
+            .redirect(reqwest::redirect::Policy::none())
+            .default_headers(default_headers)
+            .connect_timeout(self.config.connect_timeout)
+            .read_timeout(self.config.read_timeout)
+            .build()
+            .context("Failed to construct anonymous HTTP client for short-link resolution")?;
+
+        let mut current = url.clone();
+        for hop in 0..=MAX_REDIRECT_HOPS {
+            let mut resp = anon_client
+                .head(current.clone())
+                .timeout(self.config.api_request_timeout)
+                .send()
+                .await
+                .with_context(|| {
+                    format!("Failed sending HEAD request to short link '{current}'")
+                })?;
+
+            if matches!(
+                resp.status(),
+                StatusCode::METHOD_NOT_ALLOWED | StatusCode::NOT_IMPLEMENTED
+            ) {
+                resp = anon_client
+                    .get(current.clone())
+                    .timeout(self.config.api_request_timeout)
+                    .send()
+                    .await
+                    .with_context(|| {
+                        format!("Failed sending GET fallback request to short link '{current}'")
+                    })?;
+            }
+
+            let status = resp.status();
+            if status.is_redirection() {
+                if hop == MAX_REDIRECT_HOPS {
+                    bail!(
+                        "Short link '{url}' exceeded maximum redirect limit ({MAX_REDIRECT_HOPS} hops)"
+                    );
+                }
+                let loc_raw = resp
+                    .headers()
+                    .get(LOCATION)
+                    .ok_or_else(|| {
+                        anyhow!(
+                            "Short link '{current}' returned HTTP {} without a Location header",
+                            status.as_u16()
+                        )
+                    })?
+                    .to_str()
+                    .with_context(|| {
+                        format!("Short link '{current}' returned a non-UTF-8 Location header")
+                    })?
+                    .trim();
+                let next = current.join(loc_raw).with_context(|| {
+                    format!("Short link '{current}' returned invalid Location '{loc_raw}'")
+                })?;
+
+                if !is_allowed_short_link_host(&next, &self.config.api_base_url) {
+                    bail!(
+                        "Short link '{url}' redirected to disallowed host '{}' (only b23.tv and bilibili.com are allowed)",
+                        next.host_str().unwrap_or("<none>")
+                    );
+                }
+
+                if is_bilibili_host(&next) {
+                    return Ok(next);
+                }
+                current = next;
+                continue;
+            }
+
+            if status.is_client_error() || status.is_server_error() {
+                bail!("Short link '{current}' returned HTTP {}", status.as_u16());
+            }
+
+            if is_bilibili_host(&current) {
+                return Ok(current);
+            }
+            bail!(
+                "Short link '{}' did not redirect to bilibili.com (HTTP {})",
+                url,
+                status.as_u16()
+            );
+        }
+
+        unreachable!("redirect loop always returns within MAX_REDIRECT_HOPS + 1 iterations")
+    }
+
     // ---- Signed WBI Helper ----
 
     /// Perform a WBI-signed GET request against `api_base_url` with cached WBI keys, automatic
@@ -1068,8 +1176,35 @@ fn join_url(base: &Url, path: &str) -> Result<Url> {
 }
 
 fn is_bilibili_host(url: &Url) -> bool {
-    url.host_str()
-        .is_some_and(|h| h == "bilibili.com" || h.ends_with(".bilibili.com"))
+    url.host_str().is_some_and(|h| {
+        let lower = h.to_ascii_lowercase();
+        lower == "bilibili.com" || lower.ends_with(".bilibili.com")
+    })
+}
+
+fn is_allowed_short_link_host(url: &Url, api_base_url: &Url) -> bool {
+    if !matches!(url.scheme(), "http" | "https") {
+        return false;
+    }
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    let lower = host.to_ascii_lowercase();
+    if lower == "b23.tv"
+        || lower.ends_with(".b23.tv")
+        || lower == "bilibili.com"
+        || lower.ends_with(".bilibili.com")
+    {
+        return true;
+    }
+    // Allow local mock server host configured on `api_base_url` in tests.
+    if !is_bilibili_host(api_base_url)
+        && let Some(test_host) = api_base_url.host_str()
+        && lower == test_host.to_ascii_lowercase()
+    {
+        return true;
+    }
+    false
 }
 
 fn is_retryable_http_status(status: StatusCode) -> bool {
@@ -1156,8 +1291,13 @@ mod tests {
                     let reason = match status {
                         200 => "OK",
                         206 => "Partial Content",
+                        301 => "Moved Permanently",
+                        302 => "Found",
+                        307 => "Temporary Redirect",
                         403 => "Forbidden",
+                        405 => "Method Not Allowed",
                         416 => "Range Not Satisfiable",
+                        501 => "Not Implemented",
                         503 => "Service Unavailable",
                         _ => "Status",
                     };
@@ -1575,6 +1715,157 @@ mod tests {
             "season_req={season_req}"
         );
         assert!(season_req.contains("w_rid="), "season_req={season_req}");
+    }
+
+    #[tokio::test]
+    async fn resolve_short_link_follows_redirects_falls_back_on_405_preserves_query_and_sends_no_cookies()
+     {
+        let seen_requests = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let seen_c = seen_requests.clone();
+
+        let base = spawn_mock_server(move |path, req| {
+            seen_c.lock().unwrap().push(req.clone());
+            // Verify zero cookies are ever leaked to short-link redirect hops.
+            assert!(
+                !req.to_ascii_lowercase().contains("\ncookie:"),
+                "resolve_short_link must never send account cookies: {req}"
+            );
+            let is_head = req.starts_with("HEAD ");
+            match path.as_str() {
+                "/step1" => (302, vec![("Location".into(), "/step2".into())], Vec::new()),
+                "/step2" => {
+                    if is_head {
+                        (405, vec![], Vec::new())
+                    } else {
+                        (
+                            302,
+                            vec![(
+                                "Location".into(),
+                                "https://www.bilibili.com/video/BV1Q541167Qg/?p=2&vd_source=test"
+                                    .into(),
+                            )],
+                            Vec::new(),
+                        )
+                    }
+                }
+                _ => (404, vec![], Vec::new()),
+            }
+        })
+        .await;
+
+        // Seed the BiliClient with sensitive cookies to confirm resolve_short_link does NOT use them.
+        let client = BiliClient::with_config(
+            "SESSDATA=super_secret; bili_jct=csrf",
+            test_config(base.clone()),
+        )
+        .unwrap();
+        let short_url = base.join("/step1").unwrap();
+        let resolved = client.resolve_short_link(&short_url).await.unwrap();
+        assert_eq!(
+            resolved.as_str(),
+            "https://www.bilibili.com/video/BV1Q541167Qg/?p=2&vd_source=test"
+        );
+
+        let reqs = seen_requests.lock().unwrap();
+        assert_eq!(
+            reqs.len(),
+            3,
+            "expected HEAD /step1, HEAD /step2 (405), GET /step2"
+        );
+        assert!(reqs[0].starts_with("HEAD /step1 "));
+        assert!(reqs[1].starts_with("HEAD /step2 "));
+        assert!(reqs[2].starts_with("GET /step2 "));
+    }
+
+    #[tokio::test]
+    async fn resolve_short_link_enforces_hop_limit_and_rejects_external_hosts_and_non_redirect_200()
+    {
+        let base = spawn_mock_server(move |path, _req| match path.as_str() {
+            "/hop0" => (302, vec![("Location".into(), "/hop1".into())], Vec::new()),
+            "/hop1" => (302, vec![("Location".into(), "/hop2".into())], Vec::new()),
+            "/hop2" => (302, vec![("Location".into(), "/hop3".into())], Vec::new()),
+            "/hop3" => (302, vec![("Location".into(), "/hop4".into())], Vec::new()),
+            "/hop4" => (302, vec![("Location".into(), "/hop5".into())], Vec::new()),
+            "/hop5" => (302, vec![("Location".into(), "/hop6".into())], Vec::new()),
+            "/ok5_0" => (302, vec![("Location".into(), "/ok5_1".into())], Vec::new()),
+            "/ok5_1" => (302, vec![("Location".into(), "/ok5_2".into())], Vec::new()),
+            "/ok5_2" => (302, vec![("Location".into(), "/ok5_3".into())], Vec::new()),
+            "/ok5_3" => (302, vec![("Location".into(), "/ok5_4".into())], Vec::new()),
+            "/ok5_4" => (
+                302,
+                vec![(
+                    "Location".into(),
+                    "https://m.bilibili.com/video/BV17x411w7KC?p=4".into(),
+                )],
+                Vec::new(),
+            ),
+            "/evil" => (
+                302,
+                vec![("Location".into(), "https://evil.example.com/steal".into())],
+                Vec::new(),
+            ),
+            "/no_redirect" => (200, vec![], b"<html>link expired</html>".to_vec()),
+            _ => (200, vec![], Vec::new()),
+        })
+        .await;
+
+        let client = BiliClient::with_config("", test_config(base.clone())).unwrap();
+
+        // Exactly 5 hops ending on bilibili.com succeeds.
+        let ok5 = client
+            .resolve_short_link(&base.join("/ok5_0").unwrap())
+            .await
+            .unwrap();
+        assert_eq!(
+            ok5.as_str(),
+            "https://m.bilibili.com/video/BV17x411w7KC?p=4"
+        );
+
+        // 6+ hops fails with hop limit error.
+        let err_hops = client
+            .resolve_short_link(&base.join("/hop0").unwrap())
+            .await
+            .unwrap_err();
+        assert!(
+            err_hops.to_string().contains("maximum redirect limit"),
+            "unexpected error: {err_hops:#}"
+        );
+
+        // External redirect host is strictly rejected.
+        let err_evil = client
+            .resolve_short_link(&base.join("/evil").unwrap())
+            .await
+            .unwrap_err();
+        assert!(
+            err_evil.to_string().contains("disallowed host"),
+            "unexpected error: {err_evil:#}"
+        );
+        assert!(
+            err_evil.to_string().contains("evil.example.com"),
+            "unexpected error: {err_evil:#}"
+        );
+
+        // HTTP 200 without redirecting to bilibili.com MUST error instead of returning Ok(short_url).
+        let err_200 = client
+            .resolve_short_link(&base.join("/no_redirect").unwrap())
+            .await
+            .unwrap_err();
+        assert!(
+            err_200
+                .to_string()
+                .contains("did not redirect to bilibili.com (HTTP 200)"),
+            "unexpected error for non-redirect 200: {err_200:#}"
+        );
+
+        // Initial URL on disallowed host is rejected before any network call.
+        let err_init = client
+            .resolve_short_link(&Url::parse("https://example.com/foo").unwrap())
+            .await
+            .unwrap_err();
+        assert!(
+            err_init.to_string().contains("disallowed host"),
+            "unexpected error: {err_init:#}"
+        );
     }
 
     #[tokio::test]

@@ -21,7 +21,7 @@ use crate::{
         fetch_page_playurl, preview_extension,
     },
     error::{AppError, AppResult},
-    id_parse::{parse_media_target, parse_page_spec},
+    id_parse::{parse_media_target, parse_page_spec, parse_short_link},
     muxer::{FfmpegMuxer, Muxer},
     response::{Page, select_best_audio},
     state::{AudioFormat, VideoClarity, VideoCodec},
@@ -169,7 +169,7 @@ pub async fn download_with_env(
         .transpose()
         .map_err(AppError::usage)?;
 
-    let targets = collect_targets(&opts).await?;
+    let targets = collect_targets(&opts, &api_config).await?;
     if targets.is_empty() {
         return Err(AppError::usage(anyhow!(
             "No download targets specified. Pass BVID(s), avID(s), numeric AID(s), Bilibili video URL(s), or '-' / --stdin."
@@ -690,7 +690,10 @@ fn select_pages_for_target(
     Ok(available.to_vec())
 }
 
-async fn collect_targets(opts: &DownloadOptions) -> AppResult<Vec<ResolvedTarget>> {
+async fn collect_targets(
+    opts: &DownloadOptions,
+    api_config: &BiliClientConfig,
+) -> AppResult<Vec<ResolvedTarget>> {
     let mut raw_tokens = Vec::new();
     let mut wants_stdin = opts.read_stdin;
 
@@ -728,27 +731,59 @@ async fn collect_targets(opts: &DownloadOptions) -> AppResult<Vec<ResolvedTarget
         }
     }
 
-    parse_and_dedup_targets(&raw_tokens, opts.all_pages, opts.pages.is_some())
+    let resolved_pairs = resolve_short_link_tokens(&raw_tokens, api_config).await?;
+    parse_and_dedup_resolved_tokens(&resolved_pairs, opts.all_pages, opts.pages.is_some())
 }
 
-fn parse_and_dedup_targets(
+async fn resolve_short_link_tokens(
     raw_tokens: &[String],
+    api_config: &BiliClientConfig,
+) -> AppResult<Vec<(String, String)>> {
+    let mut anon_client: Option<BiliClient> = None;
+    let mut resolved = Vec::with_capacity(raw_tokens.len());
+    for token in raw_tokens {
+        if let Some(short_url) = parse_short_link(token) {
+            let client = match &anon_client {
+                Some(c) => c,
+                None => anon_client.insert(BiliClient::with_config("", api_config.clone())?),
+            };
+            let target_url = client
+                .resolve_short_link(&short_url)
+                .await
+                .with_context(|| format!("Failed to resolve short link '{token}'"))?;
+            info!("Resolved short link '{token}' -> '{target_url}'");
+            resolved.push((token.clone(), target_url.to_string()));
+        } else {
+            resolved.push((token.clone(), token.clone()));
+        }
+    }
+    Ok(resolved)
+}
+
+fn parse_and_dedup_resolved_tokens(
+    token_pairs: &[(String, String)],
     all_pages: bool,
     has_explicit_pages: bool,
 ) -> AppResult<Vec<ResolvedTarget>> {
-    let mut parsed_targets = Vec::with_capacity(raw_tokens.len());
-    for token in raw_tokens {
-        let parsed = parse_media_target(token).map_err(AppError::usage)?;
+    let mut parsed_targets = Vec::with_capacity(token_pairs.len());
+    for (raw, effective) in token_pairs {
+        let parsed = if raw == effective {
+            parse_media_target(effective).map_err(AppError::usage)?
+        } else {
+            parse_media_target(effective)
+                .with_context(|| format!("Resolved short link '{raw}' to '{effective}'"))
+                .map_err(AppError::usage)?
+        };
         let aid = parsed
             .ident
             .to_aid()
-            .ok_or_else(|| AppError::usage(anyhow!("Cannot convert '{token}' to numeric AID")))?;
+            .ok_or_else(|| AppError::usage(anyhow!("Cannot convert '{raw}' to numeric AID")))?;
         let bv_id = parsed.ident.to_bvid().unwrap_or_else(|| format!("av{aid}"));
         parsed_targets.push(ResolvedTarget {
             aid,
             bv_id,
             url_page: parsed.page,
-            raw: token.clone(),
+            raw: raw.clone(),
         });
     }
 
@@ -789,6 +824,16 @@ fn parse_and_dedup_targets(
         }
     }
     Ok(targets)
+}
+
+#[cfg(test)]
+fn parse_and_dedup_targets(
+    raw_tokens: &[String],
+    all_pages: bool,
+    has_explicit_pages: bool,
+) -> AppResult<Vec<ResolvedTarget>> {
+    let pairs: Vec<(String, String)> = raw_tokens.iter().map(|t| (t.clone(), t.clone())).collect();
+    parse_and_dedup_resolved_tokens(&pairs, all_pages, has_explicit_pages)
 }
 
 fn build_multi_progress(runtime: &RuntimeOptions) -> Option<MultiProgress> {
@@ -1058,6 +1103,57 @@ mod tests {
             assert_eq!(parsed[1].aid, 170_001);
             assert_eq!(parsed[1].raw, raw[3]);
         }
+    }
+
+    #[test]
+    fn resolved_short_link_tokens_preserve_page_dedup_and_report_non_video_context() {
+        use crate::error::ExitKind;
+
+        let pairs = vec![
+            (
+                "https://b23.tv/abc123".to_owned(),
+                "https://www.bilibili.com/video/BV1Q541167Qg/?p=2".to_owned(),
+            ),
+            (
+                "https://www.bilibili.com/video/BV1Q541167Qg/?p=2".to_owned(),
+                "https://www.bilibili.com/video/BV1Q541167Qg/?p=2".to_owned(),
+            ),
+        ];
+        let parsed = parse_and_dedup_resolved_tokens(&pairs, false, false).unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].aid, 455_017_605);
+        assert_eq!(parsed[0].bv_id, "BV1Q541167Qg");
+        assert_eq!(parsed[0].url_page, Some(2));
+        assert_eq!(parsed[0].raw, "https://b23.tv/abc123");
+
+        // Resolved short link with `?p=2` overlaps with bare target for the same AID -> collapses to bare.
+        let overlap_pairs = vec![
+            (
+                "https://b23.tv/abc123".to_owned(),
+                "https://www.bilibili.com/video/BV1Q541167Qg/?p=2".to_owned(),
+            ),
+            (
+                "https://b23.tv/full".to_owned(),
+                "https://www.bilibili.com/video/BV1Q541167Qg".to_owned(),
+            ),
+        ];
+        let collapsed = parse_and_dedup_resolved_tokens(&overlap_pairs, false, false).unwrap();
+        assert_eq!(collapsed.len(), 1);
+        assert_eq!(collapsed[0].aid, 455_017_605);
+        assert_eq!(collapsed[0].url_page, None);
+        assert_eq!(collapsed[0].raw, "https://b23.tv/full");
+
+        let bad_pairs = vec![(
+            "https://b23.tv/notvid".to_owned(),
+            "https://live.bilibili.com/12345".to_owned(),
+        )];
+        let err = parse_and_dedup_resolved_tokens(&bad_pairs, false, false).unwrap_err();
+        assert_eq!(err.kind(), ExitKind::Usage);
+        let msg = format!("{err:#}");
+        assert!(
+            msg.contains("Resolved short link 'https://b23.tv/notvid'"),
+            "msg={msg}"
+        );
     }
 
     #[test]
